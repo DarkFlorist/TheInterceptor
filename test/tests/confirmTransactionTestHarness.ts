@@ -85,6 +85,7 @@ export function createBrowserMock() {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: manifestVersion }),
+			getURL: (path: string) => `chrome-extension://test-extension/${ path }`,
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
@@ -286,7 +287,7 @@ export async function loadModules() {
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
-		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
+		getUserAddressBookEntries: (await import('../../app/ts/background/addressBookStore.js')).getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
@@ -307,7 +308,7 @@ export async function loadModules() {
 			return updated.safeTransactionStacks
 		},
 		updateTabState: storageVariables.updateTabState,
-		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
+		updateAddressBookAndSigningWalletBindings: (await import('../../app/ts/background/signingAddressBookCoordinator.js')).updateAddressBookAndSigningWalletBindings,
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
@@ -411,6 +412,7 @@ export const safeSelectors = {
 	nonce: encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10),
 	owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
 	threshold: encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10),
+	approvedHashes: encodeFunctionCall(SAFE_ABI, 'approvedHashes', ['0x0000000000000000000000000000000000000000', `0x${ '00'.repeat(32) }`]).slice(0, 10),
 	transactionHash: encodeFunctionCall(SAFE_ABI, 'getTransactionHash', [
 		'0x0000000000000000000000000000000000000001',
 		0n,
@@ -437,6 +439,9 @@ export const fakeSafeContract = {
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
+	// The (owner, SafeTx hash) pairs the Safe has recorded through approveHash, and every approvedHashes read with the block it was pinned to.
+	approvedHashes: [] as { readonly owner: bigint, readonly safeTxHash: bigint }[],
+	approvedHashesCalls: [] as { readonly owner: bigint, readonly safeTxHash: bigint, readonly blockTag: unknown }[],
 	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
@@ -453,6 +458,8 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
+	fakeSafeContract.approvedHashes = []
+	fakeSafeContract.approvedHashesCalls = []
 	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
 
@@ -481,6 +488,8 @@ export const fakeRequestHandler = {
 		}
 			case 'eth_gasPrice':
 				return modules.serialize(modules.EthereumQuantity, 1n)
+			case 'eth_maxPriorityFeePerGas':
+				return modules.serialize(modules.EthereumQuantity, 1n)
 			case 'eth_call': {
 				const call = rpcRequest.params?.[0]
 				if (!isRecord(call) || !(call.data instanceof Uint8Array)) throw new Error('Malformed test eth_call')
@@ -495,6 +504,14 @@ export const fakeRequestHandler = {
 						if (fakeSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Safe owner decoder failure')
 						return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
 					case safeSelectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [fakeSafeContract.threshold])
+					case safeSelectors.approvedHashes: {
+						const calldata = Buffer.from(call.data).toString('hex')
+						const owner = BigInt(`0x${ calldata.slice(8 + 24, 8 + 64) }`)
+						const safeTxHash = BigInt(`0x${ calldata.slice(8 + 64, 8 + 128) }`)
+						fakeSafeContract.approvedHashesCalls.push({ owner, safeTxHash, blockTag: rpcRequest.params?.[1] })
+						const approved = fakeSafeContract.approvedHashes.some((approval) => approval.owner === owner && approval.safeTxHash === safeTxHash)
+						return encodeFunctionReturn(SAFE_ABI, 'approvedHashes', [approved ? 1n : 0n])
+					}
 					case safeSelectors.messageHash: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeSafeContract.messageHash)])
 					case safeSelectors.messageSignature: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'isValidSignature', [fakeSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])
 					case safeSelectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', [bytes32String(fakeSafeContract.transactionHash)])
@@ -585,7 +602,8 @@ export const signedTransaction = modules.mockSignTransaction(unsignedTransaction
 export const created = new Date('2024-01-01T00:00:00.000Z')
 export const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
 export const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
-export const safeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+export const safeTestOwnerPrivateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+export const safeTestOwnerAccount = privateKeyToAccount(safeTestOwnerPrivateKey)
 export const safeTestOwnerAddress = BigInt(safeTestOwnerAccount.address)
 
 export function createSafeStackTransactionFixture(options: {

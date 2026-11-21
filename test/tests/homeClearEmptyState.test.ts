@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterEach, beforeEach, describe, test } from 'bun:test'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -321,7 +321,7 @@ async function keyDownElement(element: { l?: Record<string, (event: unknown) => 
 }
 
 function getButtonByText(root: TestDomNode, text: string) {
-	const button = collectElements(root, 'button').find((button) => button.textContent?.replace(/\s+/g, ' ').trim() === text)
+	const button = collectElements(root, 'button').find((button) => (text === 'Signing' || text === 'Simulating' ? button.textContent?.startsWith(text) : button.textContent?.replace(/\s+/g, ' ').trim() === text))
 	if (button === undefined) throw new Error(`Expected button with text "${ text }"`)
 	return button
 }
@@ -365,8 +365,10 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 				async sendMessage(message: unknown) {
 					// Browser messaging clones serialized records into ordinary objects.
 					sentMessages.push(structuredClone(message))
-					return replyToMessage?.(message)
+					return replyToMessage?.(message) ?? (hasMethod(message, 'signing_walletBindings') ? { ok: true, bindings: [] } : undefined)
 				},
+				// The signing wallet list listens for the background's binding-change announcements.
+				onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			},
 		},
 	})
@@ -409,6 +411,9 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
+	let restoreBrowser: (() => void) | undefined
+	beforeEach(() => { restoreBrowser = installBrowserMock().restore })
+	afterEach(() => { restoreBrowser?.() })
 	test('keeps mode switching busy after the saved mode arrives and exposes failures', async () => {
 		const dom = installDomMock()
 		let rejectChange: ((error: Error) => void) | undefined
@@ -582,6 +587,20 @@ describe('Home popup clear empty state', () => {
 		} finally {
 			render(undefined, dom.document.body)
 			dom.restore()
+		}
+	})
+
+	test('one Home load requests the signing wallet bindings once', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		try {
+			await act(() => { render(h(Home, createHomeParams({ simVisResults: new Signal(PASSTHROUGH_STATE) })), dom.document.body) })
+			await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
+			assert.equal(browserMock.sentMessages.filter((message) => hasMethod(message, 'signing_walletBindings')).length, 1)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
 		}
 	})
 
@@ -921,11 +940,11 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
-	test('treats a known signer account as connected even if the signerConnected flag is stale', async () => {
+	test('shows signing wallet assignment independently of a stale browser connection flag', async () => {
 		const dom = installDomMock()
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
 		try {
-			await act(() => {
+			await act(async () => {
 				render(h(Home, createHomeParams({
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
@@ -946,15 +965,16 @@ describe('Home popup clear empty state', () => {
 					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' }),
 				})), dom.document.body)
 			})
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 
-			assert.equal(dom.document.body.textContent?.includes('CONNECTED'), true)
+			assert.equal(dom.document.body.textContent?.includes('No signing wallet'), true, dom.document.body.textContent ?? '')
 			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('disables the active-address selector when signing mode has no Safe alternative', async () => {
+	test('keeps the active-address selector available without a browser wallet', async () => {
 		const dom = installDomMock()
 		let changeActiveAddressCalls = 0
 		try {
@@ -981,7 +1001,7 @@ describe('Home popup clear empty state', () => {
 
 			assert.equal(dom.document.body.textContent?.includes('Connect a browser wallet to sign with the selected address.'), true)
 			const changeButton = getButtonByText(dom.document.body, 'Change')
-			assert.equal(changeButton.attributes.disabled !== undefined, true)
+			assert.equal(changeButton.attributes.disabled !== undefined, false)
 			assert.equal(changeActiveAddressCalls, 0)
 		} finally {
 			render(null, dom.document.body)
@@ -1090,7 +1110,7 @@ describe('Home popup clear empty state', () => {
 				element.getAttribute?.('class')?.includes('safe-signer-option') === true
 			)
 			assert.equal(signerOptions.length, 0)
-			assert.equal(popupText.includes('CONNECTED'), true)
+			assert.equal(popupText.includes('CONNECTED'), false)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
 			assert.equal(popupText.includes('You cannot sign the current Gnosis Safe with it.'), false)
 		} finally {
@@ -1542,7 +1562,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			const popupText = dom.document.body.textContent ?? ''
 			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
-			assert.equal(popupText.includes('CONNECTED'), true)
+			assert.equal(popupText.includes('CONNECTED'), false)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
 			assert.equal(popupText.includes('MetaMask has'), false)
 			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), false)

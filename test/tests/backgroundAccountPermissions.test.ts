@@ -15,12 +15,12 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 describe('background eth_accounts', () => {
 	test('confirms a persisted popup address before slow permission work completes', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { changeActiveAddress, changeSimulationMode, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const { changeActiveAddress, changeSimulationMode, getSettings, updateAddressBookAndSigningWalletBindings, updateWebsiteAccess } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		const previousAddress = 1n
 		const nextAddress = 2n
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: previousAddress })
-		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Next wallet', address: nextAddress, entrySource: 'User', useAsActiveAddress: true }])
+		await updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', name: 'Next wallet', address: nextAddress, entrySource: 'User', useAsActiveAddress: true }])
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://address-switch-test.example' }, access: true, addressAccess: [], declarativeNetRequestBlockMode: 'block-all' }])
 		const permissionWorkStarted = createDeferredValue<void>()
 		const releasePermissionWork = createDeferredValue<void>()
@@ -222,7 +222,7 @@ describe('background eth_accounts', () => {
 		), true)
 	})
 
-	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
+	test('allows saved ordinary addresses while rejecting unverified or unowned Safes in signing mode', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -231,7 +231,7 @@ describe('background eth_accounts', () => {
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const signerAddress = 0x1111111111111111111111111111111111111111n
 		const arbitraryEoa = 0x2222222222222222222222222222222222222222n
@@ -240,7 +240,7 @@ describe('background eth_accounts', () => {
 		const tabId = 199
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
 		await setUseSignersAddressAsActiveAddress(true, signerAddress)
-		await updateUserAddressBookEntries(() => [
+		await updateAddressBookAndSigningWalletBindings(() => [
 			{
 				type: 'contact',
 				name: 'Arbitrary EOA',
@@ -285,7 +285,8 @@ describe('background eth_accounts', () => {
 		})
 
 		const settings = await getSettings()
-		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
+		assert.equal(readStoredValue('activeSigningAddress'), arbitraryEoa)
+		assert.equal(settings.selectedSigningAddress, arbitraryEoa)
 		assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	})
 
@@ -295,12 +296,12 @@ describe('background eth_accounts', () => {
 			changeActiveAddress,
 			changeSimulationMode,
 			getSettings,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const originalAddress = 0x3131313131313131313131313131313131313131n
 		const wrongChainSafe = 0x4141414141414141414141414141414141414141n
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress })
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Wrong-chain Safe',
 			address: wrongChainSafe,
@@ -332,12 +333,12 @@ describe('background eth_accounts', () => {
 			activateAddressSelection,
 			changeSimulationMode,
 			getSettings,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const signerAddress = 0x4141414141414141414141414141414141414141n
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined, activeSigningSafeAddress: undefined })
 		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Other-chain Safe with signer address',
 			address: signerAddress,
@@ -359,7 +360,7 @@ describe('background eth_accounts', () => {
 		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Current-chain Safe with signer address',
 			address: signerAddress,
@@ -385,7 +386,7 @@ describe('background eth_accounts', () => {
 			requestAddressChange,
 			updatePendingAccessRequests,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const safeAndSignerAddress = 0x5151515151515151515151515151515151515151n
 		const originalAddress = 0x5252525252525252525252525252525252525252n
@@ -395,7 +396,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId, connectionName: 0n }
 		const website = { websiteOrigin: 'https://self-owned-safe.example', icon: undefined, title: undefined }
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: safeAndSignerAddress, activeSigningSafeAddress: undefined })
-		await updateUserAddressBookEntries(() => [originalEntry, selfOwnedSafe])
+		await updateAddressBookAndSigningWalletBindings(() => [originalEntry, selfOwnedSafe])
 		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [safeAndSignerAddress], activeSigningAddress: safeAndSignerAddress }))
 		await updatePendingAccessRequests(async () => [{
 			website,
@@ -436,7 +437,7 @@ describe('background eth_accounts', () => {
 			resolveInterceptorAccess,
 			updatePendingAccessRequests,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const address = 0x5353535353535353535353535353535353535353n
 		const signerEntry = { type: 'contact' as const, name: 'Signer', address, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
@@ -445,7 +446,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId, connectionName: 0n }
 		const website = { websiteOrigin: 'https://same-address-safe.example', icon: undefined, title: undefined }
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: address, activeSigningSafeAddress: undefined })
-		await updateUserAddressBookEntries(() => [selfOwnedSafe])
+		await updateAddressBookAndSigningWalletBindings(() => [selfOwnedSafe])
 		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [address], activeSigningAddress: address }))
 		await updatePendingAccessRequests(async () => [{
 			website,
@@ -496,7 +497,7 @@ describe('background eth_accounts', () => {
 			hasAddressAccess,
 			handleInterceptedRequest,
 			requestAddressChange,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -504,7 +505,7 @@ describe('background eth_accounts', () => {
 		const websiteOrigin = 'https://chain-scoped-metadata.example'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
-		await updateUserAddressBookEntries(() => [
+		await updateAddressBookAndSigningWalletBindings(() => [
 			{ type: 'contact', name: 'Wrong-chain address', address: activeAddress, chainId: 10n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false },
 		])
 
@@ -539,7 +540,7 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'eth_requestAccounts' && message.requestId === 42), false)
 		assert.equal((await getAddressMetadataForAccess((await getSettings()).websiteAccess, 1n))[0]?.name === 'Wrong-chain address', false)
 
-		await updateUserAddressBookEntries(() => [
+		await updateAddressBookAndSigningWalletBindings(() => [
 			{ type: 'contact', name: 'Wrong-chain address', address: activeAddress, chainId: 10n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false },
 			{ type: 'contact', name: 'Current-chain address', address: activeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
 		])
@@ -566,14 +567,14 @@ describe('background eth_accounts', () => {
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const safeAddress = 0x4040404040404040404040404040404040404040n
 		const previousOwner = 0x4141414141414141414141414141414141414141n
 		const tabId = 198
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: previousOwner, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Disconnected Safe',
 			address: safeAddress,
@@ -604,7 +605,7 @@ describe('background eth_accounts', () => {
 			getSettings,
 			handleInterceptedRequest,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -615,7 +616,7 @@ describe('background eth_accounts', () => {
 		const formerOwner = 0x4747474747474747474747474747474747474747n
 		const socket = { tabId: 197, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'No longer owned Safe',
 			address: safeAddress,
@@ -660,13 +661,13 @@ describe('background eth_accounts', () => {
 			getSigningAddressPreferences,
 			saveCurrentTabId,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const signerAddress = 0x4242424242424242424242424242424242424242n
 		const safeAddress = 0x4343434343434343434343434343434343434343n
 		const tabId = 200
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Signer Safe',
 			address: safeAddress,
@@ -702,7 +703,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updatePendingAccessRequests,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 		} = await loadModules()
 		const safeAddress = 0x5151515151515151515151515151515151515151n
@@ -723,7 +724,7 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: ownerAtApproval })
 		await setUseSignersAddressAsActiveAddress(true, ownerAtApproval)
 		await updateWebsiteAccess(() => [])
-		await updateUserAddressBookEntries(() => [safeEntry])
+		await updateAddressBookAndSigningWalletBindings(() => [safeEntry])
 		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [ownerAtApproval], activeSigningAddress: ownerAtApproval }))
 		await updatePendingAccessRequests(async () => [{
 			website,
@@ -1071,7 +1072,7 @@ describe('background eth_accounts', () => {
 			initializeSafeAppsCompatibility,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1087,7 +1088,7 @@ describe('background eth_accounts', () => {
 		})
 		await setUseSignersAddressAsActiveAddress(false)
 		await setSafeAppsCompatibilityMode(true)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Configured Safe',
 			address: configuredSafeAddress,
@@ -1143,7 +1144,7 @@ describe('background eth_accounts', () => {
 				initializeSafeAppsCompatibility,
 				setUseSignersAddressAsActiveAddress,
 				updateTabState,
-				updateUserAddressBookEntries,
+				updateAddressBookAndSigningWalletBindings,
 				updateWebsiteAccess,
 				websiteSocketToString,
 			} = await loadModules()
@@ -1154,7 +1155,7 @@ describe('background eth_accounts', () => {
 			await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: safeOwner, activeSigningSafeAddress: configuredSafeAddress })
 			await setUseSignersAddressAsActiveAddress(false)
 			await setSafeAppsCompatibilityMode(featureEnabled)
-			await updateUserAddressBookEntries(() => [{
+			await updateAddressBookAndSigningWalletBindings(() => [{
 				type: 'safe',
 				name: 'Configured Safe',
 				address: configuredSafeAddress,
@@ -1228,7 +1229,7 @@ describe('background eth_accounts', () => {
 			initializeSafeAppsCompatibility,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1239,7 +1240,7 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: signerAddress, activeSigningSafeAddress: configuredSafeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
 		await setSafeAppsCompatibilityMode(true)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Configured Safe',
 			address: configuredSafeAddress,
@@ -1524,7 +1525,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			getPendingAccessRequests,
 			getSettings,
 			resolveInterceptorAccess,
@@ -1535,7 +1536,7 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Same-address Safe',
 			address: account,
@@ -2525,7 +2526,7 @@ describe('background eth_accounts', () => {
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -2536,7 +2537,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 173, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -2923,14 +2924,14 @@ describe('background eth_accounts', () => {
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const signerAddress = 0x6868686868686868686868686868686868686868n
 		const safeAddress = 0x6969696969696969696969696969696969696969n
 		const tabId = 198
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: signerAddress })
 		await setUseSignersAddressAsActiveAddress(true, signerAddress)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Signer-owned Safe',
 			address: safeAddress,
@@ -2980,7 +2981,7 @@ describe('background eth_accounts', () => {
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -2992,7 +2993,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: simulationAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -3028,7 +3029,7 @@ describe('background eth_accounts', () => {
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeSignerAddress)
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 
-		await updateUserAddressBookEntries((entries) => entries.map((entry) => entry.type === 'safe' ? { ...entry, safeSignerAddresses: [safeSignerAddress] } : entry))
+		await updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => entry.type === 'safe' ? { ...entry, safeSignerAddresses: [safeSignerAddress] } : entry))
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: simulationAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
 		await enableSimulationMode(simulationServicesOwner, websiteTabConnections, {
@@ -3129,7 +3130,7 @@ describe('background eth_accounts', () => {
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -3141,7 +3142,7 @@ describe('background eth_accounts', () => {
 		const unrelatedSocket = { tabId: 2, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -3220,5 +3221,26 @@ describe('background eth_accounts', () => {
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
 		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
+	})
+	test('selecting a Safe that shares its address with a contact activates the Safe and its saved signing accounts', async () => {
+		installBrowserMock()
+		const { changeActiveAddress, changeSimulationMode, getSettings, saveCurrentTabId, updateTabState, updateAddressBookAndSigningWalletBindings } = await loadModules()
+		const signerAddress = 0x1111111111111111111111111111111111111111n
+		const executionAddress = 0x5555555555555555555555555555555555555555n
+		const sharedAddress = 0x6666666666666666666666666666666666666666n
+		const tabId = 201
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
+		await updateAddressBookAndSigningWalletBindings(() => [
+			{ type: 'contact', name: 'Shadowing contact', address: sharedAddress, entrySource: 'User', useAsActiveAddress: true, chainId: 'AllChains' },
+			{ type: 'safe', name: 'Shared-address Safe', address: sharedAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSigningSignerAddress: signerAddress, safeExecutionAddress: executionAddress, safeSignerAddresses: [signerAddress] },
+		])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [signerAddress], activeSigningAddress: signerAddress }))
+		await saveCurrentTabId(tabId)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const reply = await changeActiveAddress(simulationServicesOwner, new Map(), { method: 'popup_changeActiveAddress', data: { activeAddress: sharedAddress, simulationMode: false, activeAddressKind: 'safe' } })
+		assert.deepEqual(reply, { type: 'ChangeActiveAddressReply', ok: true })
+		const settings = await getSettings()
+		assert.equal(settings.activeSigningSafeAddress, sharedAddress)
+		assert.equal(settings.selectedSigningAddress, undefined)
 	})
 })

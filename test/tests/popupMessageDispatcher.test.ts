@@ -697,6 +697,64 @@ describe('popup message dispatcher seams', () => {
 	})
 })
 
+// Popup and signing-page messages share one runtime channel; only the signing service's own methods are routed to it.
+test('only signing-page methods reach the signing service, so a popup method starting with signing stays with the popup handler', async () => {
+	const { isSigningPageMessage } = await import('../../app/ts/background/signingRequestService.js')
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	for (const method of Object.keys(signingPageReplyCodecs)) assert.equal(isSigningPageMessage({ method }), true, method)
+	for (const method of ['signing_unknown', 'signingWallets', 'signing_', 'popup_signing_get', 'toString', '__proto__']) assert.equal(isSigningPageMessage({ method }), false, method)
+	assert.equal(isSigningPageMessage({ method: 'popup_requestSettings' }), false)
+})
+
+// The setup page's reply carries each connected browser wallet's identity and accounts, not the tab's popup state.
+test('the signing wallet setup reply lists linkable browser wallets without tab state', async () => {
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	const { signingPageMessageHandler } = await import('../../app/ts/background/signingRequestService.js')
+	const { updateTabState } = await import('../../app/ts/background/storageVariables.js')
+	const context = createDispatcherContext(async () => { throw new Error('Signing must not reset popup simulation') })
+	await updateTabState(5, (state) => ({ ...state, signerName: 'MetaMask', signerProvider: { ambiguous: false, rdns: 'io.metamask' }, signerConnected: true, signerAccounts: [0x1111111111111111111111111111111111111111n] }))
+	const decoded = signingPageReplyCodecs.signing_wallets.parse(await signingPageMessageHandler({ method: 'signing_wallets' }, context.simulationServicesOwner.getCurrent(), context.websiteTabConnections))
+	if (!decoded.ok) throw new Error(decoded.message)
+	assert.deepEqual(decoded.browserWallets, [{ tabId: 5, signerName: 'MetaMask', providerId: 'eip6963:io.metamask', label: 'io.metamask', accounts: [0x1111111111111111111111111111111111111111n] }])
+	assert.equal(decoded.ambiguousBrowserWalletIdentity, false)
+})
+
+// The popup labels addresses with their signing wallets on every render and refresh, so its request must not read every tab's state.
+test('the signing wallet bindings request reads no tab state', async () => {
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	const { signingPageMessageHandler } = await import('../../app/ts/background/signingRequestService.js')
+	const context = createDispatcherContext(async () => { throw new Error('Signing must not reset popup simulation') })
+	const readKeys: unknown[] = []
+	const originalGet = browser.storage.local.get
+	browser.storage.local.get = async (keys?: Parameters<typeof originalGet>[0]) => { readKeys.push(keys); return await originalGet(keys) }
+	try {
+		const decoded = signingPageReplyCodecs.signing_walletBindings.parse(await signingPageMessageHandler({ method: 'signing_walletBindings' }, context.simulationServicesOwner.getCurrent(), context.websiteTabConnections))
+		assert.deepEqual(decoded, { ok: true, bindings: [] })
+	} finally { browser.storage.local.get = originalGet }
+	const readsEveryKey = readKeys.some((keys) => keys === null || keys === undefined)
+	const readsTabState = readKeys.some((keys) => (Array.isArray(keys) ? keys : [keys]).some((key) => typeof key === 'string' && key.startsWith('tabState_')))
+	assert.equal(readsEveryKey || readsTabState, false)
+})
+
+test('signing requests use their service and codecs without entering the popup registry', async () => {
+	const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	const { signingPageMessageHandler } = await import('../../app/ts/background/signingRequestService.js')
+	const context = createDispatcherContext(async () => { throw new Error('Signing must not reset popup simulation') })
+	const services = context.simulationServicesOwner.getCurrent()
+	const reply = await signingPageMessageHandler({ method: 'signing_wallets' }, services, context.websiteTabConnections)
+	const decoded = signingPageReplyCodecs.signing_wallets.parse(reply)
+	assert.equal(decoded.ok, true)
+	if (!decoded.ok) throw new Error(decoded.message)
+	assert.deepEqual(decoded.bindings, [])
+	assert.deepEqual(decoded.browserWallets, [])
+	assert.equal(decoded.ambiguousBrowserWalletIdentity, false)
+	assert.equal(PopupMessage.safeParse({ method: 'signing_wallets' }).success, false)
+	const invalid = await signingPageMessageHandler({ method: 'signing_result', id: 'request', revision: 'revision', result: 42 }, services, context.websiteTabConnections)
+	assert.equal(signingPageReplyCodecs.signing_result.parse(invalid).ok, false)
+	assert.equal(signingPageReplyCodecs.signing_get.safeParse({ ok: true, record: {} }).success, false)
+})
+
 describe('settings import installs the imported network', () => {
 	const importedSepoliaNetwork = {
 		name: 'Imported Sepolia',

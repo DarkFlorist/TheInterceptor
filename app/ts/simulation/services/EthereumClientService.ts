@@ -11,6 +11,7 @@ import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
+import { EthereumBytes32 as EthereumBytes32Codec } from '../../types/wire-types.js'
 import type { RpcEntry } from '../../types/rpc.js'
 import type { SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
@@ -326,6 +327,17 @@ export class EthereumClientService {
 		if (cached) return cached.number
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_blockNumber' }, requestAbortController)
 		return EthereumQuantity.parse(response)
+	}
+
+	// The chain the RPC itself reports, unlike getChainId, which is the configured entry's chain.
+	public readonly getNetworkChainId = async (requestAbortController: AbortController | undefined) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_chainId' }, requestAbortController)
+		return EthereumQuantity.parse(response)
+	}
+
+	public readonly sendRawTransaction = async (signedTransaction: Uint8Array, requestAbortController: AbortController | undefined) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_sendRawTransaction', params: [signedTransaction] }, requestAbortController)
+		return EthereumBytes32Codec.parse(response)
 	}
 
 	public readonly getGasPrice = async(requestAbortController: AbortController | undefined) => {

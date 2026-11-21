@@ -149,7 +149,7 @@ describe('UI mutation completion', () => {
 		try {
 			await completesPromptly(modules.changeAddOrModifyAddressWindowState(ethereum, { method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: state.windowStateId, newState: state } }))
 			assert.equal(requests, 0)
-			await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address: BigInt(address), chainId: 1n, name: 'Existing', entrySource: 'User' }])
+			await modules.updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', address: BigInt(address), chainId: 1n, name: 'Existing', entrySource: 'User' }])
 			await completesPromptly(modules.changeAddOrModifyAddressWindowState(ethereum, { method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: state.windowStateId, newState: state } }))
 			const page = await modules.getPage()
 			assert.ok(page.page === 'AddNewAddress')
@@ -165,7 +165,7 @@ describe('UI mutation completion', () => {
 		const { allowOrPreventAddressAccessForWebsite } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const address = signedTransaction.from
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
-		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
+		await modules.updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
 		const website = { websiteOrigin: 'changed.test' }
 		await modules.updateWebsiteAccess(() => [website, { websiteOrigin: 'unrelated.test' }].map(website => ({ website, access: true, addressAccess: [{ address, access: true }] })))
 		let reconciled = false
@@ -206,7 +206,7 @@ describe('UI mutation completion', () => {
 		const { allowOrPreventAddressAccessForWebsite } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const address = signedTransaction.from
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
-		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
+		await modules.updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
 		const website = { websiteOrigin: 'edited.test' }
 		await modules.updateWebsiteAccess(() => [website, { websiteOrigin: 'unrelated.test' }].map(website => ({ website, access: true, addressAccess: [{ address, access: true }] })))
 		const approvals: boolean[] = []
@@ -273,7 +273,7 @@ describe('UI mutation completion', () => {
 		const address = signedTransaction.from
 		const website = { websiteOrigin: `revocation-${ mode }-${ failure.replaceAll(' ', '-') }.test` }
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
-		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
+		await modules.updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
 		await modules.updateWebsiteAccess(() => [website, { websiteOrigin: 'still-allowed.test' }].map(website => ({ website, access: true, addressAccess: [{ address, access: true }], declarativeNetRequestBlockMode: 'block-all' })))
 		const entry = (await modules.getSettings()).websiteAccess.find(entry => entry.website.websiteOrigin === website.websiteOrigin)
 		assert.ok(entry)
@@ -365,7 +365,7 @@ describe('UI mutation completion', () => {
 		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const address = 42n
-		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Removed account', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
+		await modules.updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', address, name: 'Removed account', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
 		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'blocked-removal.test' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
 		const socket = { tabId: 1, connectionName: 0n }
 		const connection = { port: createPort(1).port, socket, websiteOrigin: 'blocked-removal.test', approved: true, wantsToConnect: true }

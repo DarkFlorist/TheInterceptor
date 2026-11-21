@@ -48,11 +48,12 @@ type NetworkWithoutRpcErrorParams = {
 	rpcNetwork: RpcNetwork | undefined
 	simulationMode: boolean
 	signerAvailability: SignerAvailability
+	activeAddressSignsDirectly: boolean
 }
 
-export function NetworkWithoutRpcError({ rpcNetwork, simulationMode, signerAvailability }: NetworkWithoutRpcErrorParams) {
+export function NetworkWithoutRpcError({ rpcNetwork, simulationMode, signerAvailability, activeAddressSignsDirectly }: NetworkWithoutRpcErrorParams) {
 	if (rpcNetwork === undefined) return <></>
-	const warningState = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, signerAvailability)
+	const warningState = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, signerAvailability, activeAddressSignsDirectly)
 	if (warningState.kind === 'none') return <></>
 	return <ErrorComponent text = { getNetworkWithoutRpcWarningText(rpcNetwork.name, warningState) }/>
 }

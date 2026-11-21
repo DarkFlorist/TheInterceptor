@@ -1,0 +1,299 @@
+import { beforeEach, expect, spyOn, test } from 'bun:test'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { bytesFromHex, bytesToHex } from '../../app/ts/utils/ethereumBytes.js'
+import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
+import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
+import { SigningWallet, SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
+import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+
+const stored: Record<string, unknown> = {}
+const writes: Record<string, unknown>[] = []
+// Messages the background broadcasts to open extension pages.
+const broadcasts: unknown[] = []
+Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: {
+	runtime: { sendMessage: async (message: unknown) => { broadcasts.push(message) } },
+	storage: { local: {
+		remove: async (key: string) => { delete stored[key] },
+		get: async (keys: string | readonly string[]) => Object.fromEntries((typeof keys === 'string' ? [keys] : keys).filter((key) => key in stored).map((key) => [key, stored[key]])),
+		set: async (items: Record<string, unknown>) => { writes.push(items); Object.assign(stored, items) },
+	} },
+} })
+const { saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+const { getSigningWalletBindings } = await import('../../app/ts/background/signingWalletStore.js')
+const { getUserAddressBookEntries } = await import('../../app/ts/background/addressBookStore.js')
+const privateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
+const address = BigInt(privateKeyToAccount(privateKey).address)
+const ledger: SigningWallet = { type: 'ledger', label: 'Main device · Account 1', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }
+const airgap: SigningWallet = { type: 'airgap', label: 'Vault · Account 1', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), true)), derivationPath: ledger.derivationPath, sourceFingerprint: 0x11223344 }
+
+beforeEach(async () => {
+	for (const key of Object.keys(stored)) delete stored[key]
+	writes.length = 0
+	broadcasts.length = 0
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [], simulationMode: true, independentActiveSimulationAddress: 1n, activeSigningAddress: 2n, websiteAccess: [] })
+	writes.length = 0
+})
+
+test('onboarding stores the public binding and address together without changing selections, mode or permissions', async () => {
+	const before = { ...stored }
+	const saved = await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	expect(saved?.wallet).toEqual(ledger)
+	expect(writes).toHaveLength(1)
+	expect(Object.keys(writes[0] ?? {}).sort()).toEqual(['signingWalletBindings', 'userAddressBookEntriesV3'])
+	for (const key of ['simulationMode', 'independentActiveSimulationAddress', 'activeSigningAddress', 'websiteAccess']) expect(stored[key]).toEqual(before[key])
+	expect(await getSigningWalletBindings()).toEqual([saved])
+	expect((await getUserAddressBookEntries())[0]).toMatchObject({ address, name: 'Savings', chainId: 'AllChains', useAsActiveAddress: true })
+})
+
+test('linking reuses an existing address and removing a binding retains its entry', async () => {
+	const existing = { type: 'contact', address, name: 'Existing', chainId: 1n, entrySource: 'User', askForAddressAccess: false } satisfies ContactEntry
+	await updateAddressBookAndSigningWalletBindings(() => [existing])
+	const first = await saveAddressSigningWallet(address, ledger, undefined, 'Ignored name')
+	const second = await saveAddressSigningWallet(address, airgap, first?.revision)
+	expect(second?.revision).not.toBe(first?.revision)
+	expect(await getUserAddressBookEntries()).toEqual([existing])
+	await saveAddressSigningWallet(address, undefined, second?.revision)
+	expect(await getUserAddressBookEntries()).toEqual([existing])
+	expect(await getSigningWalletBindings()).toEqual([])
+})
+
+test('concurrent wallet changes require the reviewed revision and never silently overwrite another wallet', async () => {
+	const results = await Promise.allSettled([saveAddressSigningWallet(address, ledger, undefined, 'Savings'), saveAddressSigningWallet(address, airgap, undefined, 'Savings')])
+	expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+	expect((await getSigningWalletBindings())[0]?.wallet.type).toBe('ledger')
+	expect(await getUserAddressBookEntries()).toHaveLength(1)
+	await expect(saveAddressSigningWallet(address, undefined, undefined)).rejects.toThrow('changed')
+})
+
+test('wallet onboarding shares serialization with address book edits', async () => {
+	await Promise.all([saveAddressSigningWallet(address, ledger, undefined, 'Savings'), updateAddressBookAndSigningWalletBindings((entries) => [...entries, { type: 'contact', address: 3n, name: 'Manual', entrySource: 'User' }])])
+	expect((await getUserAddressBookEntries()).map((entry) => entry.address)).toEqual([address, 3n])
+	expect(await getSigningWalletBindings()).toHaveLength(1)
+})
+
+test('mismatching public identities, private keys, invalid paths and Safe bindings are rejected before writing', async () => {
+	for (const invalid of [ { ...ledger, publicKey: privateKey }, { ...ledger, derivationPath: 'm/44\'/60\'/*' }, { ...airgap, sourceFingerprint: 0 }, { ...airgap, derivationPath: 'm/44\'/0\'/0\'/0/0' }]) expect(SigningWallet.safeSerialize(invalid).success).toBe(false)
+	await expect(saveAddressSigningWallet(4n, ledger, undefined, 'Mismatch')).rejects.toThrow('match')
+	await expect(saveAddressSigningWallet(4n, { ...ledger, address: 4n }, undefined, 'Mismatch')).rejects.toThrow('public key')
+	expect(writes).toHaveLength(0)
+	await updateAddressBookAndSigningWalletBindings(() => [{ type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
+	await expect(saveAddressSigningWallet(address, ledger, undefined)).rejects.toThrow('owner')
+	expect(await getSigningWalletBindings()).toEqual([])
+})
+
+test('absent bindings stay absent and corrupt persisted bindings fail closed without deleting saved data', async () => {
+	expect(await getSigningWalletBindings()).toEqual([])
+	stored.signingWalletBindings = [{ wallet: { ...ledger, publicKey: privateKey, address: '0x0000000000000000000000000000000000000004' }, revision: crypto.randomUUID() }]
+	const before = structuredClone(stored)
+	await expect(getSigningWalletBindings()).rejects.toThrow()
+	expect(stored).toEqual(before)
+	const binding = { wallet: ledger, revision: crypto.randomUUID() }
+	expect(SigningWalletBindings.safeSerialize([binding, binding]).success).toBe(false)
+})
+
+test('removing the last chain-scoped entry prunes its binding while retaining another scope keeps it', async () => {
+	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	await updateAddressBookAndSigningWalletBindings((entries) => [...entries, { type: 'contact', address, name: 'Chain entry', chainId: 1n, entrySource: 'User' }])
+	await updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.chainId === 1n))
+	expect(await getSigningWalletBindings()).toHaveLength(1)
+	await updateAddressBookAndSigningWalletBindings(() => [])
+	expect(await getSigningWalletBindings()).toEqual([])
+	expect(stored.signingWalletBindings).toEqual([])
+})
+
+test('converting or adding an address as a Safe removes its ordinary signing binding in the same write', async () => {
+	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const safe = { type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true } satisfies import('../../app/ts/types/addressBookTypes.js').SafeEntry
+	await updateAddressBookAndSigningWalletBindings((entries) => [...entries, safe])
+	expect(await getSigningWalletBindings()).toEqual([])
+	expect(writes.at(-1)).toHaveProperty('signingWalletBindings', [])
+	await updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.type !== 'safe'))
+	await saveAddressSigningWallet(address, ledger, undefined)
+	await updateAddressBookAndSigningWalletBindings(() => [safe])
+	expect(await getSigningWalletBindings()).toEqual([])
+})
+
+test('lookups never return orphaned or Safe-address bindings even from stale persisted data', async () => {
+	const { getSigningWalletBinding } = await import('../../app/ts/background/signingWalletStore.js')
+	await browserStorageLocalSet({ signingWalletBindings: [{ wallet: ledger, revision: crypto.randomUUID() }] })
+	expect(await getSigningWalletBinding(address)).toBeUndefined()
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [{ type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }] })
+	expect(await getSigningWalletBinding(address)).toBeUndefined()
+	await updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', address, name: 'Restored contact', entrySource: 'User' }])
+	expect(await getSigningWalletBinding(address)).toBeUndefined()
+})
+
+test('settings backups round-trip every wallet backend and refresh revisions on restore', async () => {
+	const { exportSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { importSettingsAndAddressBook } = await import('../../app/ts/background/settingsImport.js')
+	const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	const browserWallet: SigningWallet = { type: 'browser', address, label: 'Browser account', signerName: 'MetaMask', providerId: 'io.metamask' }
+	for (const wallet of [ledger, airgap, browserWallet]) {
+		const previous = (await getSigningWalletBindings())[0]
+		const saved = await saveAddressSigningWallet(address, wallet, previous?.revision, 'Savings')
+		const exported = await exportSettingsAndAddressBook()
+		expect(exported.version).toBe('1.7')
+		await importSettingsAndAddressBook(ExportedSettings.parse(ExportedSettings.serialize(exported)))
+		const restored = (await getSigningWalletBindings())[0]
+		expect(restored?.wallet).toEqual(wallet)
+		expect(restored?.revision).not.toBe(saved?.revision)
+		expect(await getUserAddressBookEntries()).toHaveLength(1)
+	}
+})
+
+test('legacy settings imports explicitly clear local bindings and invalid new backups leave storage unchanged', async () => {
+	const { exportSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { importSettingsAndAddressBook } = await import('../../app/ts/background/settingsImport.js')
+	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const exported = await exportSettingsAndAddressBook()
+	if (exported.version !== '1.7') throw new Error('Expected current settings backup version')
+	const before = structuredClone(stored)
+	await expect(importSettingsAndAddressBook({ ...exported, settings: { ...exported.settings, addressBookEntries: [] } })).rejects.toThrow('ordinary addresses')
+	expect(stored).toEqual(before)
+	const { signingWalletBindings: _bindings, ...legacySettings } = exported.settings
+	await importSettingsAndAddressBook({ ...exported, version: '1.5', settings: legacySettings })
+	expect(await getSigningWalletBindings()).toEqual([])
+	expect(await getUserAddressBookEntries()).toHaveLength(1)
+})
+
+test('version 1.6 backups retain Safe Apps compatibility without requiring signing wallet fields', async () => {
+	const { exportSettingsAndAddressBook, getSafeAppsCompatibilityMode } = await import('../../app/ts/background/settings.js')
+	const { importSettingsAndAddressBook } = await import('../../app/ts/background/settingsImport.js')
+	const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const exported = await exportSettingsAndAddressBook()
+	if (exported.version !== '1.7') throw new Error('Expected current settings backup version')
+	const { signingWalletBindings: _bindings, ...settings } = exported.settings
+	const legacy = { ...exported, version: '1.6' as const, settings: { ...settings, safeAppsCompatibilityMode: true } }
+	await importSettingsAndAddressBook(ExportedSettings.parse(ExportedSettings.serialize(legacy)))
+	expect(await getSafeAppsCompatibilityMode()).toBe(true)
+	expect(await getSigningWalletBindings()).toEqual([])
+	expect(await getUserAddressBookEntries()).toHaveLength(1)
+})
+
+test('metadata-only address book edits do not read or rewrite signing bindings', async () => {
+	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const bindings = stored.signingWalletBindings
+	writes.length = 0
+	stored.signingWalletBindings = 'unrelated corrupt wallet storage'
+	await updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed' })))
+	expect(writes).toHaveLength(1)
+	expect(Object.keys(writes[0] ?? {})).toEqual(['userAddressBookEntriesV3'])
+	expect(stored.signingWalletBindings).toBe('unrelated corrupt wallet storage')
+	stored.signingWalletBindings = bindings
+	writes.length = 0
+	await updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed again' })))
+	expect(Object.keys(writes[0] ?? {})).toEqual(['userAddressBookEntriesV3'])
+})
+
+test('codecs parse public identity structurally while import and admission verify it explicitly', async () => {
+	const { addressBookAndSigningWalletBindingsImportWrites } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { assertSigningWalletIdentity } = await import('../../app/ts/signing/publicAccountIdentity.js')
+	const wallet = { ...ledger, address: 4n }
+	expect(SigningWallet.safeSerialize(wallet).success).toBe(true)
+	const entry = { type: 'contact', address: 4n, name: 'Invalid identity', entrySource: 'User' } satisfies ContactEntry
+	const bindings = [{ wallet, revision: crypto.randomUUID() }]
+	expect(() => addressBookAndSigningWalletBindingsImportWrites([entry], bindings)).toThrow('public key')
+	expect(writes).toHaveLength(0)
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [entry], signingWalletBindings: bindings })
+	expect(await getSigningWalletBindings()).toEqual(bindings)
+	expect(() => assertSigningWalletIdentity(wallet)).toThrow('public key')
+})
+
+test('routing binding reads neither wait for address-book mutations nor load address-book data', async () => {
+	const { getStoredSigningWalletBinding } = await import('../../app/ts/background/signingWalletStore.js')
+	const saved = await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	let release: () => void = () => undefined
+	let entered: () => void = () => undefined
+	const gate = new Promise<void>((resolve) => { release = resolve })
+	const ready = new Promise<void>((resolve) => { entered = resolve })
+	const set = spyOn(browser.storage.local, 'set').mockImplementation(async (items) => {
+		entered()
+		await gate
+		Object.assign(stored, items)
+	})
+	const mutation = updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed' })))
+	await ready
+	const entries = stored.userAddressBookEntriesV3
+	stored.userAddressBookEntriesV3 = 'unreadable address book must not affect routing'
+	try {
+		expect(await getStoredSigningWalletBinding(address)).toEqual(saved)
+	} finally {
+		stored.userAddressBookEntriesV3 = entries
+		release()
+		await mutation
+		set.mockRestore()
+	}
+})
+
+test('Safe detail updates, the only address-book writes outside the coordinator, do not depend on signing-wallet storage', async () => {
+	const { updateSafeAddressBookEntryDetails } = await import('../../app/ts/background/addressBookStore.js')
+	const safe = { type: 'safe', name: 'Treasury', address: 7n, chainId: 1n, entrySource: 'User', useAsActiveAddress: true } as const
+	await updateAddressBookAndSigningWalletBindings(() => [safe])
+	stored.signingWalletBindings = 'corrupt signing configuration'
+	writes.length = 0
+	expect(await updateSafeAddressBookEntryDetails(1n, 7n, (details) => ({ ...details, safeVersion: '1.4.1' }))).toEqual({ ...safe, safeVersion: '1.4.1' })
+	expect(await getUserAddressBookEntries()).toEqual([{ ...safe, safeVersion: '1.4.1' }])
+	expect(stored.signingWalletBindings).toBe('corrupt signing configuration')
+	expect(writes.map((write) => Object.keys(write))).toEqual([['userAddressBookEntriesV3']])
+	expect(await updateSafeAddressBookEntryDetails(5n, 7n, (details) => details)).toBeUndefined()
+	expect(writes).toHaveLength(1)
+})
+
+const bindingsChangedBroadcasts = () => broadcasts.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signingWalletBindingsChanged').length
+
+test('extension pages are told to request the bindings again after each binding change, and only then', async () => {
+	const existing = { type: 'contact', address, name: 'Existing', chainId: 1n, entrySource: 'User', askForAddressAccess: false } satisfies ContactEntry
+	await updateAddressBookAndSigningWalletBindings(() => [existing])
+	expect(bindingsChangedBroadcasts()).toBe(0)
+	const saved = await saveAddressSigningWallet(address, ledger, undefined)
+	expect(bindingsChangedBroadcasts()).toBe(1)
+	await updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed' })))
+	expect(bindingsChangedBroadcasts()).toBe(1)
+	await updateAddressBookAndSigningWalletBindings(() => [])
+	expect(bindingsChangedBroadcasts()).toBe(2)
+	expect(saved).toBeDefined()
+})
+
+test('stale bindings of addresses outside the address book are pruned, so caching an identified address cannot revive one', async () => {
+	const { pruneIneligibleSigningWalletBindings } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { addAddressBookEntryIfMissing } = await import('../../app/ts/background/addressBookStore.js')
+	const { getSigningWalletBinding } = await import('../../app/ts/background/signingWalletStore.js')
+	await browserStorageLocalSet({ signingWalletBindings: [{ wallet: ledger, revision: crypto.randomUUID() }] })
+	await pruneIneligibleSigningWalletBindings()
+	expect(stored.signingWalletBindings).toEqual([])
+	await addAddressBookEntryIfMissing({ type: 'contact', address, name: 'Identified on chain', entrySource: 'OnChain', chainId: 1n })
+	expect(await getSigningWalletBinding(address)).toBeUndefined()
+	expect((await getUserAddressBookEntries()).map((entry) => entry.name)).toEqual(['Identified on chain'])
+	await addAddressBookEntryIfMissing({ type: 'contact', address, name: 'Second identification', entrySource: 'OnChain', chainId: 1n })
+	expect((await getUserAddressBookEntries()).map((entry) => entry.name)).toEqual(['Identified on chain'])
+})
+
+test('the toolbar tooltip and the popup decide direct signing from the same reconciled bindings', async () => {
+	const { isActiveAddressSigningDirectlyNow } = await import('../../app/ts/background/pendingSigningWallet.js')
+	const { getSigningWalletBindingsReply } = await import('../../app/ts/background/signingWalletHandlers.js')
+	const { isActiveAddressSigningDirectly } = await import('../../app/ts/utils/requestRouting.js')
+	const { readSigningWalletBindings } = await import('../../app/ts/background/signingWalletStore.js')
+	const contact = { type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User' } satisfies ContactEntry
+	// The stored binding outlived its eligibility: the address is now also saved as a Safe, so the reconciled bindings leave it out.
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [contact, { type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }], signingWalletBindings: [{ wallet: ledger, revision: crypto.randomUUID() }] })
+	expect(isActiveAddressSigningDirectly(contact, await readSigningWalletBindings(), undefined)).toBe(true)
+	const popupReply = await getSigningWalletBindingsReply()
+	if (!popupReply.ok || !('bindings' in popupReply)) throw new Error('Expected the popup bindings')
+	const popupSignsDirectly = isActiveAddressSigningDirectly(contact, popupReply.bindings, undefined)
+	expect(popupSignsDirectly).toBe(false)
+	expect(await isActiveAddressSigningDirectlyNow(contact, undefined)).toBe(popupSignsDirectly)
+})
+
+test('deciding direct signing for the toolbar icon does not take the settings storage lock', async () => {
+	const settingsStorageTransaction = await import('../../app/ts/background/settingsStorageTransaction.js')
+	const { isActiveAddressSigningDirectlyNow } = await import('../../app/ts/background/pendingSigningWallet.js')
+	const saved = await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const contact = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
+	const lock = spyOn(settingsStorageTransaction, 'runSettingsStorageTransaction')
+	try {
+		expect(await isActiveAddressSigningDirectlyNow(contact, undefined)).toBe(true)
+		expect(lock).not.toHaveBeenCalled()
+	} finally { lock.mockRestore() }
+	expect(saved).toBeDefined()
+})

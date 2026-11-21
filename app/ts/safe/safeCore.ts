@@ -63,6 +63,13 @@ export const SAFE_ABI = [
 	},
 	{
 		type: 'function',
+		name: 'approvedHashes',
+		stateMutability: 'view',
+		inputs: [{ name: 'owner', type: 'address' }, { name: 'hash', type: 'bytes32' }],
+		outputs: [{ name: '', type: 'uint256' }],
+	},
+	{
+		type: 'function',
 		name: 'getThreshold',
 		stateMutability: 'view',
 		inputs: [],
@@ -151,6 +158,12 @@ export function assertSafeContractStateUnchanged(reviewedState: SafeContractStat
 	if (reviewedOwners.length !== currentOwners.length || reviewedOwners.some((owner, index) => owner !== currentOwners[index])) {
 		throw createSafeContractValidationFailure('The Gnosis Safe owner set changed after this confirmation opened.')
 	}
+}
+
+// Whether an owner approved a SafeTx hash on chain with approveHash at the block. The Safe accepts that owner's pre-validated signature from any sender only then; without it, only from the owner itself.
+export async function isSafeTxHashApprovedOnChain(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress, safeTxHash: bigint, blockNumber: bigint) {
+	const result = await callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'approvedHashes', [addressString(owner), bytes32String(safeTxHash)]), blockNumber)
+	return decodeFunctionOutput(SAFE_ABI, 'approvedHashes', result) !== 0n
 }
 
 // The one read of a Safe's owners and threshold, for every path that needs them. The calls and their decoding are separate so a caller can run them with its other reads and still decode in its own order.

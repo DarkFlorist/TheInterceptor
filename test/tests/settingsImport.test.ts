@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import * as fs from 'node:fs'
-import { beforeEach, describe, test } from 'bun:test'
+import { beforeEach, describe, spyOn, test } from 'bun:test'
 import * as ts from 'typescript'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -118,12 +118,17 @@ const settingsModulePromise = Promise.all([import('../../app/ts/background/setti
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
+const addressBookStoreModulePromise = import('../../app/ts/background/addressBookStore.js')
+const addressBookCoordinatorPromise = import('../../app/ts/background/signingAddressBookCoordinator.js')
 
 const settingsStorageModulePaths = {
 	settings: 'app/ts/background/settings.ts',
 	storageVariables: 'app/ts/background/storageVariables.ts',
 	settingsImport: 'app/ts/background/settingsImport.ts',
 	settingsStorageTransaction: 'app/ts/background/settingsStorageTransaction.ts',
+	addressBookStore: 'app/ts/background/addressBookStore.ts',
+	signingWalletStore: 'app/ts/background/signingWalletStore.ts',
+	signingAddressBookCoordinator: 'app/ts/background/signingAddressBookCoordinator.ts',
 }
 
 const parseSourceFile = (path: string) => ts.createSourceFile(path, fs.readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
@@ -271,13 +276,14 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('round-trips Safe settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
-		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		const { getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Exported signing Safe',
 			address: signingSafeAddress,
@@ -295,8 +301,8 @@ describe('settings import', () => {
 		await setSafeAppsCompatibilityMode(true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
@@ -321,8 +327,8 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
-		await updateUserAddressBookEntries(() => [{
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Ordered import Safe',
 			address: signingSafeAddress,
@@ -422,9 +428,10 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x7070707070707070707070707070707070707070n
 		const signerAddress = 0x7171717171717171717171717171717171717171n
 		const { getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
-		const { getTabState, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		const { getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Pre-import signing Safe',
 			address: signingSafeAddress,
@@ -543,11 +550,12 @@ describe('settings import', () => {
 	})
 
 	const preImportSigningPreference = { signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
+	const preImportSelectedSigningAddress = 0x9696969696969696969696969696969696969690n
 
 	const storePreImportSettings = async () => {
 		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
-		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		await updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: testRpcNetwork, activeSimulationAddress: 0x9292929292929292929292929292929292929292n, activeSigningAddress: 0x9393939393939393939393939393939393939393n, activeSigningSafeAddress: 0x9494949494949494949494949494949494949494n })
 		await rememberSigningAddressPreference(preImportSigningPreference)
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'pre-import.example', icon: undefined, title: 'Pre-import' }, access: false }])
@@ -555,6 +563,7 @@ describe('settings import', () => {
 		await setUseTabsInsteadOfPopup(false)
 		await setSafeAppsCompatibilityMode(true)
 		await persistMetamaskCompatibilityMode(true)
+		await (await settingsModulePromise).setSelectedSigningAddress(preImportSelectedSigningAddress)
 	}
 
 	// One export per accepted version, each with a check of the values that version imports or preserves over storePreImportSettings.
@@ -639,6 +648,14 @@ describe('settings import', () => {
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
 			} },
+			{ exportedSettings: { ...version15Import, version: '1.6', settings: { ...version15Import.settings, safeAppsCompatibilityMode: true } }, assertImportedValues: async () => {
+				const importedSettings = await settings.getSettings()
+				assert.equal(importedSettings.activeSimulationAddress, version15SimulationAddress)
+				assert.equal(importedSettings.activeSigningSafeAddress, version15SigningSafeAddress)
+				assert.deepEqual(await settings.getSigningAddressPreferences(), [version15SigningPreference])
+				assert.equal(await settings.getSafeAppsCompatibilityMode(), true)
+				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
+			} },
 			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
@@ -664,7 +681,41 @@ describe('settings import', () => {
 
 			assert.equal(browserMock.takeSetCalls().length, 1, `version ${ exportedSettings.version } import wrote storage more than once`)
 			await assertImportedValues()
+			assert.equal((await (await settingsModulePromise).getSettings()).selectedSigningAddress, undefined, `version ${ exportedSettings.version } import kept the selected signing address`)
 		}
+	})
+
+	test('the import resets the selected signing address in its storage set, so no later storage removal can fail after the settings were replaced', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
+		if (currentVersionExport === undefined) throw new Error('Expected a current settings export')
+		browserMock.reset()
+		await storePreImportSettings()
+		const removal = spyOn(browser.storage.local, 'remove').mockRejectedValue(new Error('Storage removal unavailable'))
+		try {
+			await importSettingsAndAddressBook(currentVersionExport)
+		} finally {
+			removal.mockRestore()
+		}
+		assert.equal((await getSettings()).selectedSigningAddress, undefined)
+	})
+
+	test('a signing address selected while an import holds the settings storage lock applies after the import instead of being erased by it', async () => {
+		const { getSettings, importSettingsAndAddressBook, setSelectedSigningAddress } = await settingsModulePromise
+		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
+		if (currentVersionExport === undefined) throw new Error('Expected a current settings export')
+		const laterSelectedSigningAddress = 0x9797979797979797979797979797979797979790n
+		browserMock.reset()
+		await storePreImportSettings()
+		const importWriteGate = browserMock.blockNextAddressBookWrite()
+		const settingsImport = importSettingsAndAddressBook(currentVersionExport)
+		await importWriteGate.started
+		const laterSelection = setSelectedSigningAddress(laterSelectedSigningAddress)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal((await getSettings()).selectedSigningAddress, preImportSelectedSigningAddress, 'the selection waits for the import holding the lock')
+		importWriteGate.release()
+		await Promise.all([settingsImport, laterSelection])
+		assert.equal((await getSettings()).selectedSigningAddress, laterSelectedSigningAddress)
 	})
 
 	test('a failed import storage write leaves storage unchanged for every export version', async () => {
@@ -688,9 +739,10 @@ describe('settings import', () => {
 		const laterSignerAddress = 0x9797979797979797979797979797979797979797n
 		const laterContactAddress = 0x9898989898989898989898989898989898989898n
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
-		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const { getUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
-		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
+		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
 			settings: {
@@ -706,7 +758,7 @@ describe('settings import', () => {
 
 		const laterWebsiteAccessUpdate = updateWebsiteAccess((entries) => [...entries, { website: { websiteOrigin: 'later.example', icon: undefined, title: 'Later' }, access: false }])
 		const laterPreferenceUpdate = rememberSigningAddressPreference({ signerAddress: laterSignerAddress, selection: 'signer', chainId: testRpcNetwork.chainId })
-		const laterAddressBookUpdate = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'Later contact', address: laterContactAddress, entrySource: 'User', useAsActiveAddress: false }])
+		const laterAddressBookUpdate = updateAddressBookAndSigningWalletBindings((entries) => [...entries, { type: 'contact', name: 'Later contact', address: laterContactAddress, entrySource: 'User', useAsActiveAddress: false }])
 		importWriteGate.release()
 		await Promise.all([settingsImport, laterWebsiteAccessUpdate, laterPreferenceUpdate, laterAddressBookUpdate])
 
@@ -718,11 +770,12 @@ describe('settings import', () => {
 	test('an import queued behind an in-flight address book write replaces its stale value and later writers apply on top of the import', async () => {
 		const laterSignerAddress = 0x9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9an
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
-		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const { getUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		const version15Import = (await buildImportOfEveryVersion()).find(({ exportedSettings }) => exportedSettings.version === '1.5')
 		if (version15Import === undefined) throw new Error('Expected a version 1.5 import fixture')
 		const inFlightWriteGate = browserMock.blockNextAddressBookWrite()
-		const inFlightAddressBookWrite = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'In-flight contact', address: 0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9bn, entrySource: 'User', useAsActiveAddress: false }])
+		const inFlightAddressBookWrite = updateAddressBookAndSigningWalletBindings((entries) => [...entries, { type: 'contact', name: 'In-flight contact', address: 0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9bn, entrySource: 'User', useAsActiveAddress: false }])
 		await inFlightWriteGate.started
 
 		const settingsImport = importSettingsAndAddressBook(version15Import.exportedSettings)
@@ -738,9 +791,9 @@ describe('settings import', () => {
 
 	test('website access, signing preference and address book writers share the one settings storage lock', async () => {
 		const { getWebsiteAccess, getSigningAddressPreferences, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
-		const addressBookWrite = updateUserAddressBookEntries((entries) => entries)
+		const addressBookWrite = updateAddressBookAndSigningWalletBindings((entries) => entries)
 		await addressBookWriteGate.started
 
 		const websiteAccessUpdate = updateWebsiteAccess(() => [{ website: { websiteOrigin: 'queued.example', icon: undefined, title: 'Queued' }, access: true }])
@@ -755,7 +808,7 @@ describe('settings import', () => {
 
 	test('the settings storage lock is created in exactly one place', () => {
 		assert.equal(fs.readFileSync(settingsStorageModulePaths.settingsStorageTransaction, 'utf8').match(/new Semaphore\(/g)?.length, 1)
-		for (const path of [settingsStorageModulePaths.settings, settingsStorageModulePaths.storageVariables, settingsStorageModulePaths.settingsImport]) {
+		for (const path of [settingsStorageModulePaths.settings, settingsStorageModulePaths.storageVariables, settingsStorageModulePaths.settingsImport, settingsStorageModulePaths.addressBookStore, settingsStorageModulePaths.signingWalletStore, settingsStorageModulePaths.signingAddressBookCoordinator]) {
 			assert.doesNotMatch(fs.readFileSync(path, 'utf8'), /(websiteAccess|signingAddressPreferences|userAddressBookEntries)\w*Semaphore/, `${ path } keeps its own lock for a settings storage writer`)
 		}
 	})

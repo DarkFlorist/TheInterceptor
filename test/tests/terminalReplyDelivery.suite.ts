@@ -3,8 +3,9 @@ import { spyOn, test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createAcceptConfirmation, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createAcceptConfirmation, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 import * as retrySchedulers from '../../app/ts/utils/retryScheduler.js'
+
 
 async function withControlledRecoveryRetries(run: (fireNext: () => Promise<number>) => Promise<void>) {
 	const scheduled: { retry: () => void, timer: ReturnType<typeof setTimeout>, delayMs: number }[] = []
@@ -122,6 +123,38 @@ test('popup-close rejection backs off persistent storage failures and delivers o
 		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 		assert.equal(postedMessages.length, 1)
 	})
+})
+
+test('closing a newly opened confirmation waits for its pending request to be persisted', async () => {
+	let releaseWrite: (() => void) | undefined
+	let notifyWriteStarted: (() => void) | undefined
+	const writeBlocked = new Promise<void>((resolve) => { releaseWrite = resolve })
+	const writeStarted = new Promise<void>((resolve) => { notifyWriteStarted = resolve })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items && Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length > 0) {
+			notifyWriteStarted?.()
+			await writeBlocked
+		}
+		writeStoredItems()
+	})
+	const signRequest = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
+	const creation = modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...signRequest, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters: signRequest }, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	try {
+		await writeStarted
+		const closing = modules.onCloseWindowOrTab({ type: 'popup', id: 99 }, simulator.ethereum, simulator.tokenPriceService, new Map())
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		releaseWrite?.()
+		await creation
+		await closing
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.equal((await modules.getPendingTerminalReplies()).length, 1)
+	} finally {
+		releaseWrite?.()
+		browserMock.setStorageSetHandler(undefined)
+	}
 })
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
@@ -1037,7 +1070,7 @@ test('adding a Gnosis Safe proposal to its stack answers the website with the pr
 
 test('a Gnosis Safe owner signature answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
 	const { safeTx, safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
@@ -1106,6 +1139,194 @@ test('a terminal reply delivery that throws still focuses the website and closes
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+for (const signerReply of ['0x1234', 42, new Error('Unexpected verifier failure')]) test(`invalid browser message signature becomes an actionable signer error (${ typeof signerReply })`, async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	const parameters = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters }, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	const verify = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+		method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier, signerReply: signerReply instanceof Error ? '0x1234' : signerReply },
+	})
+	if (signerReply instanceof Error) {
+		const { spyOn } = await import('bun:test')
+		const exactPayload = await import('../../app/ts/signing/exactPayload.js')
+		const verifier = spyOn(exactPayload, 'verifyBrowserWalletMessageSignature').mockRejectedValue(signerReply)
+		try { await assert.rejects(verify(), (error: unknown) => error === signerReply) }
+		finally { verifier.mockRestore() }
+	} else assert.equal(await verify(), false)
+	const pending = (await modules.getPendingTransactionsAndMessages())[0]
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Missing signature verification error')
+	assert.equal(pending.approvalStatus.code, 4100)
+	assert.ok(pending.approvalStatus.message.length > 0)
+})
+
+test('a hardware-signed Gnosis Safe proposal that the Safe refuses after a delayed signature keeps the website request pending and shows the refusal on the signing page', async () => {
+	const { secp256k1 } = await import('@noble/curves/secp256k1.js')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { DirectSigningRecords } = await import('../../app/ts/types/directSigning.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { dispatchSigningPageRequest } = await import('../../app/ts/background/signingRequestService.js')
+	const { getDirectSigningCompletion } = await import('../../app/ts/signing/signingProgress.js')
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
+	const binding = await saveAddressSigningWallet(safeTestOwnerAddress, { type: 'ledger', label: 'Owner Ledger', address: safeTestOwnerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Safe owner')
+	if (binding === undefined) throw new Error('Missing Ledger binding for the Safe owner')
+	const { safeTx } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({ ...pending, signingWalletBinding: binding, signingChainId: fakeRpcNetwork.chainId }))
+	const record = {
+		id: crypto.randomUUID(),
+		request: uniqueRequestIdentifier,
+		requestInstanceId: (await modules.getPendingTransactionsAndMessages())[0]?.instanceId ?? 'missing pending request',
+		binding,
+		websiteOrigin: pendingTransaction.website.websiteOrigin,
+		rpcUrl: 'https://rpc.example.test',
+		input: { method: 'eth_signTypedData_v4' as const, data: safeTxToTypedDataJson(safeTx), address: addressString(safeTestOwnerAddress), chainId: fakeRpcNetwork.chainId },
+		revision: crypto.randomUUID(),
+		created: Date.now(),
+		phase: 'approved' as const,
+	}
+	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
+	// While the owner signs offline, another proposal executes and advances the Safe's nonce past the reviewed one.
+	fakeSafeContract.nonce = 1n
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+
+	const reply = await withSilencedConsole(async () => await dispatchSigningPageRequest({ method: 'signing_result', id: record.id, revision: record.revision, result: signature }, simulator, websiteTabConnections))
+
+	if (!reply.ok || !('record' in reply)) throw new Error('Expected the verified signature to be stored')
+	assert.equal(reply.record.phase, 'signed')
+	assert.ok('signatureRefusalReason' in reply)
+	assert.match(reply.signatureRefusalReason ?? '', /nonce changed from 0 to 1/u)
+	assert.deepEqual(getRepliesToWebsite(postedMessages), [])
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Expected the Safe refusal on the website request')
+	assert.equal(reply.signatureRefusalReason, pending.approvalStatus.message)
+	const completion = getDirectSigningCompletion(reply.record, reply.signatureRefusalReason)
+	assert.equal(completion.complete, false)
+	assert.equal(completion.title, 'Signature not returned to application')
+	assert.equal(completion.refusal?.reason, pending.approvalStatus.message)
+	assert.equal(completion.refusal?.canCancel, true)
+
+	const reloaded = await dispatchSigningPageRequest({ method: 'signing_get', id: record.id }, simulator, websiteTabConnections)
+	assert.ok(reloaded.ok && 'signatureRefusalReason' in reloaded && reloaded.signatureRefusalReason === pending.approvalStatus.message)
+
+	const cancelled = await withSilencedConsole(async () => await dispatchSigningPageRequest({ method: 'signing_cancel', id: record.id }, simulator, websiteTabConnections))
+	if (!cancelled.ok || !('record' in cancelled)) throw new Error('Expected cancelling the refused signature to succeed')
+	assert.equal(cancelled.record.phase, 'cancelled')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [rejection] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Expected the website request to be rejected')
+	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+})
+
+for (const walletChain of ['reviewed', 'other'] as const) test(`a reviewed transaction is forwarded to a saved browser wallet only on the chain it was simulated on (wallet on the ${ walletChain } chain)`, async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { getWalletChainMismatchMessage } = await import('../../app/ts/background/signingRequestLifecycle.js')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const binding = await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	if (binding === undefined) throw new Error('Missing browser wallet binding')
+	// The request was made in signing mode, and the Interceptor is still in it, so only the wallet's chain decides whether it is forwarded.
+	await modules.changeSimulationMode({ simulationMode: false })
+	const reviewedChainId = simulator.ethereum.getChainId()
+	const walletChainId = walletChain === 'reviewed' ? reviewedChainId : reviewedChainId + 1n
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (previous) => ({ ...previous, signerName: 'MetaMask', signerProvider: undefined, signerConnected: true, signerAccounts: [activeAddress], activeSigningAddress: activeAddress, signerChain: walletChainId }))
+	// A successful simulated result, so the accept needs no send-anyway override.
+	await modules.appendPendingTransactionOrMessage({ ...withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false }), approvalStatus: { status: 'WaitingForUser' }, signingWalletBinding: binding, signingChainId: reviewedChainId })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+
+	const acceptConfirmation = await createAcceptConfirmation()
+	const forwarded = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation))
+
+	const forwardedToWallet = postedMessages.filter((message) => isRecord(message) && message.type === 'forwardToSigner')
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (walletChain === 'reviewed') {
+		assert.equal(forwarded, true)
+		assert.equal(forwardedToWallet.length, 1)
+		const [message] = forwardedToWallet
+		if (!isRecord(message)) throw new Error('Missing forwarded transaction')
+		assert.equal(message.expectedChainId, modules.EthereumQuantity.serialize(reviewedChainId))
+		assert.equal(pending?.approvalStatus.status, 'WaitingForSigner')
+	} else {
+		assert.equal(forwarded, false)
+		assert.deepEqual(forwardedToWallet, [])
+		assert.equal(pending?.approvalStatus.status, 'SignerError')
+		if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Expected a chain mismatch signer error')
+		assert.equal(pending.approvalStatus.message, getWalletChainMismatchMessage(walletChainId, reviewedChainId))
+	}
+})
+
+for (const requestedAccount of ['bound', 'other'] as const) test(`an accepted transaction is forwarded to a saved browser wallet only when it names the bound account (${ requestedAccount } account)`, async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { BROWSER_WALLET_OTHER_ACCOUNT_MESSAGE } = await import('../../app/ts/signing/browserWallet.js')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const binding = await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	if (binding === undefined) throw new Error('Missing browser wallet binding')
+	await modules.changeSimulationMode({ simulationMode: false })
+	const reviewedChainId = simulator.ethereum.getChainId()
+	// The wallet has the bound account selected, so only the account the request names can differ.
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (previous) => ({ ...previous, signerName: 'MetaMask', signerProvider: undefined, signerConnected: true, signerAccounts: [activeAddress], activeSigningAddress: activeAddress, signerChain: reviewedChainId }))
+	const reviewed = withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })
+	const [transaction] = reviewed.originalRequestParameters.params
+	const originalRequestParameters = { ...reviewed.originalRequestParameters, params: [{ ...transaction, from: requestedAccount === 'bound' ? activeAddress : recipientAddress }] as const }
+	await modules.appendPendingTransactionOrMessage({ ...reviewed, originalRequestParameters, approvalStatus: { status: 'WaitingForUser' }, signingWalletBinding: binding, signingChainId: reviewedChainId })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+
+	const forwarded = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
+
+	const forwardedToWallet = postedMessages.filter((message) => isRecord(message) && message.type === 'forwardToSigner')
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (requestedAccount === 'bound') {
+		assert.equal(forwarded, true)
+		assert.equal(forwardedToWallet.length, 1)
+		assert.equal(pending?.approvalStatus.status, 'WaitingForSigner')
+	} else {
+		assert.equal(forwarded, false)
+		assert.deepEqual(forwardedToWallet, [])
+		assert.deepEqual(pending?.approvalStatus, { status: 'SignerError', code: 4100, message: BROWSER_WALLET_OTHER_ACCOUNT_MESSAGE })
+	}
+})
+
+test('a browser wallet signature for a personal message over the Ledger and AirGap payload limit is accepted after the wallet signs', async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const signer = privateKeyToAccount(safeTestOwnerPrivateKey)
+	const signerAddress = BigInt(signer.address)
+	await saveAddressSigningWallet(signerAddress, { type: 'browser', address: signerAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	// One byte over the Ledger and AirGap payload limit, which does not apply to a browser wallet.
+	const signedMessage = bytesToHex(new Uint8Array(65_537).fill(0x61))
+	const parameters = { method: 'personal_sign' as const, params: [signedMessage, signerAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters }, false, signerAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	const signature = await signer.signMessage({ message: { raw: signedMessage } })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier, signerReply: signature },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [reply] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(reply)) throw new Error('Missing reply to the website')
+	assert.equal(reply.result, signature)
+})
+
+test('Ledger and AirGap signing enforces its payload limit before the device signs', async () => {
+	const { prepareDirectPayload } = await import('../../app/ts/signing/backend.js')
+	const { bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const input = { method: 'personal_sign' as const, address: addressString(safeTestOwnerAddress), chainId: 1n }
+	assert.doesNotThrow(() => prepareDirectPayload({ ...input, data: bytesToHex(new Uint8Array(65_536)) }))
+	assert.throws(() => prepareDirectPayload({ ...input, data: bytesToHex(new Uint8Array(65_537)) }), /Signing payload exceeds size limit/u)
+})
 
 // Dismissal is independent of simulation readiness: keep a durable rejection for disconnected websites.
 test.each(['Crafting', 'Simulating', 'gas edited'] as const)('closing a confirmation with %s simulation settles its request', async state => {

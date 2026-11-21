@@ -45,6 +45,8 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	} catch (error: unknown) {
 		return createImportSettingsFailureReply(error instanceof Error ? error.message : 'Failed to import settings.')
 	}
+	// The import replaces the signing wallet bindings in its storage transaction.
+	await sendPopupMessageToOpenWindows({ method: 'popup_signingWalletBindingsChanged' })
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

@@ -1,3 +1,4 @@
+import type { SigningWalletBindingsState } from './signingWallet.js'
 import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
@@ -6,7 +7,7 @@ import type { IdentifiedSwapWithMetadata } from '../components/simulationExplain
 import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { type AddressBookEntries, type AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
-import { SignerName } from './signerTypes.js'
+import { BrowserProviderIdentity, SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
 import { type RpcEntries, type RpcEntry, RpcNetwork } from './rpc.js'
 import type { TransactionOrMessageIdentifier } from './interceptor-messages.js'
@@ -71,7 +72,8 @@ export type HomeParams = {
 export type ChangeActiveAddressParam = {
 	activeAddresses: ReadonlySignal<AddressBookEntries>
 	close: () => void,
-	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
+	// entry is the picked address-book entry; the signer row has none.
+	setActiveAddressAndInformAboutIt: (address: bigint | 'signer', entry?: AddressBookEntry) => void,
 	signerAccounts: readonly bigint[] | undefined,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -79,6 +81,8 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
+	// The page's one signing wallet bindings snapshot, so every part of Home shows the same bindings and a popup load requests them once.
+	wallets: SigningWalletBindingsState
 	isActiveAddressChanging: Signal<boolean>
 	isActiveAddressChangePending: ReadonlySignal<boolean>
 	isSettingsChangePending: ReadonlySignal<boolean>
@@ -201,7 +205,7 @@ export const TabState = funtypes.ReadonlyObject({
 	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	tabIconDetails: TabIconDetails,
 	activeSigningAddress: OptionalEthereumAddress,
-})
+}).And(funtypes.ReadonlyPartial({ signerProvider: BrowserProviderIdentity }))
 
 export type RpcSlowRequest = funtypes.Static<typeof RpcSlowRequest>
 export const RpcSlowRequest = funtypes.ReadonlyObject({

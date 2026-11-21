@@ -132,15 +132,19 @@ describe('simulation mode forward guard', () => {
 		assertAnsweredInSimulationMode(replies)
 	})
 
-	test('does not forward when simulation mode is enabled during wake-status publishing', async () => {
-		const { modules, ethereum, enableSimulationMode, sendAddEthereumChain } = await setUpSigningModeWebsite({ initialBlockPolling: false })
-		await modules.setRpcConnectionStatus({ isConnected: true, lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'), latestBlock: undefined, rpcNetwork: ethereum.getRpcEntry(), retrying: false })
-		let publishCount = 0
-		const replies = await sendAddEthereumChain(3, WEBSITE, async () => {
-			publishCount++
-			await enableSimulationMode()
-		})
-		assert.equal(publishCount, 1)
+	// Signing-wallet admission decides a wallet forward before the Interceptor wakes for simulation, so its signing-wallet binding read, not wake-status publishing, is the await between the routing settings read and the forward.
+	test('does not forward when simulation mode is enabled during the signing wallet binding read', async () => {
+		const { setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		let bindingReads = 0
+		const replies = await sendAddEthereumChainAfterArming(3, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (!Array.isArray(keys) || !keys.includes('signingWalletBindings')) return
+				bindingReads++
+				setStorageHooks({})
+				await enableSimulationMode()
+			},
+		}))
+		assert.equal(bindingReads, 1)
 		assertAnsweredInSimulationMode(replies)
 	})
 

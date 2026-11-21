@@ -216,7 +216,7 @@ test('simulation mode switched on and off during the popup approval\'s pending-r
 // A signing-mode Gnosis Safe proposal whose approval first refreshes the wallet-selected owner through the website's signer connection.
 async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void>) {
 	await modules.changeSimulationMode({ simulationMode: false })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress })])
 	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerName: 'MetaMask', signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{

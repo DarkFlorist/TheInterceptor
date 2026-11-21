@@ -2,13 +2,14 @@ import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupRea
 import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
+import { getAllTabStates, getTabState } from './storageVariables.js'
+import { getUserAddressBookEntries } from './addressBookStore.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { getActiveSigningAddress, getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
@@ -21,14 +22,15 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
 async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[], walletSelectedAddress: bigint | undefined, addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
-	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	const configuredSigningAddress = settings.simulationMode ? undefined : getActiveSigningAddress(settings)
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : configuredSigningAddress?.address
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
 	const modeInput = settings.simulationMode
 		? { mode: 'simulation' as const, activeAddress: configuredAddress }
 		: {
 			mode: 'signing' as const,
-			selectedAddress: { type: 'safe' as const, address: configuredAddress },
+			selectedAddress: configuredSigningAddress,
 			signerAccounts,
 			walletFallbackAddress: walletSelectedAddress,
 		}
@@ -48,7 +50,7 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 }
 
 async function getConfiguredActiveAddressBookEntries(settings: Settings) {
-	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : getActiveSigningAddress(settings)?.address
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return undefined
 	return await getUserAddressBookEntries()
 }
@@ -252,7 +254,7 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
+type HTMLFile = 'directSigning' | 'signingWallet' | 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) return `/html/${ file }.html`

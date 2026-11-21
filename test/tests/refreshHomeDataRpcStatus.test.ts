@@ -162,6 +162,8 @@ async function loadModules() {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...storageVariables,
+		...await import('../../app/ts/background/addressBookStore.js'),
+		...await import('../../app/ts/background/signingAddressBookCoordinator.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -321,7 +323,7 @@ describe('refreshHomeData', () => {
 	test('home data falls back to signer accounts for active address when activeSigningAddress is unset', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateUserAddressBookEntries, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateAddressBookAndSigningWalletBindings, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -337,7 +339,7 @@ describe('refreshHomeData', () => {
 			makeCurrentAddressRich: false,
 			fixedAddressRichList: [{ address: defaultAddress.address, makingRich: true, type: 'UserAdded' }],
 		})
-		await updateUserAddressBookEntries(() => [
+		await updateAddressBookAndSigningWalletBindings(() => [
 			{ type: 'contact', name: 'Wrong-chain rich address', address: defaultAddress.address, chainId: rpcNetwork.chainId + 1n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
 			{ type: 'contact', name: 'Current-chain rich address', address: defaultAddress.address, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
 		])
@@ -591,7 +593,7 @@ describe('refreshHomeData', () => {
 			browserStorageLocalSet,
 			saveCurrentTabId,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			requestNewHomeData,
 			defaultActiveAddresses,
 			defaultRpcs,
@@ -624,7 +626,7 @@ describe('refreshHomeData', () => {
 
 		const signerAccount = 0x5555555555555555555555555555555555555555n
 		const signingSafe = 0x5656565656565656565656565656565656565656n
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Remembered Safe',
 			address: signingSafe,
