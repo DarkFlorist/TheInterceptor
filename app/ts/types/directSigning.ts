@@ -25,7 +25,8 @@ export const DirectSigningRecord = funtypes.ReadonlyObject({
 	revision: funtypes.String,
 	created: funtypes.Number,
 	phase: funtypes.Union(funtypes.Literal('review'), funtypes.Literal('approved'), funtypes.Literal('signed'), funtypes.Literal('submitting'), funtypes.Literal('submitted'), funtypes.Literal('confirmed'), funtypes.Literal('cancelled')),
-}).And(funtypes.ReadonlyPartial({ reviewReady: funtypes.Boolean, result: funtypes.String, transactionHash: funtypes.String, executionSucceeded: funtypes.Boolean }))
+	// reviewRefreshId names the one review refresh allowed to complete; a newer invalidation replaces it, so an older refresh writes nothing.
+}).And(funtypes.ReadonlyPartial({ reviewReady: funtypes.Boolean, reviewRefreshId: funtypes.String, result: funtypes.String, transactionHash: funtypes.String, executionSucceeded: funtypes.Boolean }))
 export const DirectSigningRecords = funtypes.ReadonlyArray(DirectSigningRecord).withConstraint((records) => records.length <= 100)
 
 export const SigningPageRequest = funtypes.Union(

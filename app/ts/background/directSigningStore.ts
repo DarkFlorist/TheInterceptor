@@ -26,7 +26,8 @@ const directSigningRecordsLock = new Semaphore(1)
 
 export type DirectSigningRecordsTransaction = {
 	read: typeof readDirectSigningRecords
-	store: (record: DirectSigningRecord) => Promise<DirectSigningRecord>
+	// mayWrite runs synchronously immediately before the storage write call, after every read the write needs; throwing from it aborts the write.
+	store: (record: DirectSigningRecord, mayWrite?: () => void) => Promise<DirectSigningRecord>
 }
 
 /** Serialize the complete read/check/write lifecycle, including durable writes before network submission. */
@@ -40,9 +41,9 @@ export async function withDirectSigningRecords<T>(update: (transaction: DirectSi
 					if (!active) throw new Error('Signing storage transaction has ended')
 					return await readDirectSigningRecords()
 				},
-				store: async (record) => await writes.execute(async () => {
+				store: async (record, mayWrite) => await writes.execute(async () => {
 					if (!active) throw new Error('Signing storage transaction has ended')
-					return await persistDirectSigningRecord(record)
+					return await persistDirectSigningRecord(record, mayWrite)
 				}),
 			})
 		} finally {
@@ -58,7 +59,7 @@ export async function storeDirectSigningRecord(record: DirectSigningRecord) {
 }
 
 /** Retain ambiguous submissions and bounded recent history inside a storage transaction. */
-async function persistDirectSigningRecord(record: DirectSigningRecord) {
+async function persistDirectSigningRecord(record: DirectSigningRecord, mayWrite: () => void = () => undefined) {
 	const records = await readDirectSigningRecords()
 	const pending = await getPendingTransactionsAndMessages()
 	const retained = records.filter((item) => item.id !== record.id && (item.phase === 'submitting' || pending.some((request) => isRecordForPendingRequest(item, request))))
@@ -66,6 +67,8 @@ async function persistDirectSigningRecord(record: DirectSigningRecord) {
 	const next = [...history, ...retained, record]
 	const serialized = DirectSigningRecords.serialize(next)
 	if (next.length > 16 || new TextEncoder().encode(JSON.stringify(serialized)).length > 4 * 1024 * 1024) throw signingOperationError('Too many saved signing requests. Finish or cancel pending signing requests before continuing.')
+	// Nothing may be awaited between this check and the write it guards.
+	mayWrite()
 	await browserStorageLocalSet({ directSigningRequestsV1: next })
 	return record
 }

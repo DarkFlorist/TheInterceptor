@@ -83,6 +83,9 @@ async function approve(item: DirectSigningRecord, forceSend = false) {
 	return await updateDirectSigning({ method: 'signing_approve', id: item.id, revision: item.revision, reviewedResultId: pending === undefined ? 'missing request' : getReviewedResultId(pending), forceSend })
 }
 
+// A review refresh whose explanation needs no change, for tests that only exercise the fee edit itself.
+const keepExplanation = async () => async () => undefined
+
 async function sign() {
 	record = await approve(record)
 	const payload = prepareTransactionSigningPayload(record.input.data, account.address, 1n)
@@ -108,7 +111,7 @@ test('approval and verified signature persist separately and never broadcast imp
 test('editing fees invalidates the signed response and requires fresh review', async () => {
 	await sign()
 	const old = record
-	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, async () => undefined)
+	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, keepExplanation)
 	expect(record.phase).toBe('review')
 	expect(record.result).toBeUndefined()
 	expect(record.revision).not.toBe(old.revision)
@@ -180,8 +183,8 @@ test('failed fee explanation preserves the old revision and permits retry', asyn
 	const old = record
 	const request = { method: 'signing_editFees' as const, id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }
 	await expect(updateDirectSigning(request, async () => { throw new Error('Explanation unavailable') })).rejects.toThrow('Explanation unavailable')
-	expect((await readDirectSigningRecords())[0]).toEqual({ ...old, reviewReady: false })
-	const retried = await updateDirectSigning(request, async () => undefined)
+	expect((await readDirectSigningRecords())[0]).toEqual({ ...old, reviewReady: false, reviewRefreshId: expect.any(String) })
+	const retried = await updateDirectSigning(request, keepExplanation)
 	expect(retried.revision).not.toBe(old.revision)
 })
 
@@ -198,7 +201,7 @@ test('returned simulation failure preserves fees and pending explanation until a
 	const refreshReview = async (edited: DirectSigningRecord) => await refreshDirectSigningReview(edited, ethereum, simulator.tokenPriceService)
 	try {
 		await expect(updateDirectSigning(request, refreshReview)).rejects.toThrow('Retry the fee change')
-		expect((await readDirectSigningRecords())[0]).toEqual({ ...old, reviewReady: false })
+		expect((await readDirectSigningRecords())[0]).toEqual({ ...old, reviewReady: false, reviewRefreshId: expect.any(String) })
 		expect(await getPendingTransactionsAndMessages()).toEqual(before)
 		refresh.mockResolvedValue(pendingTransaction.popupVisualisation)
 		const retried = await updateDirectSigning(request, refreshReview)
@@ -288,7 +291,7 @@ test('a failed review refresh invalidates approval without changing the payload 
 const reverted = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
 
 // Stands in for refreshDirectSigningReview: the fee change stores a refreshed simulation result on the website request.
-const storeRefreshedResult = (refreshed: (pending: typeof reviewedTransaction) => typeof reviewedTransaction) => async () => {
+const storeRefreshedResult = (refreshed: (pending: typeof reviewedTransaction) => typeof reviewedTransaction) => async () => async () => {
 	const { updatePendingTransactionOrMessageInstance } = await import('../../app/ts/background/storageVariables.js')
 	await updatePendingTransactionOrMessageInstance({ uniqueRequestIdentifier: record.request, instanceId: record.requestInstanceId }, async (pending) => pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' ? { ...pending, popupVisualisation: refreshed(reviewedTransaction).popupVisualisation } : pending)
 }
@@ -531,4 +534,65 @@ test('a record changed while its approval checked the chain refuses the approval
 	}
 	await expect(approve(record)).rejects.toThrow('changed while it was being checked')
 	expect((await readDirectSigningRecords())[0]?.phase).toBe('cancelled')
+})
+
+test('switching into simulation mode during any storage read of an approval, including the store\'s own read before its write, refuses the approval', async () => {
+	let readsDuringApproval = 0
+	const stopCounting = interceptStorageReads(async () => { readsDuringApproval++ })
+	try {
+		expect((await approve(record)).phase).toBe('approved')
+	} finally { stopCounting() }
+	expect(readsDuringApproval).toBeGreaterThan(0)
+	for (let switchAtRead = 0; switchAtRead < readsDuringApproval; switchAtRead++) {
+		await changeSimulationMode({ simulationMode: false })
+		await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
+		let reads = 0
+		const stopSwitching = interceptStorageReads(async () => {
+			if (reads++ === switchAtRead) await changeSimulationMode({ simulationMode: true })
+		})
+		try {
+			await expect(approve(record)).rejects.toThrow('switched to simulation mode')
+		} finally { stopSwitching() }
+		expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
+	}
+})
+
+// A review refresh that waits until released, then writes the edited gas limit into the website request's explanation.
+function heldRefresh() {
+	const started = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const refresh = async (edited: DirectSigningRecord) => {
+		started.resolve()
+		await release.promise
+		const gas = parseTransaction(ensureHex(edited.input.data)).gas ?? 0n
+		return async () => {
+			const { updatePendingTransactionOrMessageInstance } = await import('../../app/ts/background/storageVariables.js')
+			await updatePendingTransactionOrMessageInstance({ uniqueRequestIdentifier: edited.request, instanceId: edited.requestInstanceId }, async (pending) => pending.type === 'Transaction' ? { ...pending, transactionToSimulate: { ...pending.transactionToSimulate, transaction: { ...pending.transactionToSimulate.transaction, gas } } } : pending)
+		}
+	}
+	return { started: started.promise, release: release.resolve, refresh }
+}
+
+for (const finishFirst of ['earlier', 'later'] as const) test(`overlapping fee edits leave an explanation matching the committed payload when the ${ finishFirst } refresh finishes first`, async () => {
+	const editFees = (gas: bigint, refresh: ReturnType<typeof heldRefresh>) => updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, refresh.refresh)
+	const earlierRefresh = heldRefresh()
+	const laterRefresh = heldRefresh()
+	const earlierEdit = editFees(25000n, earlierRefresh)
+	await earlierRefresh.started
+	const laterEdit = editFees(30000n, laterRefresh)
+	await laterRefresh.started
+	const [first, second] = finishFirst === 'earlier' ? [earlierRefresh, laterRefresh] : [laterRefresh, earlierRefresh]
+	first.release()
+	await (finishFirst === 'earlier' ? earlierEdit : laterEdit).catch(() => undefined)
+	second.release()
+	const outcomes = await Promise.allSettled([earlierEdit, laterEdit])
+	// The later edit's invalidation took ownership of the review, so only its refresh can complete.
+	expect(outcomes[0]?.status).toBe('rejected')
+	expect(outcomes[1]?.status).toBe('fulfilled')
+	const [stored] = await readDirectSigningRecords()
+	if (stored === undefined) throw new Error('Expected the signing record')
+	expect(stored.reviewReady).toBe(true)
+	expect(parseTransaction(ensureHex(stored.input.data)).gas).toBe(30000n)
+	const [pending] = await getPendingTransactionsAndMessages()
+	expect(pending?.type === 'Transaction' ? pending.transactionToSimulate.transaction.gas : undefined).toBe(30000n)
 })

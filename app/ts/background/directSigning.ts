@@ -102,12 +102,28 @@ async function readRecordForRequest(request: DirectSigningRequest) {
 
 const SIGNING_REQUEST_CHANGED_MESSAGE = 'This signing request changed while it was being checked. Review its current state and try again.'
 
-// Commits an update to a record read earlier, under the lock, only if no other command changed its revision or phase meanwhile. update runs under the lock and must not await the network.
-async function commitIfUnchanged(expected: DirectSigningRecord, update: (current: DirectSigningRecord, records: DirectSigningRecordsTransaction) => Promise<DirectSigningRecord>) {
+// Commits an update to a record read earlier, under the lock, only if no other command changed its revision or phase meanwhile. update runs under the lock and must not await the network; mayWrite runs synchronously right before the storage write.
+async function commitIfUnchanged(expected: DirectSigningRecord, update: (current: DirectSigningRecord, records: DirectSigningRecordsTransaction) => Promise<DirectSigningRecord>, mayWrite?: () => void) {
 	return await withDirectSigningRecords(async (records) => {
 		const current = (await records.read()).find((item) => item.id === expected.id)
 		if (current === undefined || current.revision !== expected.revision || current.phase !== expected.phase) throw signingOperationError(SIGNING_REQUEST_CHANGED_MESSAGE)
-		return await records.store(await update(current, records))
+		return await records.store(await update(current, records), mayWrite)
+	})
+}
+
+// Writes a refreshed explanation onto the website request; run under the record lock only by the refresh that still owns the record's review.
+export type ApplyRefreshedReview = () => Promise<void>
+export type RefreshDirectSigningReview = (record: DirectSigningRecord) => Promise<ApplyRefreshedReview>
+
+// Invalidates the record's review and takes ownership of its refresh with a fresh reviewRefreshId. The explanation and the refreshed record are written together under the lock, and only while this refresh still owns the review, so a refresh overtaken by a newer invalidation writes nothing.
+async function refreshOwnedReview(read: DirectSigningRecord, refreshed: DirectSigningRecord, refreshReview: RefreshDirectSigningReview) {
+	const reviewRefreshId = crypto.randomUUID()
+	const owned = await commitIfUnchanged(read, async (current) => ({ ...current, reviewReady: false, reviewRefreshId }))
+	const applyRefreshedReview = await refreshReview({ ...refreshed, reviewRefreshId })
+	return await commitIfUnchanged(owned, async (current) => {
+		if (current.reviewRefreshId !== reviewRefreshId) throw signingOperationError(SIGNING_REQUEST_CHANGED_MESSAGE)
+		await applyRefreshedReview()
+		return { ...refreshed, reviewReady: true, reviewRefreshId: undefined }
 	})
 }
 
@@ -151,17 +167,13 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 			return await records.store(created)
 		})
 	}
-	if (record.phase === 'review') {
-		record = await commitIfUnchanged(record, async (current) => ({ ...current, reviewReady: false }))
-		await refreshDirectSigningReview(record, ethereum, prices)
-		record = await commitIfUnchanged(record, async (current) => ({ ...current, reviewReady: true }))
-	}
+	if (record.phase === 'review') record = await refreshOwnedReview(record, record, async (owned) => await refreshDirectSigningReview(owned, ethereum, prices))
 	await browser.tabs.create({ url: `${ browser.runtime.getURL(getHtmlFile('directSigning')) }?id=${ encodeURIComponent(record.id) }` })
 	return record
 }
 
 /** Persist before every irreversible boundary; an interrupted submission can only reconcile or resend the same bytes. */
-export async function updateDirectSigning(request: DirectSigningRequest, refreshReview?: (record: DirectSigningRecord) => Promise<void>) {
+export async function updateDirectSigning(request: DirectSigningRequest, refreshReview?: RefreshDirectSigningReview) {
 	switch (request.method) {
 		case 'signing_approve': return await approveSigningRequest(request)
 		case 'signing_editFees': return await editSigningFees(request, refreshReview)
@@ -183,15 +195,12 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 	})
 }
 
-async function editSigningFees(request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>, refreshReview: ((record: DirectSigningRecord) => Promise<void>) | undefined) {
+async function editSigningFees(request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>, refreshReview: RefreshDirectSigningReview | undefined) {
 	const record = await readRecordForRequest(request)
 	await assertCurrentBinding(record)
 	if (refreshReview === undefined) throw signingOperationError('Fee changes require a refreshed transaction explanation')
-	const edited = editTransactionFees(record, request)
-	// Invalidate approval before changing the derived explanation, even if the refresh later fails.
-	const invalidated = await commitIfUnchanged(record, async (current) => ({ ...current, reviewReady: false }))
-	await refreshReview(edited)
-	return await commitIfUnchanged(invalidated, async () => ({ ...edited, reviewReady: true }))
+	// Approval is invalidated before the explanation changes, even if the refresh later fails.
+	return await refreshOwnedReview(record, editTransactionFees(record, request), refreshReview)
 }
 
 function editTransactionFees(record: DirectSigningRecord, request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>): DirectSigningRecord {
@@ -262,9 +271,11 @@ async function approveSigningRequest(approval: Extract<DirectSigningRequest, { m
 				&& pending.some((request) => isRecordForPendingRequest(candidate, request))
 		})
 		if (current.input.method === 'eth_sendTransaction' && conflictingTransaction !== undefined) throw signingOperationError('Finish or cancel this account’s pending transaction before approving another nonce')
-		// The guard was captured before any await and is checked with nothing awaited before the write.
 		assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
 		return { ...current, phase: 'approved' }
+	}, () => {
+		// The guard was captured before any await and is checked again by the store with nothing awaited before its write.
+		assertSigningModeStillCurrent(simulationModeGuard, false)
 	})
 }
 
@@ -303,9 +314,9 @@ async function broadcast(request: Extract<DirectSigningRequest, { method: 'signi
 	return await commitIfUnchanged(submitting, async (current) => ({ ...current, phase: 'submitted' }))
 }
 
-/** Refresh the existing explanation using the final nonce and fees, and bind its completion to this payload revision. */
-export async function refreshDirectSigningReview(record: DirectSigningRecord, ethereum: EthereumClientService, prices: TokenPriceService) {
-	if (record.input.method !== 'eth_sendTransaction') return
+/** Simulates the existing explanation with the final nonce and fees. Returns the write of the refreshed explanation, which the caller applies under the record lock only while its refresh still owns the review. */
+export async function refreshDirectSigningReview(record: DirectSigningRecord, ethereum: EthereumClientService, prices: TokenPriceService): Promise<ApplyRefreshedReview> {
+	if (record.input.method !== 'eth_sendTransaction') return async () => undefined
 	if (record.input.chainId !== ethereum.getChainId()) throw signingOperationError('Return to the request’s network to refresh its explanation')
 	const pending = await findPendingSigningRequest(record)
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction explanation is not ready')
@@ -314,10 +325,12 @@ export async function refreshDirectSigningReview(record: DirectSigningRecord, et
 	const popupVisualisation = await refreshConfirmTransactionSimulation(ethereum, prices, pending.activeAddress, false, pending.uniqueRequestIdentifier, transactionToSimulate, getCreatedSafeProposal(pending.safeFlow))
 	if (popupVisualisation === undefined) throw signingOperationError('The refreshed explanation was interrupted; review again')
 	if (popupVisualisation.statusCode === 'failed') throw signingOperationError('Unable to refresh the transaction explanation. Retry the fee change when the RPC connection is available.')
-	await assertCurrentBinding(record)
-	const stillPending = await updatePendingTransactionOrMessageInstance(getRecordRequestInstance(record), async (current) => {
-		if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction changed during explanation refresh')
-		return { ...current, transactionToSimulate, popupVisualisation }
-	})
-	if (!stillPending) throw signingOperationError('The original signing request is no longer active')
+	return async () => {
+		await assertCurrentBinding(record)
+		const stillPending = await updatePendingTransactionOrMessageInstance(getRecordRequestInstance(record), async (current) => {
+			if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction changed during explanation refresh')
+			return { ...current, transactionToSimulate, popupVisualisation }
+		})
+		if (!stillPending) throw signingOperationError('The original signing request is no longer active')
+	}
 }
