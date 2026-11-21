@@ -2,7 +2,8 @@ import * as funtypes from 'funtypes'
 import { DirectSigningRecord, type SigningPageRequest } from './directSigning.js'
 import { hasOwnKey } from '../utils/typescript.js'
 import { SigningWalletBindings } from './signingWallet.js'
-import { TabState } from './user-interface-types.js'
+import { SignerName } from './signerTypes.js'
+import { EthereumAddress } from './wire-types.js'
 import type { SendAnywayOverrideReason } from '../utils/sendAnywayConsent.js'
 
 const SendAnywayOverrideReasonCodec: funtypes.Codec<SendAnywayOverrideReason> = funtypes.Union(funtypes.Literal('failingTransaction'), funtypes.Literal('quarantinedTransaction'), funtypes.Literal('quarantinedSignature'))
@@ -15,7 +16,10 @@ const MutationReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funt
 // A verified signature can still be refused when Interceptor resolves the website request with it, for example when a Gnosis Safe's nonce changed while the device was signing. The website request then stays pending with this reason as its signer error, and the signing page must not claim the signature was returned.
 const RecordReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), record: DirectSigningRecord }).And(funtypes.ReadonlyPartial({ signatureRefusalReason: funtypes.String, review: PendingRequestReview })))
 const BindingsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings }))
-const WalletsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings, tabs: funtypes.ReadonlyArray(TabState) }))
+// A connected browser wallet the setup page can link an address to: its identity, its label and the accounts it exposes. Only what the page shows, not the tab's popup state.
+const LinkableBrowserWallet = funtypes.ReadonlyObject({ tabId: funtypes.Number, signerName: SignerName, providerId: funtypes.String, label: funtypes.String, accounts: funtypes.ReadonlyArray(EthereumAddress) })
+export type LinkableBrowserWallet = funtypes.Static<typeof LinkableBrowserWallet>
+const WalletsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings, browserWallets: funtypes.ReadonlyArray(LinkableBrowserWallet), ambiguousBrowserWalletIdentity: funtypes.Boolean }))
 
 // One reply codec for each signing-page method and no other key, so its keys are the exact set of methods the background routes to the signing service.
 export const signingPageReplyCodecs = {

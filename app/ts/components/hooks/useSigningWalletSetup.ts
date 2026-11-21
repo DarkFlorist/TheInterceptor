@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { SigningWallet, SigningWalletBindings, SigningWalletBinding } from '../../types/signingWallet.js'
-import type { TabState } from '../../types/user-interface-types.js'
+import type { LinkableBrowserWallet } from '../../types/signingPageReply.js'
 import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
 import { selectLedgerDevice, withLedgerDevice } from '../../signing/ledgerHid.js'
 import { checkLedgerEthereumApp, readLedgerAccount } from '../../signing/ledgerEthereum.js'
@@ -13,7 +13,8 @@ export function useSigningWalletSetup() {
 	const target = new URLSearchParams(location.search).get('address')
 	const [binding, setBinding] = useState<SigningWalletBinding>()
 	const [bindings, setBindings] = useState<SigningWalletBindings>([])
-	const [tabs, setTabs] = useState<readonly TabState[]>([])
+	const [browserWallets, setBrowserWallets] = useState<readonly LinkableBrowserWallet[]>([])
+	const [ambiguousBrowserWalletIdentity, setAmbiguousBrowserWalletIdentity] = useState(false)
 	const [kind, setKind] = useState('ledger')
 	const [label, setLabel] = useState('Account 1')
 	const [path, setPath] = useState('m/44\'/60\'/0\'/0/0')
@@ -45,13 +46,14 @@ export function useSigningWalletSetup() {
 		const bindings = reply.bindings
 		setBindings(bindings)
 		setBinding(target === null ? undefined : bindings.find((item) => item.wallet.address === BigInt(target)))
-		setTabs(reply.tabs)
+		setBrowserWallets(reply.browserWallets)
+		setAmbiguousBrowserWalletIdentity(reply.ambiguousBrowserWalletIdentity)
 	}) }, [])
 	// The background announces browser wallet account and signer changes; the page requests the browser wallet tabs again instead of reading storage.
 	useEffect(() => noReplyExpectingBrowserRuntimeOnMessageListener((message) => {
 		const parsed = MessageToPopup.safeParse(message)
 		if (!parsed.success || (parsed.value.method !== 'popup_accounts_update' && parsed.value.method !== 'popup_signer_name_changed')) return false
-		void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setTabs(reply.tabs)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not refresh browser accounts'))
+		void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => { setBrowserWallets(reply.browserWallets); setAmbiguousBrowserWalletIdentity(reply.ambiguousBrowserWalletIdentity) }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not refresh browser accounts'))
 		return false
 	}), [])
 	const ledger = () => run(async () => {
@@ -129,5 +131,5 @@ export function useSigningWalletSetup() {
 	const resetAccountScan = () => { accountImporter.current = createAirGapAccountImporter() }
 	const toggleAccountScan = () => { resetAccountScan(); setScan(!scan) }
 	const cancelDeviceOperation = () => controller.current.abort(new Error('Wallet setup cancelled'))
-	return { target, binding, bindings, tabs, kind, setKind, label, setLabel, path, setPath, addressText, setAddressText, accounts, setAccounts, selected, setSelected, verifiedLedgerAddress, setVerifiedLedgerAddress, error, status, setStatus, saved, setSaved, busy, scan, setScan, resetAccountScan, toggleAccountScan, cancelDeviceOperation, ledger, discoverLedger, save, connectBrowserWallet, removeWallet, importPublicAccountFrame }
+	return { target, binding, bindings, browserWallets, ambiguousBrowserWalletIdentity, kind, setKind, label, setLabel, path, setPath, addressText, setAddressText, accounts, setAccounts, selected, setSelected, verifiedLedgerAddress, setVerifiedLedgerAddress, error, status, setStatus, saved, setSaved, busy, scan, setScan, resetAccountScan, toggleAccountScan, cancelDeviceOperation, ledger, discoverLedger, save, connectBrowserWallet, removeWallet, importPublicAccountFrame }
 }

@@ -88,3 +88,9 @@ test('utility modules do not import the Safe domain', async () => {
 	}
 	assert.deepEqual(violations, [])
 })
+
+test('the signing page protocol does not carry popup tab state', async () => {
+	const imports = (await getValueImports(resolve(sourceRoot, 'types/signingPageReply.ts'))).map((file) => relative(sourceRoot, file))
+	assert.equal(imports.includes('types/user-interface-types.ts'), false)
+	assert.doesNotMatch(await Bun.file(resolve(sourceRoot, 'types/signingPageReply.ts')).text(), /\bTabState\b/u)
+})

@@ -2,7 +2,7 @@ import { signingOperationError, isSigningOperationError } from '../signing/signi
 import type { SigningPageReply } from '../types/signingPageReply.js'
 import type { SigningPageRequest } from '../types/directSigning.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { matchesBrowserSigningWallet } from '../signing/browserWallet.js'
+import { browserWalletProviderId, matchesBrowserSigningWallet } from '../signing/browserWallet.js'
 import { saveAddressSigningWallet } from './signingAddressBookCoordinator.js'
 import { getAddressBookAndSigningWalletBindings, getSigningWalletBindings } from './signingWalletStore.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -12,9 +12,14 @@ export async function getSigningWalletBindingsReply(): Promise<SigningPageReply>
 	return { ok: true, bindings: await getSigningWalletBindings() }
 }
 
+// The setup page links an address to a connected browser wallet, so it gets each connected wallet's identity and accounts, and whether any provider claims an ambiguous identity.
 export async function getSigningWallets(): Promise<SigningPageReply> {
-	const data = await getAddressBookAndSigningWalletBindings()
-	return { ok: true, bindings: data.signingWalletBindings, tabs: await getAllTabStates() }
+	const [data, tabs] = await Promise.all([getAddressBookAndSigningWalletBindings(), getAllTabStates()])
+	const browserWallets = tabs.flatMap((tab) => {
+		const providerId = browserWalletProviderId(tab)
+		return !tab.signerConnected || providerId === undefined ? [] : [{ tabId: tab.tabId, signerName: tab.signerName, providerId, label: tab.signerProvider?.rdns ?? tab.signerName, accounts: tab.signerAccounts }]
+	})
+	return { ok: true, bindings: data.signingWalletBindings, browserWallets, ambiguousBrowserWalletIdentity: tabs.some((tab) => tab.signerProvider?.ambiguous === true) }
 }
 
 export async function saveSigningWallet(request: Extract<SigningPageRequest, { method: 'signing_saveWallet' }>): Promise<SigningPageReply> {

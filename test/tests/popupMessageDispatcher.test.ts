@@ -706,6 +706,19 @@ test('only signing-page methods reach the signing service, so a popup method sta
 	assert.equal(isSigningPageMessage({ method: 'popup_requestSettings' }), false)
 })
 
+// The setup page's reply carries each connected browser wallet's identity and accounts, not the tab's popup state.
+test('the signing wallet setup reply lists linkable browser wallets without tab state', async () => {
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	const { signingPageMessageHandler } = await import('../../app/ts/background/signingRequestService.js')
+	const { updateTabState } = await import('../../app/ts/background/storageVariables.js')
+	const context = createDispatcherContext(async () => { throw new Error('Signing must not reset popup simulation') })
+	await updateTabState(5, (state) => ({ ...state, signerName: 'MetaMask', signerProvider: { ambiguous: false, rdns: 'io.metamask' }, signerConnected: true, signerAccounts: [0x1111111111111111111111111111111111111111n] }))
+	const decoded = signingPageReplyCodecs.signing_wallets.parse(await signingPageMessageHandler({ method: 'signing_wallets' }, context.simulationServicesOwner.getCurrent(), context.websiteTabConnections))
+	if (!decoded.ok) throw new Error(decoded.message)
+	assert.deepEqual(decoded.browserWallets, [{ tabId: 5, signerName: 'MetaMask', providerId: 'eip6963:io.metamask', label: 'io.metamask', accounts: [0x1111111111111111111111111111111111111111n] }])
+	assert.equal(decoded.ambiguousBrowserWalletIdentity, false)
+})
+
 // The popup labels addresses with their signing wallets on every render and refresh, so its request must not read every tab's state.
 test('the signing wallet bindings request reads no tab state', async () => {
 	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
@@ -734,7 +747,8 @@ test('signing requests use their service and codecs without entering the popup r
 	assert.equal(decoded.ok, true)
 	if (!decoded.ok) throw new Error(decoded.message)
 	assert.deepEqual(decoded.bindings, [])
-	assert.deepEqual(decoded.tabs, [])
+	assert.deepEqual(decoded.browserWallets, [])
+	assert.equal(decoded.ambiguousBrowserWalletIdentity, false)
 	assert.equal(PopupMessage.safeParse({ method: 'signing_wallets' }).success, false)
 	const invalid = await signingPageMessageHandler({ method: 'signing_result', id: 'request', revision: 'revision', result: 42 }, services, context.websiteTabConnections)
 	assert.equal(signingPageReplyCodecs.signing_result.parse(invalid).ok, false)
