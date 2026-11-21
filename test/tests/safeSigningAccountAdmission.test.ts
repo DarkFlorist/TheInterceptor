@@ -85,16 +85,19 @@ test('Safe pin lookup uses the caller chain even when persisted settings have ch
 	expect(await hasPinnedSigningAddress({ ...snapshot, activeRpcNetwork: changedNetwork })).toBe(false)
 })
 
-test('a contact resolved before a duplicate Safe does not substitute its saved owner', async () => {
-	const { getSavedSafeSigningAccount } = await import('../../app/ts/background/safeSigningAccount.js')
+test('a contact before a Safe at the same address does not hide the Safe or its signing checks', async () => {
+	const { getConfiguredSafeEntry, getSavedSafeSigningAccount, hasPinnedSigningAddress } = await import('../../app/ts/background/safeSigningAccount.js')
+	const { getSettings } = await import('../../app/ts/background/settings.js')
 	const safe = { ...createSafeAddressBookEntry(), chainId: ethereum.getChainId(), safeSigningSignerAddress: 1n }
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [{ type: 'contact', address: activeAddress, name: 'Ordinary account on this chain', chainId: ethereum.getChainId(), entrySource: 'User', useAsActiveAddress: true }, safe] })
-	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBeUndefined()
+	expect(await getConfiguredSafeEntry(activeAddress, ethereum.getChainId())).toEqual(safe)
+	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBe(1n)
+	// The Safe is saved for one chain, so another chain has no Safe at the address.
 	expect(await getSavedSafeSigningAccount(activeAddress, 999n)).toBeUndefined()
+	const settings = await getSettings()
+	expect(await hasPinnedSigningAddress({ ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, chainId: ethereum.getChainId() }, selectedSigningAddress: undefined, activeSigningSafeAddress: activeAddress })).toBe(true)
+	// The Safe's checks apply: a transaction from the Safe becomes a Safe proposal for its saved owner instead of an ordinary transaction.
 	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
 	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: { method: 'eth_sendTransaction', params: [{ from: activeAddress, to: 2n, value: 0n }] } }, false, activeAddress, 3n)
-	expect(preparation.rejection).toBeUndefined()
-	expect(preparation.transactionExecutor).toBe(activeAddress)
-	await browserStorageLocalSet({ userAddressBookEntriesV3: [safe] })
-	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBe(1n)
+	expect(preparation.flowKind).toBe('proposal')
 })

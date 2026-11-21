@@ -1,5 +1,5 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
-import { getSafeEntry, resolveSafeSigningPlan } from '../../safe/safeSigningPlan.js'
+import { findSafeEntry, resolveSafeSigningPlan } from '../../safe/safeSigningPlan.js'
 import { getSigningWalletBinding } from '../signingWalletStore.js'
 import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -902,11 +902,11 @@ async function createConfirmationForMessage(
 ) {
 	const transactionParams = confirmation.parameters
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
-	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
-		.find((entry) => entry.address === activeAddress)
+	// A Safe saved at the active address is its entry even when a contact or contract entry shares the address.
+	const activeAddressEntry = findSafeEntry(await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()), activeAddress, ethereumClientService.getChainId())
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	// Signing mode signs a Safe's messages with the shared plan's signing owner, from the entry read once above.
-	const signingPlan = resolveSafeSigningPlan(getSafeEntry(activeAddressEntry), getWalletSelectedAccount(signerTabState))
+	const signingPlan = resolveSafeSigningPlan(activeAddressEntry, getWalletSelectedAccount(signerTabState))
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
 		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : signingPlan.signingOwner
 		: activeAddress
