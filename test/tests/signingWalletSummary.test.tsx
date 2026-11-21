@@ -44,3 +44,31 @@ for (const failed of [false, true]) test(`wallet summary distinguishes loading f
 		dom.restore()
 	}
 })
+
+test('"Use in simulation" selects the account entry even when a Safe shares its address', async () => {
+	const { getActiveAddressSelection } = await import('../../app/ts/utils/activeAddressSelection.js')
+	const { ChangeActiveAddress } = await import('../../app/ts/types/popupSettingsRequests.js')
+	const dom = installDomMock()
+	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	const sent: unknown[] = []
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: { sendMessage: async (message: unknown) => { sent.push(message); return { type: 'ChangeActiveAddressReply', ok: true } } } } })
+	const sharedAddress = 0x6000000000000000000000000000000000000006n
+	try {
+		await act(async () => { render(h(SigningWalletSummary, { address: sharedAddress, wallets: { bindings: [] } }), dom.document.body) })
+		const button = findRenderedElement(dom.document.body, (node) => node.tagName?.toLowerCase() === 'button' && node.textContent === 'Use in simulation')
+		const click = button?.l === undefined ? undefined : Object.entries(button.l).find(([key]) => key.startsWith('Click'))?.[1]
+		if (click === undefined) throw new Error('Expected the Use in simulation button')
+		await act(async () => { await click({ stopPropagation: () => undefined, currentTarget: button }); await new Promise((resolve) => setTimeout(resolve, 0)) })
+		const request = ChangeActiveAddress.parse(sent.find((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_changeActiveAddress'))
+		expect(request.data).toEqual({ activeAddress: sharedAddress, simulationMode: true, activeAddressKind: 'account' })
+		// The background resolves the request to the account entry, not the Safe at the same address.
+		const contact = { type: 'contact' as const, name: 'Account', address: sharedAddress, entrySource: 'User' as const, chainId: 'AllChains' as const }
+		const safe = { type: 'safe' as const, name: 'Safe', address: sharedAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true }
+		expect(getActiveAddressSelection(request.data.activeAddress, [safe, contact], true, 1n, [], request.data.activeAddressKind)).toEqual({ type: 'addressBookEntry', entry: contact })
+	} finally {
+		act(() => { render(undefined, dom.document.body) })
+		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', previousBrowser)
+		dom.restore()
+	}
+})

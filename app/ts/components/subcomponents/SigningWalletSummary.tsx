@@ -1,4 +1,5 @@
-import { sendPopupMessageToBackgroundPage, getHtmlFile } from '../../background/backgroundUtils.js'
+import { getHtmlFile } from '../../background/backgroundUtils.js'
+import { requestActiveAddressChange } from '../activeAddressChange.js'
 import { useState } from 'preact/hooks'
 import type { SigningWalletBindingsState } from '../hooks/useSigningWalletBindings.js'
 import { signingWalletDescription } from '../../signing/backend.js'
@@ -8,6 +9,7 @@ export function openSigningWalletSetup(address?: bigint) {
 	return browser.tabs.create({ url: `${ browser.runtime.getURL(page) }${ address === undefined ? '' : `?address=0x${ address.toString(16).padStart(40, '0') }` }` })
 }
 
+// A signing wallet belongs to an ordinary account, never a Safe, so the shortcut selects the account entry even when a Safe shares its address.
 export function SigningWalletSummary({ address, wallets, showSimulationShortcut = true }: { address: bigint, wallets: SigningWalletBindingsState, showSimulationShortcut?: boolean }) {
 	const [error, setError] = useState<string>()
 	const { bindings, error: loadError } = wallets
@@ -21,7 +23,7 @@ export function SigningWalletSummary({ address, wallets, showSimulationShortcut 
 		<small>Choose how this address signs. Your selected address and mode stay the same.</small>
 		</div>
 		{ showSimulationShortcut ? <div class = 'signing-wallet-action'>
-		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Use in simulation</button>
+		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void requestActiveAddressChange({ activeAddress: address, activeAddressKind: 'account' }, true).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Use in simulation</button>
 		<small>Select this address in Simulation mode. Your signing address stays the same.</small>
 		</div> : undefined }
 		{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
