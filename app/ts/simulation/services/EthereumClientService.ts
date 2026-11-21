@@ -12,8 +12,6 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { EthereumBytes32 as EthereumBytes32Codec } from '../../types/wire-types.js'
-
-const TransactionOutcome = funtypes.ReadonlyObject({ transactionHash: EthereumBytes32Codec, blockNumber: EthereumQuantity, status: funtypes.Union(funtypes.Literal('0x0'), funtypes.Literal('0x1')) })
 import type { RpcEntry } from '../../types/rpc.js'
 import type { SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
@@ -340,20 +338,6 @@ export class EthereumClientService {
 	public readonly sendRawTransaction = async (signedTransaction: Uint8Array, requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_sendRawTransaction', params: [signedTransaction] }, requestAbortController)
 		return EthereumBytes32Codec.parse(response)
-	}
-
-	// Only what reconciling a submitted transaction needs from its receipt: which transaction, its block, and whether it succeeded. Undefined while it has no receipt.
-	public readonly getTransactionOutcome = async (hash: bigint, requestAbortController: AbortController | undefined) => {
-		const response: unknown = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionReceipt', params: [hash] }, requestAbortController)
-		if (response === null) return undefined
-		return TransactionOutcome.parse(response)
-	}
-
-	// The hash under which the RPC knows a transaction, or undefined when it does not know it.
-	public readonly getKnownTransactionHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
-		const response: unknown = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
-		if (response === null) return undefined
-		return funtypes.ReadonlyObject({ hash: EthereumBytes32Codec }).parse(response).hash
 	}
 
 	public readonly getGasPrice = async(requestAbortController: AbortController | undefined) => {

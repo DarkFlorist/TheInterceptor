@@ -23,6 +23,7 @@ import { SigningPageRequest } from '../../app/ts/types/directSigning.js'
 import { SigningPageReply } from '../../app/ts/types/signingPageReply.js'
 import type { LedgerHid, LedgerHidDevice } from '../../app/ts/signing/ledgerHid.js'
 import { installDomMock } from './domMock.js'
+import { pendingTransactionResult } from '../benchmarks/directSigningRpcFixtures.js'
 
 const privateKey: Hex = '0x0000000000000000000000000000000000000000000000000000000000000001'
 const account = privateKeyToAccount(privateKey)
@@ -53,7 +54,7 @@ beforeEach(async () => {
 			case 'eth_gasPrice': result = '0x1'; break
 			case 'eth_getBalance': result = '0xffffffffffffffff'; break
 			case 'eth_getTransactionReceipt': result = null; break
-			case 'eth_getTransactionByHash': result = submittedHash === undefined ? null : { hash: submittedHash }; break
+			case 'eth_getTransactionByHash': result = submittedHash === undefined || record.result === undefined ? null : pendingTransactionResult(ensureHex(record.result)); break
 			case 'eth_sendRawTransaction':
 				broadcasts += 1
 				if (broadcastFails) throw new TypeError('Network request failed after submission')

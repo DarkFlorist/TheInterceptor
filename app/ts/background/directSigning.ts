@@ -232,14 +232,14 @@ async function broadcast(record: DirectSigningRecord, records: DirectSigningReco
 	await verifyDirectResult(record.input, record.result)
 	const rpc = await checkChain(record)
 	const hash = BigInt(record.transactionHash)
-	const receipt = await rpc.getTransactionOutcome(hash, undefined)
-	if (receipt !== undefined) {
+	const receipt = await rpc.getTransactionReceipt(hash, undefined)
+	if (receipt !== null) {
 		if (receipt.transactionHash !== hash) throw signingOperationError('RPC receipt belongs to a different transaction')
-		return await records.store({ ...record, phase: 'confirmed', executionSucceeded: receipt.status === '0x1' })
+		return await records.store({ ...record, phase: 'confirmed', executionSucceeded: receipt.status === 'success' })
 	}
-	const knownHash = await rpc.getKnownTransactionHash(hash, undefined)
-	if (knownHash !== undefined) {
-		if (knownHash !== hash) throw signingOperationError('RPC returned a different transaction while reconciling submission')
+	const known = await rpc.getTransactionByHash(hash, undefined)
+	if (known !== null) {
+		if (known.hash !== hash) throw signingOperationError('RPC returned a different transaction while reconciling submission')
 		return await records.store({ ...record, phase: 'submitted' })
 	}
 	if (record.phase === 'submitted' || record.phase === 'confirmed') throw signingOperationError('Previously submitted transaction is not currently visible. Keep its hash and check the configured RPC before taking further action.')

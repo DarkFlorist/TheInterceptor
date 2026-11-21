@@ -1,6 +1,7 @@
 import { waitForSigningFocus } from './signingAccessibility.js'
 import { installFlowCamera, installFlowLedger } from './directSigningFlowFixtures.js'
 import { createDirectSigningFlowPendingRequest } from './directSigningFlowPendingRequest.js'
+import { minedReceiptResult, pendingTransactionResult } from './directSigningRpcFixtures.js'
 /** Built-page walkthrough with public test keys, scripted HID, synthetic QR camera and local RPC. No physical-device claim. */
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -8,7 +9,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { type DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
 import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { type SigningWalletBinding, SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
-import { bytesFromHex, bytesToHex, keccak256 } from '../../app/ts/utils/ethereumBytes.js'
+import { bytesFromHex, bytesToHex, keccak256, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
 import { prepareDirectPayload } from '../../app/ts/signing/backend.js'
 import { captureExtensionScreenshot } from './screenshotCapture.js'
@@ -19,6 +20,7 @@ const address = '0x7e5f4552091a69125d5dfcb7b8c2659029395bdf'
 const path = 'm/44\'/60\'/0\'/0/0'
 const typed = JSON.stringify({ types: { EIP712Domain: [{ name: 'name', type: 'string' }, { name: 'chainId', type: 'uint256' }], Message: [{ name: 'contents', type: 'string' }] }, primaryType: 'Message', domain: { name: 'Signing walkthrough', chainId: 1 }, message: { contents: 'Approve this readable message' } })
 let submittedHash: string | undefined
+let submittedTransaction: Hex | undefined
 let sends = 0
 let failSubmission = false
 let confirmed = false
@@ -30,10 +32,10 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
 		case 'eth_getTransactionCount': result = '0x0'; break
 		case 'eth_gasPrice': result = '0x1'; break
 		case 'eth_getBalance': result = '0xffffffffffffffff'; break
-		case 'eth_getTransactionReceipt': result = confirmed ? { transactionHash: submittedHash, blockNumber: '0x1', status: '0x1' } : null; break
-		case 'eth_getTransactionByHash': result = submittedHash === undefined ? null : { hash: submittedHash }; break
+		case 'eth_getTransactionReceipt': result = confirmed && submittedTransaction !== undefined ? minedReceiptResult(submittedTransaction, true) : null; break
+		case 'eth_getTransactionByHash': result = submittedTransaction === undefined ? null : pendingTransactionResult(submittedTransaction); break
 		case 'eth_sendRawTransaction':
-			sends++; submittedHash = keccak256(body.params[0])
+			sends++; submittedTransaction = body.params[0]; submittedHash = keccak256(body.params[0])
 			if (failSubmission) return Response.json({ jsonrpc: '2.0', id: body.id, error: { code: -32000, message: 'Fixture lost the submission response' } })
 			result = submittedHash; break
 		default: return Response.json({ jsonrpc: '2.0', id: body.id, error: { code: -32601, message: `Unexpected fixture RPC ${ body.method }` } })
@@ -61,7 +63,7 @@ try {
 	await waitForPerformanceMarks(background, ['interceptor:background:loaded'], 30000)
 	const origin = worker.url.slice(0, worker.url.indexOf('/js/'))
 	for (const type of ['ledger', 'airgap'] as const) for (const method of ['eth_sendTransaction', 'personal_sign', 'eth_signTypedData_v4'] as const) {
-		sends = 0; submittedHash = undefined; confirmed = false; failSubmission = type === 'airgap'
+		sends = 0; submittedHash = undefined; submittedTransaction = undefined; confirmed = false; failSubmission = type === 'airgap'
 		const binding: SigningWalletBinding = { revision: crypto.randomUUID(), wallet: { type, address: BigInt(address), label: 'Walkthrough public test account', publicKey: bytesToHex(secp256k1.getPublicKey(key, type === 'airgap')), derivationPath: path, ...(type === 'airgap' ? { sourceFingerprint: 0xf23f9fd2 } : {}) } }
 		const data = method === 'eth_sendTransaction' ? serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 2000000000n, maxPriorityFeePerGas: 1000000000n, to: address, value: 1000000000000000n }) : method === 'personal_sign' ? '0x48656c6c6f2066726f6d207468652077616c6b7468726f756768' : typed
 		const record: DirectSigningRecord = { id: crypto.randomUUID(), request: { requestId: 1, requestSocket: { tabId: 98765, connectionName: 0n } }, requestInstanceId: crypto.randomUUID(), binding, websiteOrigin: 'https://walkthrough.example.test', rpcUrl: `http://127.0.0.1:${ server.port }`, input: { method, data, address, chainId: 1n }, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
