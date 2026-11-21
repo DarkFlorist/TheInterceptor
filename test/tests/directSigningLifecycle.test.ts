@@ -495,3 +495,12 @@ test('an edited gas limit without results needs send anyway on the signing page 
 	await expect(approve(record)).rejects.toThrow('gas limit changed')
 	expect((await approve(record, true)).phase).toBe('approved')
 })
+
+test('a message approval does not need a reachable RPC, while a transaction approval does', async () => {
+	globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+	await expect(approve(record)).rejects.toThrow()
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
+	const message: DirectSigningRecord = { ...record, id: crypto.randomUUID(), input: { method: 'personal_sign', data: '0x48656c6c6f', address: account.address, chainId: 1n }, revision: crypto.randomUUID() }
+	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([message]) })
+	expect((await approve(message)).phase).toBe('approved')
+})

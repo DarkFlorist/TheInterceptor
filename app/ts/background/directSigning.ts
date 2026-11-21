@@ -48,9 +48,10 @@ async function checkChain(record: DirectSigningRecord) {
 	return client
 }
 
+// A message signature needs no live chain state, so only a transaction checks the reviewed network's chain, its nonce, fees and balance, and a message approval does not depend on a reachable RPC.
 async function checkTransactionFreshness(record: DirectSigningRecord) {
-	const rpc = await checkChain(record)
 	if (record.input.method !== 'eth_sendTransaction') return
+	const rpc = await checkChain(record)
 	const transaction = parseTransaction(ensureHex(record.input.data))
 	const nonce = await rpc.getTransactionCount(record.binding.wallet.address, 'pending', undefined)
 	if (nonce !== BigInt(transaction.nonce ?? 0)) throw signingOperationError('The account nonce changed. Cancel and review a new transaction before signing again.')
