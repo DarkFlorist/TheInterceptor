@@ -5,7 +5,7 @@ import { bytesFromHex, bytesToHex, ensureHex } from '../utils/ethereumBytes.js'
 import { decodeFunctionDataStrict, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { getSafeTxHash } from '../utils/eip712.js'
 
-export const SAFE_SIGNATURE_BYTES = 65
+const SAFE_SIGNATURE_BYTES = 65
 
 export const SAFE_EXECUTION_ABI = [{
 	type: 'function',
@@ -50,6 +50,13 @@ function parseSafeExecutionArguments(args: readonly unknown[]) {
 	}
 }
 
+// The number of owner signatures in an execution's signature payload, refusing a payload that is not whole signatures. Every reader of the payload counts through this, so a malformed one is always the actionable validation failure.
+export function getSafeExecutionSignatureCount(encodedSignatures: Hex) {
+	const signatureBytes = bytesFromHex(encodedSignatures).length
+	if (signatureBytes % SAFE_SIGNATURE_BYTES !== 0) throw createSafeContractValidationFailure('The incomplete Gnosis Safe execution contains a malformed signature payload.')
+	return BigInt(signatureBytes / SAFE_SIGNATURE_BYTES)
+}
+
 export function decodeSafeExecution(chainId: bigint, safeAddress: bigint, nonce: bigint, input: Uint8Array) {
 	const decoded = decodeFunctionDataStrict(SAFE_EXECUTION_ABI, bytesToHex(input))
 	const execution = parseSafeExecutionArguments(decoded.args)
@@ -77,10 +84,7 @@ export async function completeSafeExecutionWithConfiguredSigner(
 ) {
 	const { execution, safeTx } = decodeSafeExecution(chainId, safeAddress, safeState.nonce, input)
 	const signatures = bytesFromHex(execution.signatures)
-	if (signatures.length % SAFE_SIGNATURE_BYTES !== 0) {
-		throw createSafeContractValidationFailure('The incomplete Gnosis Safe execution contains a malformed signature payload.')
-	}
-	const signatureCount = BigInt(signatures.length / SAFE_SIGNATURE_BYTES)
+	const signatureCount = getSafeExecutionSignatureCount(execution.signatures)
 	if (signatureCount >= safeState.threshold) return input
 	if (signatureCount + 1n < safeState.threshold) {
 		throw createSafeContractValidationFailure(`This Gnosis Safe execution has ${ signatureCount.toString() } signature(s), and the wallet-selected Safe owner cannot satisfy its ${ safeState.threshold.toString() }-signature threshold.`)

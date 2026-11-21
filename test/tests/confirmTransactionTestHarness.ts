@@ -439,8 +439,9 @@ export const fakeSafeContract = {
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
-	// Owners whose approveHash the Safe has recorded, for any SafeTx hash.
-	ownersApprovedHash: [] as bigint[],
+	// The (owner, SafeTx hash) pairs the Safe has recorded through approveHash, and every approvedHashes read with the block it was pinned to.
+	approvedHashes: [] as { readonly owner: bigint, readonly safeTxHash: bigint }[],
+	approvedHashesCalls: [] as { readonly owner: bigint, readonly safeTxHash: bigint, readonly blockTag: unknown }[],
 	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
@@ -457,7 +458,8 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
-	fakeSafeContract.ownersApprovedHash = []
+	fakeSafeContract.approvedHashes = []
+	fakeSafeContract.approvedHashesCalls = []
 	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
 
@@ -501,8 +503,12 @@ export const fakeRequestHandler = {
 						return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
 					case safeSelectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [fakeSafeContract.threshold])
 					case safeSelectors.approvedHashes: {
-						const owner = BigInt(`0x${ Buffer.from(call.data).toString('hex').slice(8 + 24, 8 + 64) }`)
-						return encodeFunctionReturn(SAFE_ABI, 'approvedHashes', [fakeSafeContract.ownersApprovedHash.includes(owner) ? 1n : 0n])
+						const calldata = Buffer.from(call.data).toString('hex')
+						const owner = BigInt(`0x${ calldata.slice(8 + 24, 8 + 64) }`)
+						const safeTxHash = BigInt(`0x${ calldata.slice(8 + 64, 8 + 128) }`)
+						fakeSafeContract.approvedHashesCalls.push({ owner, safeTxHash, blockTag: rpcRequest.params?.[1] })
+						const approved = fakeSafeContract.approvedHashes.some((approval) => approval.owner === owner && approval.safeTxHash === safeTxHash)
+						return encodeFunctionReturn(SAFE_ABI, 'approvedHashes', [approved ? 1n : 0n])
 					}
 					case safeSelectors.messageHash: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeSafeContract.messageHash)])
 					case safeSelectors.messageSignature: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'isValidSignature', [fakeSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])

@@ -7,8 +7,7 @@ import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeSigningPlan } from './safeSigningPlan.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot, isSafeTxHashApprovedOnChain, type SafeContractState } from './safeCore.js'
-import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution, SAFE_SIGNATURE_BYTES } from './safeExecution.js'
-import { bytesFromHex } from '../utils/ethereumBytes.js'
+import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution, getSafeExecutionSignatureCount } from './safeExecution.js'
 import { getSafeTxHash } from '../utils/eip712.js'
 
 // The selector of a Gnosis Safe's execTransaction.
@@ -106,7 +105,7 @@ async function assertOwnerSignatureAccepted(ethereumClientService: EthereumClien
 	const { signingOwner, executor } = plan
 	if (signingOwner === undefined || signingOwner === executor) return false
 	const { execution, safeTx } = decodeSafeExecution(ethereumClientService.getChainId(), safeAddress, snapshot.state.nonce, input)
-	const signatureCount = BigInt(bytesFromHex(execution.signatures).length / SAFE_SIGNATURE_BYTES)
+	const signatureCount = getSafeExecutionSignatureCount(execution.signatures)
 	if (signatureCount >= snapshot.state.threshold) return false
 	if (!await isSafeTxHashApprovedOnChain(ethereumClientService, safeAddress, signingOwner, BigInt(getSafeTxHash(safeTx)), snapshot.blockNumber)) throw createSafeContractValidationFailure(SAFE_OWNER_NOT_APPROVED_ON_CHAIN_MESSAGE)
 	return true

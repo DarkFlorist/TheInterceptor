@@ -1513,6 +1513,17 @@ test('direct Safe execution checks delegate library bytecode before completing o
 	} finally { getCode.mockRestore() }
 })
 
+// Records on the fake Safe that the owner approved, with approveHash, the SafeTx of this execution request of the active Safe, and returns that SafeTx hash.
+async function approveExecutionOnChain(owner: bigint, request: SendTransactionParams) {
+	const { decodeSafeExecution } = await import('../../app/ts/safe/safeExecution.js')
+	const { getSafeTxHash: getAppSafeTxHash } = await import('../../app/ts/utils/eip712.js')
+	const input = request.params[0].data
+	if (input === undefined) throw new Error('Expected execTransaction calldata')
+	const safeTxHash = BigInt(getAppSafeTxHash(decodeSafeExecution(fakeRpcNetwork.chainId, activeAddress, fakeSafeContract.nonce, input).safeTx))
+	fakeSafeContract.approvedHashes = [{ owner, safeTxHash }]
+	return safeTxHash
+}
+
 test('a direct Safe execution is pre-validated by the saved signing owner and paid by the separate execution account', async () => {
 	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
@@ -1520,10 +1531,12 @@ test('a direct Safe execution is pre-validated by the saved signing owner and pa
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
 	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
-	// The owner's pre-validated signature is accepted from another sender only because the owner approved the hash on chain.
-	fakeSafeContract.ownersApprovedHash = [safeTestOwnerAddress]
 	const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
+	// The owner's pre-validated signature is accepted from another sender only because the owner approved exactly this SafeTx hash on chain.
+	const safeTxHash = await approveExecutionOnChain(safeTestOwnerAddress, request)
 	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: request }, false, activeAddress, walletAccount))
+	// The read names this owner and SafeTx hash and is pinned to the block the Safe's state was reviewed at.
+	assert.deepEqual(fakeSafeContract.approvedHashesCalls.map(({ owner, safeTxHash, blockTag }) => ({ owner, safeTxHash, block: BigInt(String(blockTag)) })), [{ owner: safeTestOwnerAddress, safeTxHash, block: 123n }])
 	const { safeFlow: approvedFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	assert.equal(approvedFlow.kind === 'directExecution' && approvedFlow.safeExecutionOwnerApprovedOnChain, true)
 	assert.equal(preparation.rejection, undefined)
@@ -1546,8 +1559,8 @@ test('refreshing a direct Safe execution keeps the reviewed wallet owner when on
 	fakeSafeContract.threshold = 1n
 	// No saved signing owner, so the wallet's account (an owner) signs; the saved execution account pays.
 	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeExecutionAddress: recipientAddress })])
-	fakeSafeContract.ownersApprovedHash = [safeTestOwnerAddress]
 	const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
+	await approveExecutionOnChain(safeTestOwnerAddress, request)
 	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: request }, false, activeAddress, safeTestOwnerAddress))
 	assert.equal(preparation.rejection, undefined)
 	const { safeFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
@@ -1569,7 +1582,7 @@ test('a direct Safe execution from a separate execution account is refused befor
 	const { SAFE_OWNER_NOT_APPROVED_ON_CHAIN_MESSAGE } = await import('../../app/ts/safe/safeExecutionRouting.js')
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
-	fakeSafeContract.ownersApprovedHash = []
+	fakeSafeContract.approvedHashes = []
 	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const transactionParams = separatePayerExecution(recipientAddress)
@@ -1596,8 +1609,8 @@ test('with a saved signing owner and execution account, a wallet selection does 
 	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
-	fakeSafeContract.ownersApprovedHash = [safeTestOwnerAddress]
 	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
+	await approveExecutionOnChain(safeTestOwnerAddress, separatePayerExecution(recipientAddress))
 	const walletAccount = 0x5555555555555555555555555555555555555555n
 	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: separatePayerExecution(recipientAddress) }, false, activeAddress, walletAccount))
 	const { safeFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
@@ -1606,4 +1619,28 @@ test('with a saved signing owner and execution account, a wallet selection does 
 	const refresh = await withSilencedConsole(async () => await refreshAndPersistSafeSignerSelection(ethereum, pending, walletAccount, async () => { throw new Error('No refresh expected') }))
 	assert.equal(refresh.refreshRequired, false)
 	assert.equal(refresh.refreshResult.status, 'unchanged')
+})
+
+test('a malformed signature payload in a separately paid Safe execution is refused as malformed before simulating', async () => {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	fakeSafeContract.threshold = 1n
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const transactionParams = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), `0x${ '11'.repeat(64) }`]) }] })
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port: createWebsitePort(socket, 0, postedMessages), socket, websiteOrigin: 'https://payer.example', approved: true, wantsToConnect: true } } }]])
+	const ethSimulateCalls = fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length
+	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum, simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams }, false, activeAddress,
+		{ websiteOrigin: 'https://payer.example', icon: undefined, title: 'Payer' }, websiteTabConnections,
+	)), { type: 'doNotReply' })
+	const [refused] = await modules.getPendingTransactionsAndMessages()
+	if (refused?.type !== 'Transaction' || !('transactionToSimulate' in refused) || refused.transactionToSimulate.success) throw new Error('Expected the refused direct Safe execution')
+	assert.equal(refused.transactionToSimulate.error.message, 'The incomplete Gnosis Safe execution contains a malformed signature payload.')
+	assert.deepEqual(fakeSafeContract.approvedHashesCalls, [])
+	assert.equal(fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length, ethSimulateCalls)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })
