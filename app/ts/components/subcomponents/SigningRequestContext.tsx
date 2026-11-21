@@ -9,6 +9,7 @@ export function SigningRequestContext({ pending }: { pending: ShownPendingTransa
 	const chainId = pending.signingChainId ?? (pending.transactionOrMessageCreationStatus !== 'Simulated' ? undefined : pending.type === 'SignableMessage' ? pending.visualizedPersonalSignRequest.rpcNetwork.chainId : pending.popupVisualisation.statusCode === 'success' ? pending.popupVisualisation.data.simulationState.rpcNetwork.chainId : undefined)
 	const wallet = pending.signingWalletBinding
 	const safeExecutionSignerAddress = pending.type === 'Transaction' && pending.safeFlow.kind === 'directExecution' ? pending.safeFlow.safeExecutionSignerAddress : undefined
+	const ownerApprovedOnChain = pending.type === 'Transaction' && pending.safeFlow.kind === 'directExecution' && pending.safeFlow.safeExecutionOwnerApprovedOnChain === true
 	return <section class = 'signing-request-context'>
 		<strong>{ pending.simulationMode ? 'Simulation mode · No real signature or broadcast' : 'Signing mode · Real signature' }</strong>
 		<dl class = 'signing-grid'>
@@ -17,6 +18,7 @@ export function SigningRequestContext({ pending }: { pending: ShownPendingTransa
 			{ chainId === undefined ? undefined : <div><dt>Network</dt><dd>{ CHAIN_NAMES.get(chainId.toString()) ?? 'Custom network' } · Chain { chainId.toString() }</dd></div> }
 			{ wallet === undefined ? undefined : <><div><dt>Signing wallet</dt><dd>{ signingWalletDescription(wallet) }</dd></div>{ wallet.wallet.address === pending.activeAddress ? undefined : <div><dt>Signing account</dt><dd><SigningCopyValue value = { addressString(wallet.wallet.address) } label = 'signing account'/></dd></div> }</> }
 			{ safeExecutionSignerAddress === undefined ? undefined : <div><dt>Execution account</dt><dd><SigningCopyValue value = { addressString(safeExecutionSignerAddress) } label = 'execution account'/></dd></div> }
+			{ ownerApprovedOnChain ? <div><dt>Owner approval</dt><dd>The signing owner approved this Gnosis Safe transaction on chain</dd></div> : undefined }
 		</dl>
 	</section>
 }

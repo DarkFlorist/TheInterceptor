@@ -1,4 +1,5 @@
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -1519,8 +1520,12 @@ test('a direct Safe execution is pre-validated by the saved signing owner and pa
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
 	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
+	// The owner's pre-validated signature is accepted from another sender only because the owner approved the hash on chain.
+	fakeSafeContract.ownersApprovedHash = [safeTestOwnerAddress]
 	const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
 	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: request }, false, activeAddress, walletAccount))
+	const { safeFlow: approvedFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	assert.equal(approvedFlow.kind === 'directExecution' && approvedFlow.safeExecutionOwnerApprovedOnChain, true)
 	assert.equal(preparation.rejection, undefined)
 	assert.equal(preparation.transactionExecutor, recipientAddress)
 	const outer = preparation.effectiveTransactionParams
@@ -1541,6 +1546,7 @@ test('refreshing a direct Safe execution keeps the reviewed wallet owner when on
 	fakeSafeContract.threshold = 1n
 	// No saved signing owner, so the wallet's account (an owner) signs; the saved execution account pays.
 	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeExecutionAddress: recipientAddress })])
+	fakeSafeContract.ownersApprovedHash = [safeTestOwnerAddress]
 	const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
 	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: request }, false, activeAddress, safeTestOwnerAddress))
 	assert.equal(preparation.rejection, undefined)
@@ -1555,4 +1561,32 @@ test('refreshing a direct Safe execution keeps the reviewed wallet owner when on
 	assert.equal(refreshed.safeFlow.safeExecutionSignerAddress, recipientAddress)
 	assert.equal(refreshed.safeFlow.safeExecutionSigningOwnerAddress, safeTestOwnerAddress)
 	assert.deepEqual(refreshed.originalRequestParameters, preparation.effectiveTransactionParams)
+})
+
+const separatePayerExecution = (to: bigint) => SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
+
+test('a direct Safe execution from a separate execution account is refused before simulating when the signing owner has not approved it on chain', async () => {
+	const { SAFE_OWNER_NOT_APPROVED_ON_CHAIN_MESSAGE } = await import('../../app/ts/safe/safeExecutionRouting.js')
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	fakeSafeContract.threshold = 1n
+	fakeSafeContract.ownersApprovedHash = []
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const transactionParams = separatePayerExecution(recipientAddress)
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port: createWebsitePort(socket, 0, postedMessages), socket, websiteOrigin: 'https://payer.example', approved: true, wantsToConnect: true } } }]])
+	const ethSimulateCalls = fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length
+	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum, simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams }, false, activeAddress,
+		{ websiteOrigin: 'https://payer.example', icon: undefined, title: 'Payer' }, websiteTabConnections,
+	)), { type: 'doNotReply' })
+	const [refused] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refused?.transactionOrMessageCreationStatus, 'FailedToSimulate')
+	if (refused?.type !== 'Transaction' || !('transactionToSimulate' in refused) || refused.transactionToSimulate.success) throw new Error('Expected the refused direct Safe execution')
+	assert.equal(refused.transactionToSimulate.error.message, SAFE_OWNER_NOT_APPROVED_ON_CHAIN_MESSAGE)
+	assert.equal(fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length, ethSimulateCalls, 'the refused execution is not simulated')
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })

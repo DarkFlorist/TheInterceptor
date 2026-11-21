@@ -5,7 +5,7 @@ import { bytesFromHex, bytesToHex, ensureHex } from '../utils/ethereumBytes.js'
 import { decodeFunctionDataStrict, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { getSafeTxHash } from '../utils/eip712.js'
 
-const SAFE_SIGNATURE_BYTES = 65
+export const SAFE_SIGNATURE_BYTES = 65
 
 export const SAFE_EXECUTION_ABI = [{
 	type: 'function',

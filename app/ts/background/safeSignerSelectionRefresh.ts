@@ -210,6 +210,7 @@ export async function refreshSafeExecutionSignerSelection(
 			...pending.safeFlow,
 			safeExecutionSignerAddress: refreshedRoute.executor,
 			...(refreshedRoute.signingOwner === undefined ? {} : { safeExecutionSigningOwnerAddress: refreshedRoute.signingOwner }),
+			safeExecutionOwnerApprovedOnChain: refreshedRoute.ownerApprovedOnChain,
 			safeExecutionReviewedSafeState: refreshedRoute.safeState,
 		},
 		approvalStatus: { status: 'WaitingForUser' as const },

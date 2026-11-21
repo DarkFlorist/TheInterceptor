@@ -6,8 +6,10 @@ import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeSigningPlan } from './safeSigningPlan.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { createSafeContractValidationFailure, getSafeContractSnapshot } from './safeCore.js'
-import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from './safeExecution.js'
+import { createSafeContractValidationFailure, getSafeContractSnapshot, isSafeTxHashApprovedOnChain, type SafeContractState } from './safeCore.js'
+import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution, SAFE_SIGNATURE_BYTES } from './safeExecution.js'
+import { bytesFromHex } from '../utils/ethereumBytes.js'
+import { getSafeTxHash } from '../utils/eip712.js'
 
 // The selector of a Gnosis Safe's execTransaction.
 export const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
@@ -74,6 +76,14 @@ export async function getSafeExecutionReviewedState(
 	transactionParams: SendTransactionParams,
 	safeEntry: SafeEntry | undefined,
 ) {
+	return (await getSafeExecutionReviewedSnapshot(ethereumClientService, transactionParams, safeEntry))?.state
+}
+
+async function getSafeExecutionReviewedSnapshot(
+	ethereumClientService: EthereumClientService,
+	transactionParams: SendTransactionParams,
+	safeEntry: SafeEntry | undefined,
+) {
 	if (!isSafeExecutionRequestForActiveSafe(transactionParams, safeEntry) || safeEntry === undefined) return undefined
 	const transaction = transactionParams.params[0]
 	if (transaction.value !== undefined && transaction.value !== 0n) {
@@ -86,7 +96,20 @@ export async function getSafeExecutionReviewedState(
 	if (safeEntry.safeVersion !== undefined && safeEntry.safeVersion !== safeState.version) {
 		throw createSafeContractValidationFailure(`The Gnosis Safe version is now ${ safeState.version }, but the address-book entry records ${ safeEntry.safeVersion }.`)
 	}
-	return safeState
+	return { state: safeState, blockNumber }
+}
+
+export const SAFE_OWNER_NOT_APPROVED_ON_CHAIN_MESSAGE = 'The signing owner hasn\'t approved this Gnosis Safe transaction on chain, so the separate execution account cannot complete it. Execute it from the signing owner, or approve its hash from that owner first.'
+
+// When a separate execution account sends the transaction, the signing owner's pre-validated signature is accepted only if that owner approved the SafeTx hash on chain; a known-reverting execution is refused instead. Only the signing owner's signature is added, so an execution account that is itself an owner adds no signature of its own. Returns whether the completion relies on such an on-chain approval.
+async function assertOwnerSignatureAccepted(ethereumClientService: EthereumClientService, safeAddress: bigint, plan: SafeSigningPlan, snapshot: { readonly state: SafeContractState, readonly blockNumber: bigint }, input: Uint8Array) {
+	const { signingOwner, executor } = plan
+	if (signingOwner === undefined || signingOwner === executor) return false
+	const { execution, safeTx } = decodeSafeExecution(ethereumClientService.getChainId(), safeAddress, snapshot.state.nonce, input)
+	const signatureCount = BigInt(bytesFromHex(execution.signatures).length / SAFE_SIGNATURE_BYTES)
+	if (signatureCount >= snapshot.state.threshold) return false
+	if (!await isSafeTxHashApprovedOnChain(ethereumClientService, safeAddress, signingOwner, BigInt(getSafeTxHash(safeTx)), snapshot.blockNumber)) throw createSafeContractValidationFailure(SAFE_OWNER_NOT_APPROVED_ON_CHAIN_MESSAGE)
+	return true
 }
 
 // The plan's executor sends the outer transaction and pays its gas; its signing owner supplies the missing owner signature (see prepareSafeExecutionSignerRoute).
@@ -116,8 +139,10 @@ export async function prepareSafeExecutionSignerRoute(
 	if (route === undefined || safeEntry === undefined) return undefined
 	const transaction = route.transactionParams.params[0]
 	const input = getInputFieldFromDataOrInput(transaction)
-	const safeState = await getSafeExecutionReviewedState(ethereumClientService, transactionParams, safeEntry)
-	if (safeState === undefined) return undefined
+	const snapshot = await getSafeExecutionReviewedSnapshot(ethereumClientService, transactionParams, safeEntry)
+	if (snapshot === undefined) return undefined
+	const safeState = snapshot.state
+	const ownerApprovedOnChain = await assertOwnerSignatureAccepted(ethereumClientService, safeEntry.address, plan, snapshot, input)
 	const completedInput = await completeSafeExecutionWithConfiguredSigner(
 		ethereumClientService.getChainId(),
 		safeEntry.address,
@@ -129,6 +154,7 @@ export async function prepareSafeExecutionSignerRoute(
 	return {
 		...route,
 		safeState,
+		ownerApprovedOnChain,
 		transactionParams: {
 			...route.transactionParams,
 			params: [{

@@ -124,6 +124,8 @@ export const PendingTransactionSafeFlow = funtypes.Union(
 		safeExecutionSignerAddress: EthereumAddress,
 		// The reviewed signing owner whose pre-validated signature completes the execution; it differs from the execution account when a Safe saves a separate payer.
 		safeExecutionSigningOwnerAddress: EthereumAddress,
+		// True when the signing owner's signature is accepted because that owner approved the SafeTx hash on chain, as a separate execution account sends the transaction.
+		safeExecutionOwnerApprovedOnChain: funtypes.Boolean,
 		safeExecutionReviewedSafeState: SafeContractStateSnapshot,
 	})),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('created'), safeTransaction: SafeTransactionSigningRequest }),

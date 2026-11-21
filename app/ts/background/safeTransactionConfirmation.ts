@@ -141,6 +141,7 @@ export async function prepareSafeTransactionConfirmation(
 			safeExecutionOriginalRequestParameters: transactionParams,
 			...(safeExecutionSignerRoute === undefined ? {} : { safeExecutionSignerAddress: safeExecutionSignerRoute.executor }),
 			...(safeExecutionSignerRoute?.signingOwner === undefined ? {} : { safeExecutionSigningOwnerAddress: safeExecutionSignerRoute.signingOwner }),
+			...(safeExecutionSignerRoute?.ownerApprovedOnChain === true ? { safeExecutionOwnerApprovedOnChain: true } : {}),
 			...(safeExecutionReviewedState === undefined ? {} : { safeExecutionReviewedSafeState: safeExecutionReviewedState }),
 		}
 		: safeEntry !== undefined ? unsupportedSafeRequestReason === undefined ? { kind: 'proposal' } : { kind: 'unsupportedSafeRequest' }
