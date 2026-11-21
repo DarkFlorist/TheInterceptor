@@ -1,4 +1,5 @@
 import { hasPinnedSigningAddress } from './safeSigningAccount.js'
+import { getPendingTransactionSigningWalletBinding } from './pendingSigningWallet.js'
 import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
 import { identifyAddressWith, lookUpMetadataOnChain } from './metadataUtils.js'
@@ -676,6 +677,8 @@ async function simulateAndStoreRefreshedTransaction(
 		simulationRefresh,
 	)
 	if (refreshMessage === undefined) return
+	// A proposal prepared again can now have an owner, whose signing wallet the request must carry.
+	const preparedSafeProposalWithSigningWallet = preparedSafeProposal === undefined ? undefined : { ...preparedSafeProposal, signingWalletBinding: await getPendingTransactionSigningWalletBinding({ ...pending, safeFlow: preparedSafeProposal.safeFlow }) }
 	await updatePendingTransactionOrMessageInstance(pending, async (transactionOrMessage) => {
 		if (!simulationRefresh.isCurrent()) return transactionOrMessage
 		switch (transactionOrMessage.type) {
@@ -693,7 +696,7 @@ async function simulateAndStoreRefreshedTransaction(
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,
-						...preparedSafeProposal,
+						...preparedSafeProposalWithSigningWallet,
 						transactionToSimulate,
 						popupVisualisation: refreshMessage,
 						transactionOrMessageCreationStatus: 'Simulated' as const,
@@ -701,7 +704,7 @@ async function simulateAndStoreRefreshedTransaction(
 				}
 				return {
 					...transactionOrMessage,
-					...preparedSafeProposal,
+					...preparedSafeProposalWithSigningWallet,
 					transactionToSimulate,
 					popupVisualisation: refreshMessage,
 					transactionOrMessageCreationStatus: 'FailedToSimulate' as const,

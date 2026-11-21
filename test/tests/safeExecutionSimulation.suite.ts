@@ -523,6 +523,49 @@ for (const { description, outcome } of safeProposalFormationFailures) {
 	})
 }
 
+test('a Gnosis Safe proposal formed by a refresh carries its owner\'s Ledger wallet, so accepting it opens direct signing', async () => {
+	const { secp256k1 } = await import('@noble/curves/secp256k1.js')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { readDirectSigningRecords } = await import('../../app/ts/background/directSigningStore.js')
+	const { safeTestOwnerAddress, safeTestOwnerPrivateKey } = await import('./confirmTransactionTestHarness.js')
+	configureSafe()
+	fakeSafeContract.owners = [safeTestOwnerAddress, ...OWNERS]
+	const safeTxHash = BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, SAFE_ADDRESS, { to: CALLED_CONTRACT, value: 0n, input: new Uint8Array() }, fakeSafeContract.nonce)))
+	fakeSafeContract.transactionHash = safeTxHash
+	const executorCall: { outcome: SimulationOutcome } = { outcome: 'revert' }
+	const simulator = createRecordingSimulator('fake-node', () => executorCall.outcome)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateSafeTransactionStacks(() => [])
+	// The Safe saves the owner as its signing owner, and the owner's address signs with a Ledger.
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeSigningSignerAddress: safeTestOwnerAddress, safeSignerAddresses: [safeTestOwnerAddress, ...OWNERS] }), { type: 'contact', name: 'Owner', address: safeTestOwnerAddress, chainId: 'AllChains', entrySource: 'User' }])
+	await saveAddressSigningWallet(safeTestOwnerAddress, { type: 'ledger', label: 'Owner Ledger', address: safeTestOwnerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined)
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
+	const transactionParams = await createTransferParams({ from: addressString(SAFE_ADDRESS) })
+	await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum, simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
+		{ kind: 'transaction', parameters: transactionParams }, false, SAFE_ADDRESS, SAFE_CALL_WEBSITE, createWebsiteTabConnections([]),
+	))
+	const unformed = await getFirstPendingTransaction('when the confirmation opens')
+	assert.equal(unformed.safeFlow.kind === 'proposal' && unformed.safeFlow.state, 'formationFailed')
+	// The unformed proposal has no owner yet, so it has no signing wallet either.
+	assert.equal(unformed.signingWalletBinding, undefined)
+	executorCall.outcome = 'fake-node'
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	const formed = await getFirstPendingTransaction('after the refresh forms it')
+	if (formed.safeFlow.kind !== 'proposal' || formed.safeFlow.state !== 'created') throw new Error('Expected the formed Safe proposal')
+	assert.equal(formed.safeFlow.safeTransaction.safeSignerAddress, safeTestOwnerAddress)
+	assert.equal(formed.signingWalletBinding?.wallet.type, 'ledger')
+	const postedMessages: unknown[] = []
+	const accepted = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, createWebsiteTabConnections(postedMessages), await createAcceptConfirmation(uniqueRequestIdentifier, true)))
+	assert.equal(accepted, true)
+	assert.equal((await readDirectSigningRecords()).length, 1, 'accepting opens the direct signing page')
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateAddressBookAndSigningWalletBindings(() => modules.defaultActiveAddresses)
+})
+
 test('keeps a Gnosis Safe proposal whose transaction did not form as it is when a refresh finds its Safe is no longer configured, instead of forming it as an ordinary transaction from the Safe', async () => {
 	configureSafe()
 	const simulator = createRecordingSimulator('fake-node', () => 'revert')

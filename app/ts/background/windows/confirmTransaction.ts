@@ -1,5 +1,6 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
 import { findSafeEntry, resolveSafeSigningPlan } from '../../safe/safeSigningPlan.js'
+import { getPendingTransactionSigningWalletBinding } from '../pendingSigningWallet.js'
 import { getSigningWalletBinding } from '../signingWalletStore.js'
 import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -1109,7 +1110,7 @@ async function createConfirmationForTransaction(
 				approvalStatus: safeSignerMismatch ?? { status: 'WaitingForUser' as const },
 				safeFlow,
 			}
-			const storedPendingTransaction = { ...pendingTransaction, signingChainId: ethereumClientService.getChainId(), signingWalletBinding: simulationMode ? undefined : await getSigningWalletBinding(getCreatedSafeProposal(safeFlow)?.safeSignerAddress ?? transactionExecutor) }
+			const storedPendingTransaction = { ...pendingTransaction, signingChainId: ethereumClientService.getChainId(), signingWalletBinding: await getPendingTransactionSigningWalletBinding(pendingTransaction) }
 			await appendPendingTransactionOrMessage(storedPendingTransaction)
 			storedConfirmation = storedPendingTransaction
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)

@@ -16,6 +16,7 @@ import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } 
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
 import { getConfiguredSafeEntry } from './safeSigningAccount.js'
+import { getPendingTransactionSigningWalletBinding } from './pendingSigningWallet.js'
 import { resolveSafeSigningPlan, type SafeSigningPlan } from '../safe/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
@@ -343,9 +344,15 @@ function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, ref
 		&& pending.approvalStatus.message === refreshResult.approvalStatus.message
 }
 
+// The refreshed transaction's signing wallet, resolved before the storage update because a refresh can change who signs.
+async function getRefreshedSigningWalletBinding(refreshed: PendingTransactionOrSignableMessage) {
+	return refreshed.type === 'Transaction' ? await getPendingTransactionSigningWalletBinding(refreshed) : refreshed.signingWalletBinding
+}
+
 function mergeSafeSignerSelectionRefresh(
 	current: PendingTransactionOrSignableMessage,
 	refreshed: PendingTransactionOrSignableMessage,
+	signingWalletBinding: PendingTransactionOrSignableMessage['signingWalletBinding'],
 ): PendingTransactionOrSignableMessage {
 	const currentFlow = getSafePendingFlow(current)
 	const refreshedFlow = getSafePendingFlow(refreshed)
@@ -358,6 +365,7 @@ function mergeSafeSignerSelectionRefresh(
 		activeAddress: refreshedFlow.pending.activeAddress,
 		originalRequestParameters: refreshedFlow.pending.originalRequestParameters,
 		safeFlow: refreshedFlow.pending.safeFlow,
+		signingWalletBinding,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 		...refreshedFlow.pending.transactionOrMessageCreationStatus === 'Simulated' || refreshedFlow.pending.transactionOrMessageCreationStatus === 'FailedToSimulate'
 			? {
@@ -369,6 +377,7 @@ function mergeSafeSignerSelectionRefresh(
 	})
 	if (currentFlow.kind === 'proposal' && refreshedFlow.kind === 'proposal') return modifyObject(currentFlow.pending, {
 		safeFlow: refreshedFlow.pending.safeFlow,
+		signingWalletBinding,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
 	return current
@@ -377,10 +386,11 @@ function mergeSafeSignerSelectionRefresh(
 // Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
 export async function persistSafeConfirmationRefresh(refreshed: PendingTransactionOrSignableMessage) {
 	let persisted = false
+	const signingWalletBinding = await getRefreshedSigningWalletBinding(refreshed)
 	await updatePendingTransactionOrMessageInstance(refreshed, async (current) => {
 		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
 		persisted = true
-		return mergeSafeSignerSelectionRefresh(current, refreshed)
+		return mergeSafeSignerSelectionRefresh(current, refreshed, signingWalletBinding)
 	})
 	return persisted
 }
@@ -512,12 +522,13 @@ export async function refreshAndPersistSafeSignerSelection(
 		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
+	const signingWalletBinding = refreshResult.status === 'refreshed' ? await getRefreshedSigningWalletBinding(refreshResult.pending) : undefined
 	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner, directExecutionSafeEntry)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
 		persistedPending = refreshResult.status === 'refreshed'
-			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
+			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending, signingWalletBinding)
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
 		return persistedPending
 	})
