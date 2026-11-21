@@ -697,6 +697,15 @@ describe('popup message dispatcher seams', () => {
 	})
 })
 
+// Popup and signing-page messages share one runtime channel; only the signing service's own methods are routed to it.
+test('only signing-page methods reach the signing service, so a popup method starting with signing stays with the popup handler', async () => {
+	const { isSigningPageMessage } = await import('../../app/ts/background/signingRequestService.js')
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	for (const method of Object.keys(signingPageReplyCodecs)) assert.equal(isSigningPageMessage({ method }), true, method)
+	for (const method of ['signing_unknown', 'signingWallets', 'signing_', 'popup_signing_get', 'toString', '__proto__']) assert.equal(isSigningPageMessage({ method }), false, method)
+	assert.equal(isSigningPageMessage({ method: 'popup_requestSettings' }), false)
+})
+
 // The popup labels addresses with their signing wallets on every render and refresh, so its request must not read every tab's state.
 test('the signing wallet bindings request reads no tab state', async () => {
 	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')

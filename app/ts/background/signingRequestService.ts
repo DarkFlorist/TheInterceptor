@@ -1,5 +1,6 @@
 import { SigningPageRequest } from '../types/directSigning.js'
-import { SigningPageReply } from '../types/signingPageReply.js'
+import { isSigningPageMethod, SigningPageReply } from '../types/signingPageReply.js'
+import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { advanceDirectSigning, getDirectSigningReview, getSignatureRefusalReason } from './signingRequestLifecycle.js'
@@ -9,9 +10,12 @@ import { getSigningWalletBindingsReply, getSigningWallets, saveSigningWallet } f
 import { setSafeSigningAccounts } from './safeSigningAccountHandler.js'
 import { resolvePendingRequestInstance, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 
-/** Route only inside the extension-page sender boundary; signing does not enter popup lifecycle dispatch. */
+// Popup and signing-page messages share one runtime channel, so no method may belong to both protocols; this fails to compile if one does.
+const popupAndSigningMethodsAreDisjoint: [Extract<PopupMessage['method'], SigningPageRequest['method']>] extends [never] ? true : never = true
+
+/** Route only inside the extension-page sender boundary; signing does not enter popup lifecycle dispatch. A message is a signing-page message only when its method is one of the signing service's methods; anything else goes to the popup handler. */
 export function isSigningPageMessage(message: unknown) {
-	return typeof message === 'object' && message !== null && 'method' in message && typeof message.method === 'string' && message.method.startsWith('signing_')
+	return popupAndSigningMethodsAreDisjoint && typeof message === 'object' && message !== null && 'method' in message && typeof message.method === 'string' && isSigningPageMethod(message.method)
 }
 
 export async function dispatchSigningPageRequest(request: SigningPageRequest, services: SimulationServices, connections: WebsiteTabConnections): Promise<SigningPageReply> {

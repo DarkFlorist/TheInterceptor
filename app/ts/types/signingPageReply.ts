@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
-import { DirectSigningRecord } from './directSigning.js'
+import { DirectSigningRecord, type SigningPageRequest } from './directSigning.js'
+import { hasOwnKey } from '../utils/typescript.js'
 import { SigningWalletBindings } from './signingWallet.js'
 import { TabState } from './user-interface-types.js'
 import type { SendAnywayOverrideReason } from '../utils/sendAnywayConsent.js'
@@ -16,6 +17,7 @@ const RecordReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtyp
 const BindingsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings }))
 const WalletsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings, tabs: funtypes.ReadonlyArray(TabState) }))
 
+// One reply codec for each signing-page method and no other key, so its keys are the exact set of methods the background routes to the signing service.
 export const signingPageReplyCodecs = {
 	signing_walletBindings: BindingsReply,
 	signing_wallets: WalletsReply,
@@ -28,7 +30,10 @@ export const signingPageReplyCodecs = {
 	signing_broadcast: RecordReply,
 	signing_cancel: RecordReply,
 	signing_editFees: RecordReply,
-}
+} satisfies { readonly [Method in SigningPageRequest['method']]: unknown }
+
+// Whether a runtime message names a signing-page method. Any other message, including one whose method merely starts with 'signing', is left to the popup handler.
+export const isSigningPageMethod = (method: string): method is SigningPageRequest['method'] => hasOwnKey(signingPageReplyCodecs, method)
 export const SigningPageReply = funtypes.Union(WalletsReply, BindingsReply, RecordReply, MutationReply)
 export type SigningPageReply = funtypes.Static<typeof SigningPageReply>
 
