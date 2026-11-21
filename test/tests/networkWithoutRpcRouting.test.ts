@@ -31,3 +31,19 @@ test('the network-without-RPC warning agrees with request forwarding in every ro
 		if (hasRpc) assert.equal(warning.kind, 'none', state)
 	}
 })
+
+// A Safe without a saved signing owner signs through the wallet's selected account; the warning resolves that account with the same signing plan as forwarding.
+test('the network-without-RPC warning agrees with forwarding for a Safe without a saved signing owner', async () => {
+	const { isActiveAddressSigningDirectly } = await import('../../app/ts/utils/requestRouting.js')
+	const { resolveSafeSigningPlan } = await import('../../app/ts/safe/safeSigningPlan.js')
+	const safeAddress = 0x7777777777777777777777777777777777777777n
+	const safe = { type: 'safe' as const, name: 'Safe', address: safeAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [activeAddress] }
+	storedItems.signingWalletBindings = SigningWalletBindings.serialize([ledgerBinding])
+	for (const walletSelectedAccount of [activeAddress, 0x8888888888888888888888888888888888888888n]) {
+		const signingOwner = resolveSafeSigningPlan(safe, walletSelectedAccount).signingOwner
+		const rawRequest = { method: 'eth_blockNumber', params: [], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
+		const { forwardingReply } = await resolveSigningRequest(new Map(), socket, rawRequest, EthereumJsonRpcRequest.parse({ method: 'eth_blockNumber', params: [] }), { simulationMode: false, activeRpcNetwork: rpcNetwork, selectedSigningAddress: undefined }, safeAddress, signingOwner, true, true, undefined)
+		const warning = getNetworkWithoutRpcWarningState(rpcNetwork, false, 'available', isActiveAddressSigningDirectly(safe, [ledgerBinding], walletSelectedAccount))
+		assert.equal(forwardingReply !== undefined, warning.kind === 'noRpcBypassToSigner', `wallet account ${ walletSelectedAccount.toString(16) }`)
+	}
+})

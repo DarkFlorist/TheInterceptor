@@ -922,7 +922,7 @@ export function Home(param: HomeParams) {
 	})
 	const visualizedAddress = useComputed(() => safeStackMode.value ? param.activeSigningSafeAddress.value : modeActiveAddress.value.activeAddress)
 	// The bindings are hook state, so this is recomputed on each render rather than as a signal.
-	const activeAddressSignsDirectly = isActiveAddressSigningDirectly(currentActiveAddress.value, wallets.bindings ?? [])
+	const activeAddressSignsDirectly = isActiveAddressSigningDirectly(currentActiveAddress.value, wallets.bindings ?? [], getWalletSelectedAccount(param.tabState.value))
 
 	useEffect(() => {
 		if ((!param.simulationMode.value && !safeStackMode.value) || visualizedAddress.value === undefined) {

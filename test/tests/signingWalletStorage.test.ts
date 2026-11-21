@@ -268,3 +268,19 @@ test('stale bindings of addresses outside the address book are pruned, so cachin
 	await addAddressBookEntryIfMissing({ type: 'contact', address, name: 'Second identification', entrySource: 'OnChain', chainId: 1n })
 	expect((await getUserAddressBookEntries()).map((entry) => entry.name)).toEqual(['Identified on chain'])
 })
+
+test('the toolbar tooltip and the popup decide direct signing from the same reconciled bindings', async () => {
+	const { isActiveAddressSigningDirectlyNow } = await import('../../app/ts/background/pendingSigningWallet.js')
+	const { getSigningWalletBindingsReply } = await import('../../app/ts/background/signingWalletHandlers.js')
+	const { isActiveAddressSigningDirectly } = await import('../../app/ts/utils/requestRouting.js')
+	const { readSigningWalletBindings } = await import('../../app/ts/background/signingWalletStore.js')
+	const contact = { type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User' } satisfies ContactEntry
+	// The stored binding outlived its eligibility: the address is now also saved as a Safe, so the reconciled bindings leave it out.
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [contact, { type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }], signingWalletBindings: [{ wallet: ledger, revision: crypto.randomUUID() }] })
+	expect(isActiveAddressSigningDirectly(contact, await readSigningWalletBindings(), undefined)).toBe(true)
+	const popupReply = await getSigningWalletBindingsReply()
+	if (!popupReply.ok || !('bindings' in popupReply)) throw new Error('Expected the popup bindings')
+	const popupSignsDirectly = isActiveAddressSigningDirectly(contact, popupReply.bindings, undefined)
+	expect(popupSignsDirectly).toBe(false)
+	expect(await isActiveAddressSigningDirectlyNow(contact, undefined)).toBe(popupSignsDirectly)
+})

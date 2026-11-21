@@ -1,15 +1,16 @@
 import type { RpcNetwork } from '../types/rpc.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { SigningWalletBindings } from '../types/signingWallet.js'
+import { resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
 
 export type RequestRoutingState = {
 	readonly simulationMode: boolean
 	readonly signerAvailable: boolean
 }
 
-// Whether the active address signs with a Ledger or AirGap wallet: a Safe signs through its pinned signing owner, any other address through its own binding.
-export function isActiveAddressSigningDirectly(activeAddress: AddressBookEntry | undefined, bindings: SigningWalletBindings) {
-	const signingAccount = activeAddress?.type === 'safe' ? activeAddress.safeSigningSignerAddress : activeAddress?.address
+// Whether the active address signs with a Ledger or AirGap wallet: a Safe signs through the signing owner of the shared signing plan (its saved owner, else the wallet's selected account), as request routing does; any other address through its own binding.
+export function isActiveAddressSigningDirectly(activeAddress: AddressBookEntry | undefined, bindings: SigningWalletBindings, walletSelectedAccount: bigint | undefined) {
+	const signingAccount = activeAddress?.type === 'safe' ? resolveSafeSigningPlan(activeAddress, walletSelectedAccount).signingOwner : activeAddress?.address
 	const wallet = bindings.find((binding) => binding.wallet.address === signingAccount)?.wallet
 	return wallet !== undefined && wallet.type !== 'browser'
 }
