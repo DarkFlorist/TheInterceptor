@@ -28,3 +28,6 @@ export const SigningWalletBinding = funtypes.ReadonlyObject({
 
 export type SigningWalletBindings = funtypes.Static<typeof SigningWalletBindings>
 export const SigningWalletBindings = funtypes.ReadonlyArray(SigningWalletBinding).withConstraint((bindings) => bindings.length <= 10000 && new Set(bindings.map((binding) => binding.wallet.address)).size === bindings.length)
+
+// What the popup knows about the saved signing wallets: the bindings once loaded, or the error that prevented loading them.
+export type SigningWalletBindingsState = { readonly bindings?: SigningWalletBindings, readonly error?: string }

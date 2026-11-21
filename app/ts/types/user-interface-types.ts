@@ -1,4 +1,4 @@
-import type { SigningWalletBindingsState } from '../components/hooks/useSigningWalletBindings.js'
+import type { SigningWalletBindingsState } from './signingWallet.js'
 import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'

@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import type { SafeEntry } from '../../types/addressBookTypes.js'
-import type { SigningWalletBindingsState } from '../hooks/useSigningWalletBindings.js'
+import type { SigningWalletBindingsState } from '../../types/signingWallet.js'
 import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 

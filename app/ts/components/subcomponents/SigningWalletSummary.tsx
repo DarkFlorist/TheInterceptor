@@ -1,7 +1,7 @@
 import { getHtmlFile } from '../../background/backgroundUtils.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
 import { useState } from 'preact/hooks'
-import type { SigningWalletBindingsState } from '../hooks/useSigningWalletBindings.js'
+import type { SigningWalletBindingsState } from '../../types/signingWallet.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 
 export function openSigningWalletSetup(address?: bigint) {

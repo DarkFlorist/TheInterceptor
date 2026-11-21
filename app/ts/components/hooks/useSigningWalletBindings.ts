@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'preact/hooks'
-import type { SigningWalletBindings } from '../../types/signingWallet.js'
+import type { SigningWalletBindingsState } from '../../types/signingWallet.js'
 import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-
-export type SigningWalletBindingsState = { readonly bindings?: SigningWalletBindings, readonly error?: string }
 
 /** One registry subscription per list/page; rows consume this snapshot without requesting tab state themselves. */
 export function useSigningWalletBindings() {
