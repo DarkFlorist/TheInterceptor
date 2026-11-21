@@ -4,6 +4,7 @@ import { getInputFieldFromDataOrInput } from '../simulation/services/SimulationM
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
+import type { SafeSigningPlan } from './safeSigningPlan.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot } from './safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from './safeExecution.js'
@@ -88,15 +89,17 @@ export async function getSafeExecutionReviewedState(
 	return safeState
 }
 
-export function getSafeExecutionSignerRoute(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined, walletSignerAddress: bigint | undefined) {
-	if (safeEntry === undefined || walletSignerAddress === undefined || !isSafeExecutionRequestForActiveSafe(transactionParams, safeEntry)) return undefined
+// The plan's executor sends the outer transaction and pays its gas; its signing owner supplies the missing owner signature (see prepareSafeExecutionSignerRoute).
+export function getSafeExecutionSignerRoute(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined, plan: SafeSigningPlan) {
+	const { executor } = plan
+	if (safeEntry === undefined || executor === undefined || !isSafeExecutionRequestForActiveSafe(transactionParams, safeEntry)) return undefined
 	return {
-		executor: walletSignerAddress,
+		executor,
 		transactionParams: {
 			...transactionParams,
 			params: [{
 				...transactionParams.params[0],
-				from: walletSignerAddress,
+				from: executor,
 			}] as const,
 		},
 	}
@@ -106,10 +109,10 @@ export async function prepareSafeExecutionSignerRoute(
 	ethereumClientService: EthereumClientService,
 	transactionParams: SendTransactionParams,
 	safeEntry: SafeEntry | undefined,
-	walletSignerAddress: bigint | undefined,
+	plan: SafeSigningPlan,
 ) {
-	const route = getSafeExecutionSignerRoute(transactionParams, safeEntry, walletSignerAddress)
-	if (route === undefined || safeEntry === undefined || walletSignerAddress === undefined) return undefined
+	const route = getSafeExecutionSignerRoute(transactionParams, safeEntry, plan)
+	if (route === undefined || safeEntry === undefined) return undefined
 	const transaction = route.transactionParams.params[0]
 	const input = getInputFieldFromDataOrInput(transaction)
 	const safeState = await getSafeExecutionReviewedState(ethereumClientService, transactionParams, safeEntry)
@@ -117,7 +120,8 @@ export async function prepareSafeExecutionSignerRoute(
 	const completedInput = await completeSafeExecutionWithConfiguredSigner(
 		ethereumClientService.getChainId(),
 		safeEntry.address,
-		walletSignerAddress,
+		// The owner signature comes from the signing owner, even when a separate execution account pays the gas.
+		plan.signingOwner,
 		safeState,
 		input,
 	)

@@ -880,7 +880,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 
-	assert.deepEqual(modules.getSafeExecutionSignerRoute(transaction, safeEntry, safeSignerAddress), {
+	assert.deepEqual(modules.getSafeExecutionSignerRoute(transaction, safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }), {
 		executor: safeSignerAddress,
 		transactionParams: {
 			method: 'eth_sendTransaction',
@@ -897,7 +897,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			to: addressString(activeAddress),
 			data: '0x6a76120200',
 		}],
-	}), safeEntry, safeSignerAddress), undefined)
+	}), safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }), undefined)
 	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -905,7 +905,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			to: addressString(recipientAddress),
 			data: '0x6a76120200',
 		}],
-	}), safeEntry, safeSignerAddress), undefined)
+	}), safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }), undefined)
 	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -913,8 +913,8 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			to: addressString(activeAddress),
 			data: '0xa9059cbb',
 		}],
-	}), safeEntry, safeSignerAddress), undefined)
-	assert.equal(modules.getSafeExecutionSignerRoute(transaction, safeEntry, undefined), undefined)
+	}), safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }), undefined)
+	assert.equal(modules.getSafeExecutionSignerRoute(transaction, safeEntry, { signingOwner: undefined, executor: undefined }), undefined)
 	const nonzeroOuterValue = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -925,7 +925,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 	await assert.rejects(
-		modules.prepareSafeExecutionSignerRoute(ethereum, nonzeroOuterValue, safeEntry, safeSignerAddress),
+		modules.prepareSafeExecutionSignerRoute(ethereum, nonzeroOuterValue, safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }),
 		/A direct Gnosis Safe execution transaction must have zero outer ETH value/u,
 	)
 	fakeSafeContract.threshold = 3n
@@ -941,13 +941,13 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 	await assert.rejects(
-		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry, safeSignerAddress),
+		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }),
 		/cannot satisfy its 3-signature threshold/u,
 	)
 	fakeSafeContract.threshold = 2n
 	fakeSafeContract.owners = [safeSignerAddress]
 	await assert.rejects(
-		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry, safeSignerAddress),
+		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }),
 		/signature format that Interceptor cannot validate/u,
 	)
 })
@@ -1499,14 +1499,35 @@ test('direct Safe execution checks delegate library bytecode before completing o
 			const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, data, 1n, 0n, 0n, 0n, addressString(0n), addressString(0n), signatures]) }] })
 			for (const invalidCode of [new Uint8Array(), new Uint8Array([1])]) {
 				libraryCode = invalidCode
-				await assert.rejects(modules.prepareSafeExecutionSignerRoute(simulator.ethereum, request, safeEntry, safeTestOwnerAddress), /missing or has unexpected bytecode/)
+				await assert.rejects(modules.prepareSafeExecutionSignerRoute(simulator.ethereum, request, safeEntry, { signingOwner: safeTestOwnerAddress, executor: safeTestOwnerAddress }), /missing or has unexpected bytecode/)
 			}
 			libraryCode = stringToUint8Array(bytecode)
-			const route = await modules.prepareSafeExecutionSignerRoute(simulator.ethereum, request, safeEntry, safeTestOwnerAddress)
+			const route = await modules.prepareSafeExecutionSignerRoute(simulator.ethereum, request, safeEntry, { signingOwner: safeTestOwnerAddress, executor: safeTestOwnerAddress })
 			assert.equal(route?.executor, safeTestOwnerAddress)
 			assert.equal(route?.transactionParams.params[0].from, safeTestOwnerAddress)
 		}
 		assert.equal(blocks.length, 12)
 		assert.ok(blocks.every((block) => block === 123n))
 	} finally { getCode.mockRestore() }
+})
+
+test('a direct Safe execution is pre-validated by the saved signing owner and paid by the separate execution account', async () => {
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const walletAccount = 0x5555555555555555555555555555555555555555n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	fakeSafeContract.threshold = 1n
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
+	const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
+	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: request }, false, activeAddress, walletAccount))
+	assert.equal(preparation.rejection, undefined)
+	assert.equal(preparation.transactionExecutor, recipientAddress)
+	const outer = preparation.effectiveTransactionParams
+	if (outer.method !== 'eth_sendTransaction') throw new Error('Expected the routed execution transaction')
+	assert.equal(outer.params[0].from, recipientAddress)
+	const calldata = Buffer.from(outer.params[0].data ?? outer.params[0].input ?? new Uint8Array()).toString('hex')
+	// A pre-validated signature names its owner in r, has s = 0 and v = 1.
+	const preValidatedBy = (owner: bigint) => `${ owner.toString(16).padStart(64, '0') }${ '00'.repeat(32) }01`
+	assert.ok(calldata.includes(preValidatedBy(safeTestOwnerAddress)), 'the saved signing owner supplies the owner signature')
+	assert.equal(calldata.includes(preValidatedBy(recipientAddress)), false, 'the execution account is not an owner and signs nothing for the Safe')
 })

@@ -15,6 +15,7 @@ import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnect
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
+import { resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -188,7 +189,8 @@ export async function refreshSafeExecutionSignerSelection(
 	const safeAddress = originalRequest.params[0].from
 	if (safeAddress === undefined) throw createSafeContractValidationFailure('The original Gnosis Safe execution request is missing its Gnosis Safe address.')
 	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
-	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, selectedSigner ?? pending.safeFlow.safeExecutionSignerAddress)
+	// A newly selected wallet account, else the reviewed executor, stands in for the wallet account in the shared signing plan.
+	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, resolveSafeSigningPlan(safeEntry, selectedSigner ?? pending.safeFlow.safeExecutionSignerAddress))
 	if (refreshedRoute === undefined) throw createSafeContractValidationFailure('The configured Gnosis Safe execution route is no longer available.')
 	assertSafeContractStateUnchanged(reviewedSafeState, refreshedRoute.safeState)
 	if (selectedSigner === undefined && (

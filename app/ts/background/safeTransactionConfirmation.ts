@@ -76,7 +76,9 @@ export async function prepareSafeTransactionConfirmation(
 	const transactionParams = confirmation.parameters
 	const configuredSafeEntry = simulationMode ? undefined : await getConfiguredSafeEntry(activeAddress, ethereum.getChainId())
 	// The Safe entry is read once here and the signing owner and executor follow from it with the shared rule.
-	const { signingOwner: walletSignerAddress, executor } = resolveSafeSigningPlan(configuredSafeEntry, walletSelectedAccount)
+	const signingPlan = resolveSafeSigningPlan(configuredSafeEntry, walletSelectedAccount)
+	// Owner approvals and owner validation use the signing owner; only the execution route uses the executor.
+	const walletSignerAddress = signingPlan.signingOwner
 	if (configuredSafeEntry !== undefined) {
 		// A contract creation is not rejected here: its flow kind is 'unsupportedSafeRequest', whose preparation message shows the rejection in the window.
 		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
@@ -86,7 +88,7 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const basicExecutionRoute = transactionParams.method === 'eth_sendTransaction'
-		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, executor)
+		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, signingPlan)
 		: undefined
 	const isDirectSafeExecution = transactionParams.method === 'eth_sendTransaction'
 		&& isSafeExecutionRequestForActiveSafe(transactionParams, configuredSafeEntry)
@@ -98,7 +100,7 @@ export async function prepareSafeTransactionConfirmation(
 			if (basicExecutionRoute === undefined) {
 				safeExecutionReviewedState = await getSafeExecutionReviewedState(ethereum, transactionParams, configuredSafeEntry)
 			} else {
-				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, executor)
+				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, signingPlan)
 				safeExecutionReviewedState = safeExecutionSignerRoute?.safeState
 			}
 			} catch (error) {

@@ -71,7 +71,7 @@ export function decodeSafeExecution(chainId: bigint, safeAddress: bigint, nonce:
 export async function completeSafeExecutionWithConfiguredSigner(
 	chainId: bigint,
 	safeAddress: bigint,
-	configuredSigner: bigint,
+	configuredSigner: bigint | undefined,
 	safeState: SafeContractState,
 	input: Uint8Array,
 ) {
@@ -85,7 +85,7 @@ export async function completeSafeExecutionWithConfiguredSigner(
 	if (signatureCount + 1n < safeState.threshold) {
 		throw createSafeContractValidationFailure(`This Gnosis Safe execution has ${ signatureCount.toString() } signature(s), and the wallet-selected Safe owner cannot satisfy its ${ safeState.threshold.toString() }-signature threshold.`)
 	}
-	if (!safeState.owners.includes(configuredSigner)) {
+	if (configuredSigner === undefined || !safeState.owners.includes(configuredSigner)) {
 		throw createSafeContractValidationFailure('The account selected in your wallet is no longer an owner of this Gnosis Safe.')
 	}
 	assertInterceptorSafeTransactionPolicy(safeTx)
