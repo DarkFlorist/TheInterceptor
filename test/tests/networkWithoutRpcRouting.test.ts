@@ -35,7 +35,7 @@ test('the network-without-RPC warning agrees with request forwarding in every ro
 // A Safe without a saved signing owner signs through the wallet's selected account; the warning resolves that account with the same signing plan as forwarding.
 test('the network-without-RPC warning agrees with forwarding for a Safe without a saved signing owner', async () => {
 	const { isActiveAddressSigningDirectly } = await import('../../app/ts/utils/requestRouting.js')
-	const { resolveSafeSigningPlan } = await import('../../app/ts/safe/safeSigningPlan.js')
+	const { resolveSafeSigningPlan } = await import('../../app/ts/utils/safeSigningPlan.js')
 	const safeAddress = 0x7777777777777777777777777777777777777777n
 	const safe = { type: 'safe' as const, name: 'Safe', address: safeAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [activeAddress] }
 	storedItems.signingWalletBindings = SigningWalletBindings.serialize([ledgerBinding])

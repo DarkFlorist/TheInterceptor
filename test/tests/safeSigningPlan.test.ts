@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import { resolveSafeSigningPlan } from '../../app/ts/safe/safeSigningPlan.js'
+import { resolveSafeSigningPlan } from '../../app/ts/utils/safeSigningPlan.js'
 
 const walletAccount = 0x1111111111111111111111111111111111111111n
 const savedOwner = 0x2222222222222222222222222222222222222222n

@@ -1,5 +1,5 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
-import { findSafeEntry, resolveSafeSigningPlan } from '../../safe/safeSigningPlan.js'
+import { findSafeEntry, resolveSafeSigningPlan } from '../../utils/safeSigningPlan.js'
 import { getPendingTransactionSigningWalletBinding } from '../pendingSigningWallet.js'
 import { getSigningWalletBinding } from '../signingWalletStore.js'
 import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'

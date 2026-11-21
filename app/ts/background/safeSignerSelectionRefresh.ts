@@ -17,7 +17,7 @@ import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBo
 import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
 import { getConfiguredSafeEntry } from './safeSigningAccount.js'
 import { getPendingTransactionSigningWalletBinding } from './pendingSigningWallet.js'
-import { resolveSafeSigningPlan, type SafeSigningPlan } from '../safe/safeSigningPlan.js'
+import { resolveSafeSigningPlan, type SafeSigningPlan } from '../utils/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 

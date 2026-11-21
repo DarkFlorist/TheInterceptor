@@ -73,3 +73,18 @@ test('direct signing reaches the reviewed network through the Ethereum client fa
 	assert.equal(imports.includes('simulation/services/EthereumJSONRpcRequestHandler.ts'), false)
 	assert.equal(imports.includes('simulation/serviceLifecycle.ts'), true)
 })
+
+// utils/ is below the Safe domain: safe/ imports utils/, so a utils module must not import safe/ back. Shared pure Safe rules, such as the signing plan, live in utils/.
+test('utility modules do not import the Safe domain', async () => {
+	const utilsDirectory = resolve(sourceRoot, 'utils')
+	const safeDirectory = resolve(sourceRoot, 'safe')
+	const violations: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: utilsDirectory, absolute: true })) {
+		for (const specifier of moduleSpecifiers(await Bun.file(file).text())) {
+			if (!specifier.startsWith('.')) continue
+			const target = resolve(dirname(file), specifier)
+			if (target.startsWith(`${ safeDirectory }/`)) violations.push(`${ relative(sourceRoot, file) } imports ${ specifier }`)
+		}
+	}
+	assert.deepEqual(violations, [])
+})

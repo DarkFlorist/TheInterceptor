@@ -1,7 +1,7 @@
 import type { RpcNetwork } from '../types/rpc.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { SigningWalletBindings } from '../types/signingWallet.js'
-import { resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
+import { resolveSafeSigningPlan } from './safeSigningPlan.js'
 
 export type RequestRoutingState = {
 	readonly simulationMode: boolean

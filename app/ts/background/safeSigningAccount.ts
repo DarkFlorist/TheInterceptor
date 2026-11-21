@@ -1,6 +1,6 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
-import { findSafeEntry } from '../safe/safeSigningPlan.js'
+import { findSafeEntry } from '../utils/safeSigningPlan.js'
 
 /** Owner approval and the separate outer transaction payer remain distinct from the Safe address. */
 // The saved Safe entry of an active address on a chain, the one input resolveSafeSigningPlan reads from the address book. A contact or contract entry at the same address does not hide it.

@@ -1,5 +1,5 @@
 import { resolveSigningRequest } from './signingRequestResolver.js'
-import { getSafeEntry, resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
+import { getSafeEntry, resolveSafeSigningPlan } from '../utils/safeSigningPlan.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'

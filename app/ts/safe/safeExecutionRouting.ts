@@ -4,7 +4,7 @@ import { getInputFieldFromDataOrInput } from '../simulation/services/SimulationM
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
-import type { SafeSigningPlan } from './safeSigningPlan.js'
+import type { SafeSigningPlan } from '../utils/safeSigningPlan.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot, isSafeTxHashApprovedOnChain, type SafeContractState } from './safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution, getSafeExecutionSignatureCount } from './safeExecution.js'
