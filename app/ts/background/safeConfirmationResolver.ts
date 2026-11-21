@@ -49,6 +49,8 @@ export function isExpectedSafeMessageCoSignSnapshotFailure(error: unknown): erro
 export type RefreshedSafeSignerSelection = {
 	readonly selectedSigner: bigint | undefined
 	readonly verificationError: string | undefined
+	// Where selectedSigner comes from: the account selected in the connected browser wallet, or the reviewed signer's saved Ledger or AirGap wallet. A saved wallet is no wallet selection, so it never re-resolves who signs or pays.
+	readonly source: 'walletSelection' | 'savedSigningWallet'
 }
 
 export type SafeConfirmationResolution =

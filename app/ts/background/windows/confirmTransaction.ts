@@ -174,6 +174,7 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 	const refreshedSelection = {
 		selectedSigner: getWalletSelectedAccount(tabState),
 		verificationError: undefined,
+		source: 'walletSelection' as const,
 	}
 	let pendingStateChanged = false
 	for (const pending of await getPendingTransactionsAndMessages()) {
@@ -184,7 +185,7 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 			const refresh = await refreshAndPersistSafeSignerSelection(
 				ethereum,
 				pending,
-				refreshedSelection.selectedSigner,
+				{ kind: 'walletSelection', account: refreshedSelection.selectedSigner },
 				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
 			)
 			if (refresh.persisted) pendingStateChanged = true
@@ -434,7 +435,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 		const refresh = await refreshAndPersistSafeSignerSelection(
 			ethereum,
 			pendingTransactionOrMessage,
-			refreshedSafeSignerSelection.selectedSigner,
+			refreshedSafeSignerSelection.source === 'walletSelection' ? { kind: 'walletSelection', account: refreshedSafeSignerSelection.selectedSigner } : { kind: 'reuseReviewed' },
 			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
 		)
 		const refreshResult = refresh.refreshResult

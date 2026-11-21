@@ -42,7 +42,7 @@ function createSignerConnection() {
 
 type AcceptConfirmation = Awaited<ReturnType<typeof createAcceptConfirmation>>
 const resolveAccept = async (websiteTabConnections: ReturnType<typeof createSignerConnection>['websiteTabConnections'], accept: AcceptConfirmation, selectedSigner?: bigint) => {
-	const refreshedSafeSignerSelection = selectedSigner === undefined ? undefined : { selectedSigner, verificationError: undefined }
+	const refreshedSafeSignerSelection = selectedSigner === undefined ? undefined : { selectedSigner, verificationError: undefined, source: 'walletSelection' as const }
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept, refreshedSafeSignerSelection)
 }
 

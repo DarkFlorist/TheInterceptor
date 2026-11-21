@@ -368,7 +368,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 				simulator.ethereum,
 				reviewedCoSignRequest,
 				'accept',
-				{ selectedSigner: alternateOwnerAddress, verificationError: undefined },
+				{ selectedSigner: alternateOwnerAddress, verificationError: undefined, source: 'walletSelection' },
 			),
 			/Unexpected Safe owner decoder failure/u,
 		)
@@ -1232,7 +1232,7 @@ test('routes a completed active Safe execution through its configured signer and
 		refreshAndPersistSafeSignerSelection(
 			simulator.ethereum,
 			pendingExecution,
-			alternateSignerAddress,
+			{ kind: 'walletSelection', account: alternateSignerAddress },
 			async () => { throw new Error('Direct Safe simulation refresh unavailable') },
 		),
 		/Direct Safe simulation refresh unavailable/u,
@@ -1245,7 +1245,7 @@ test('routes a completed active Safe execution through its configured signer and
 				simulator.ethereum,
 				pendingExecution,
 				'accept',
-				{ selectedSigner: safeSignerAddress, verificationError: undefined },
+				{ selectedSigner: safeSignerAddress, verificationError: undefined, source: 'walletSelection' },
 			),
 			/Unexpected Safe owner decoder failure/u,
 		)
@@ -1254,7 +1254,7 @@ test('routes a completed active Safe execution through its configured signer and
 				simulator.ethereum,
 				pendingExecution,
 				'accept',
-				{ selectedSigner: alternateSignerAddress, verificationError: undefined },
+				{ selectedSigner: alternateSignerAddress, verificationError: undefined, source: 'walletSelection' },
 			),
 			/Unexpected Safe owner decoder failure/u,
 		)
@@ -1269,7 +1269,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ selectedSigner: safeSignerAddress, verificationError: undefined, source: 'walletSelection' },
 	)), false)
 	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -1279,7 +1279,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
+		{ selectedSigner: alternateSignerAddress, verificationError: undefined, source: 'walletSelection' },
 	)), false)
 	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
 	fakeSafeContract.version = '1.4.1'
@@ -1288,7 +1288,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
+		{ selectedSigner: alternateSignerAddress, verificationError: undefined, source: 'walletSelection' },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
@@ -1311,7 +1311,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ selectedSigner: safeSignerAddress, verificationError: undefined, source: 'walletSelection' },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [staleExecution] = await modules.getPendingTransactionsAndMessages()
@@ -1330,7 +1330,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ selectedSigner: safeSignerAddress, verificationError: undefined, source: 'walletSelection' },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersExecution] = await modules.getPendingTransactionsAndMessages()
@@ -1348,7 +1348,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ selectedSigner: safeSignerAddress, verificationError: undefined, source: 'walletSelection' },
 	), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing direct Safe execution signer request')
@@ -1616,7 +1616,7 @@ test('with a saved signing owner and execution account, a wallet selection does 
 	const { safeFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	const pending = { ...pendingTransaction, simulationMode: false, activeAddress: preparation.transactionExecutor, originalRequestParameters: preparation.effectiveTransactionParams, safeFlow }
 	// The wallet's selection differs from both the saved owner and the execution account, but changes neither, so the accept proceeds without a refresh.
-	const refresh = await withSilencedConsole(async () => await refreshAndPersistSafeSignerSelection(ethereum, pending, walletAccount, async () => { throw new Error('No refresh expected') }))
+	const refresh = await withSilencedConsole(async () => await refreshAndPersistSafeSignerSelection(ethereum, pending, { kind: 'walletSelection', account: walletAccount }, async () => { throw new Error('No refresh expected') }))
 	assert.equal(refresh.refreshRequired, false)
 	assert.equal(refresh.refreshResult.status, 'unchanged')
 })
@@ -1642,5 +1642,47 @@ test('a malformed signature payload in a separately paid Safe execution is refus
 	assert.equal(refused.transactionToSimulate.error.message, 'The incomplete Gnosis Safe execution contains a malformed signature payload.')
 	assert.deepEqual(fakeSafeContract.approvedHashesCalls, [])
 	assert.equal(fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length, ethSimulateCalls)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+})
+
+test('accepting a separately paid Safe execution whose execution account signs with a Ledger keeps the reviewed owner and opens direct signing', async () => {
+	const { secp256k1 } = await import('@noble/curves/secp256k1.js')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { readDirectSigningRecords } = await import('../../app/ts/background/directSigningStore.js')
+	const { confirmDialog } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { safeTestOwnerPrivateKey } = await import('./confirmTransactionTestHarness.js')
+	// The wallet's selected account is the Safe's owner; the saved execution account, which pays, signs with a Ledger and is not an owner.
+	const owner = recipientAddress
+	const executor = safeTestOwnerAddress
+	fakeSafeContract.owners = [owner]
+	fakeSafeContract.threshold = 1n
+	await modules.changeSimulationMode({ simulationMode: false })
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [owner], safeExecutionAddress: executor }), { type: 'contact', name: 'Payer', address: executor, chainId: 'AllChains', entrySource: 'User' }])
+	await saveAddressSigningWallet(executor, { type: 'ledger', label: 'Payer Ledger', address: executor, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined)
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [owner], activeSigningAddress: owner, signerChain: fakeRpcNetwork.chainId }))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	// A gas limit, so direct signing prepares the transaction without estimating it.
+	const transactionParams = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), gas: '0x30000', data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
+	await approveExecutionOnChain(owner, transactionParams)
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port: createWebsitePort(socket, 0, postedMessages), socket, websiteOrigin: 'https://payer.example', approved: true, wantsToConnect: true } } }]])
+	await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum, simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams }, false, activeAddress,
+		{ websiteOrigin: 'https://payer.example', icon: undefined, title: 'Payer' }, websiteTabConnections,
+	))
+	const reviewed = (await modules.getPendingTransactionsAndMessages())[0]
+	if (reviewed?.type !== 'Transaction' || reviewed.safeFlow.kind !== 'directExecution') throw new Error('Expected the direct Safe execution')
+	assert.equal(reviewed.safeFlow.safeExecutionSigningOwnerAddress, owner)
+	assert.equal(reviewed.signingWalletBinding?.wallet.type, 'ledger')
+	await withSilencedConsole(async () => await confirmDialog(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)))
+	const accepted = (await modules.getPendingTransactionsAndMessages())[0]
+	if (accepted?.type !== 'Transaction' || accepted.safeFlow.kind !== 'directExecution') throw new Error('Expected the accepted direct Safe execution')
+	assert.equal(accepted.safeFlow.safeExecutionSigningOwnerAddress, owner, 'the reviewed owner is kept')
+	assert.equal(accepted.approvalStatus.status, 'WaitingForSigner')
+	assert.equal((await readDirectSigningRecords()).length, 1, 'accepting opens direct signing for the execution account')
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })

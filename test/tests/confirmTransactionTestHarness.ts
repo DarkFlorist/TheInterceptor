@@ -488,6 +488,8 @@ export const fakeRequestHandler = {
 		}
 			case 'eth_gasPrice':
 				return modules.serialize(modules.EthereumQuantity, 1n)
+			case 'eth_maxPriorityFeePerGas':
+				return modules.serialize(modules.EthereumQuantity, 1n)
 			case 'eth_call': {
 				const call = rpcRequest.params?.[0]
 				if (!isRecord(call) || !(call.data instanceof Uint8Array)) throw new Error('Malformed test eth_call')

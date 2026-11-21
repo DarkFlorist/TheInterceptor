@@ -118,6 +118,7 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 	return {
 		selectedSigner: refreshResult?.error === undefined ? refreshResult?.accounts[0] : undefined,
 		verificationError: refreshResult?.error?.message ?? (refreshResult === undefined ? 'The connected signer wallet is unavailable.' : undefined),
+		source: 'walletSelection' as const,
 	}
 }
 
@@ -131,7 +132,7 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 		: undefined
 	const refreshedSafeSignerSelection = pending !== undefined && getSafePendingFlow(pending) !== undefined
 		? await (async () => {
-			if (pending.signingWalletBinding !== undefined && pending.signingWalletBinding.wallet.type !== 'browser') return { selectedSigner: pending.signingWalletBinding.wallet.address, verificationError: undefined }
+			if (pending.signingWalletBinding !== undefined && pending.signingWalletBinding.wallet.type !== 'browser') return { selectedSigner: pending.signingWalletBinding.wallet.address, verificationError: undefined, source: 'savedSigningWallet' as const }
 			const refreshResult = await refreshSignerAccountsForTab(
 				websiteTabConnections,
 				pending.uniqueRequestIdentifier.requestSocket.tabId,

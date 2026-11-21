@@ -483,12 +483,17 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
+// What a Safe signer refresh starts from: an account selected in the browser wallet, which may change who signs, or nothing to re-resolve, which keeps the reviewed signing owner and execution account (a saved Ledger or AirGap wallet is no wallet selection).
+export type SafeSignerRefreshSelection = { readonly kind: 'walletSelection', readonly account: bigint } | { readonly kind: 'reuseReviewed' }
+
 export async function refreshAndPersistSafeSignerSelection(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
-	selectedSigner: bigint,
+	selection: SafeSignerRefreshSelection,
 	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
 ): Promise<SafeSignerSelectionRefreshPersistence> {
+	if (selection.kind === 'reuseReviewed') return { refreshRequired: false, refreshResult: { status: 'unchanged', pending }, persisted: false, persistedPending: undefined }
+	const selectedSigner = selection.account
 	const recoveredMessage = await recoverSafeMessageReview(ethereum, pending, selectedSigner)
 	if (recoveredMessage !== undefined) return recoveredMessage
 	const flow = getSafePendingFlow(pending)
