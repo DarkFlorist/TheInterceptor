@@ -17,7 +17,8 @@ import { parseTransaction, serializeTransaction } from '../utils/ethereumTransac
 import { DIRECT_SIGNING_CAPABILITY_ERROR, getSigningMethodError, prepareDirectPayload, verifyDirectResult } from '../signing/backend.js'
 import { getSigningWalletBinding } from './signingWalletStore.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessageInstance } from './storageVariables.js'
-import { getRecordRequestInstance, isRecordForPendingRequest, withDirectSigningRecords, type DirectSigningRecordsTransaction } from './directSigningStore.js'
+import { getRecordRequestInstance, isRecordForPendingRequest, readDirectSigningRecords, withDirectSigningRecords, type DirectSigningRecordsTransaction } from './directSigningStore.js'
+import type { SigningWalletBinding } from '../types/signingWallet.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getAcceptRefusal } from './reviewedResult.js'
 import { getSettings } from './settings.js'
@@ -84,48 +85,89 @@ async function prepareTransaction(ethereum: EthereumClientService, request: Send
 	})
 }
 
-/** The explanation window leads here; device approval always follows a second review of live-chain fields. */
-export async function openDirectSigning(ethereum: EthereumClientService, prices: TokenPriceService, pending: PendingTransactionOrSignableMessage, request: SendTransactionParams | SignMessageParams) {
+// The record store's lock is never held across network calls or tab creation: a command reads the record under the lock, does its RPC work unlocked, then commits under the lock only if the record is still the one it read (same revision and phase). A slow or unreachable RPC therefore never stalls other signing requests.
+async function readRecord(id: string) {
 	return await withDirectSigningRecords(async (records) => {
-		if (pending.simulationMode || pending.signingWalletBinding === undefined || pending.signingWalletBinding.wallet.type === 'browser') throw signingOperationError('This request is not bound to a direct signing wallet')
-		assertSigningWalletIdentity(pending.signingWalletBinding.wallet)
-		if (pending.signingChainId !== ethereum.getChainId()) throw signingOperationError('Signing network changed. Return to the request’s original network before continuing.')
-		const existing = (await records.read()).find((record) => isRecordForPendingRequest(record, pending))
-		let record = existing
-		if (record === undefined) {
-			const binding = pending.signingWalletBinding
-			const capabilityError = getSigningMethodError(binding.wallet.type, request.method)
-			if (capabilityError !== undefined) throw signingOperationError(capabilityError)
-			const rpcUrl = ethereum.getRpcEntry().httpsRpc
-			if (rpcUrl === undefined) throw signingOperationError('Configure an RPC connection for direct signing')
-			const address = addressString(binding.wallet.address)
-			let data: string
-			if (request.method === 'eth_sendTransaction') data = await prepareTransaction(ethereum, request, binding.wallet.address)
-			else if (request.method === 'personal_sign') {
-				if (request.params[1] !== binding.wallet.address) throw signingOperationError('Message requests another signing account')
-				data = request.params[0]
-			} else if (request.method === 'eth_signTypedData_v4') {
-				if (request.params[0] !== binding.wallet.address) throw signingOperationError('Typed data requests another signing account')
-				data = funtypes.String.parse(EIP712Message.serialize(request.params[1]))
-			} else throw signingOperationError(DIRECT_SIGNING_CAPABILITY_ERROR)
-			const input = { method: request.method, data, address, chainId: ethereum.getChainId() }
-			prepareDirectPayload(input)
-			record = { id: crypto.randomUUID(), request: pending.uniqueRequestIdentifier, requestInstanceId: pending.instanceId, binding, websiteOrigin: pending.website.websiteOrigin, rpcUrl, input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }
-			await assertCurrentBinding(record)
-			await records.store(record)
-		}
-		if (record.phase === 'review') {
-			record = await records.store({ ...record, reviewReady: false })
-			await refreshDirectSigningReview(record, ethereum, prices)
-			record = await records.store({ ...record, reviewReady: true })
-		}
-		await browser.tabs.create({ url: `${ browser.runtime.getURL(getHtmlFile('directSigning')) }?id=${ encodeURIComponent(record.id) }` })
+		const record = (await records.read()).find((item) => item.id === id)
+		if (record === undefined) throw signingOperationError('Signing request not found')
 		return record
 	})
 }
 
+async function readRecordForRequest(request: DirectSigningRequest) {
+	const record = await readRecord(request.id)
+	if ('revision' in request && request.revision !== record.revision) throw signingOperationError('This approval or response belongs to an earlier review')
+	return record
+}
+
+const SIGNING_REQUEST_CHANGED_MESSAGE = 'This signing request changed while it was being checked. Review its current state and try again.'
+
+// Commits an update to a record read earlier, under the lock, only if no other command changed its revision or phase meanwhile. update runs under the lock and must not await the network.
+async function commitIfUnchanged(expected: DirectSigningRecord, update: (current: DirectSigningRecord, records: DirectSigningRecordsTransaction) => Promise<DirectSigningRecord>) {
+	return await withDirectSigningRecords(async (records) => {
+		const current = (await records.read()).find((item) => item.id === expected.id)
+		if (current === undefined || current.revision !== expected.revision || current.phase !== expected.phase) throw signingOperationError(SIGNING_REQUEST_CHANGED_MESSAGE)
+		return await records.store(await update(current, records))
+	})
+}
+
+async function prepareDirectSigningInput(ethereum: EthereumClientService, binding: SigningWalletBinding, request: SendTransactionParams | SignMessageParams) {
+	const capabilityError = getSigningMethodError(binding.wallet.type, request.method)
+	if (capabilityError !== undefined) throw signingOperationError(capabilityError)
+	const address = addressString(binding.wallet.address)
+	let data: string
+	if (request.method === 'eth_sendTransaction') data = await prepareTransaction(ethereum, request, binding.wallet.address)
+	else if (request.method === 'personal_sign') {
+		if (request.params[1] !== binding.wallet.address) throw signingOperationError('Message requests another signing account')
+		data = request.params[0]
+	} else if (request.method === 'eth_signTypedData_v4') {
+		if (request.params[0] !== binding.wallet.address) throw signingOperationError('Typed data requests another signing account')
+		data = funtypes.String.parse(EIP712Message.serialize(request.params[1]))
+	} else throw signingOperationError(DIRECT_SIGNING_CAPABILITY_ERROR)
+	const input = { method: request.method, data, address, chainId: ethereum.getChainId() }
+	prepareDirectPayload(input)
+	return input
+}
+
+/** The explanation window leads here; device approval always follows a second review of live-chain fields. */
+export async function openDirectSigning(ethereum: EthereumClientService, prices: TokenPriceService, pending: PendingTransactionOrSignableMessage, request: SendTransactionParams | SignMessageParams) {
+	if (pending.simulationMode || pending.signingWalletBinding === undefined || pending.signingWalletBinding.wallet.type === 'browser') throw signingOperationError('This request is not bound to a direct signing wallet')
+	const binding = pending.signingWalletBinding
+	assertSigningWalletIdentity(binding.wallet)
+	if (pending.signingChainId !== ethereum.getChainId()) throw signingOperationError('Signing network changed. Return to the request’s original network before continuing.')
+	const findExisting = async () => (await readDirectSigningRecords()).find((record) => isRecordForPendingRequest(record, pending))
+	let record = await findExisting()
+	if (record === undefined) {
+		const rpcUrl = ethereum.getRpcEntry().httpsRpc
+		if (rpcUrl === undefined) throw signingOperationError('Configure an RPC connection for direct signing')
+		// Preparing a transaction reads fees and the nonce, so it runs before the lock is taken.
+		const input = await prepareDirectSigningInput(ethereum, binding, request)
+		const created: DirectSigningRecord = { id: crypto.randomUUID(), request: pending.uniqueRequestIdentifier, requestInstanceId: pending.instanceId, binding, websiteOrigin: pending.website.websiteOrigin, rpcUrl, input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }
+		record = await withDirectSigningRecords(async (records) => {
+			// Another open of the same request may have created its record meanwhile; the request keeps that one.
+			const existing = (await records.read()).find((item) => isRecordForPendingRequest(item, pending))
+			if (existing !== undefined) return existing
+			await assertCurrentBinding(created)
+			return await records.store(created)
+		})
+	}
+	if (record.phase === 'review') {
+		record = await commitIfUnchanged(record, async (current) => ({ ...current, reviewReady: false }))
+		await refreshDirectSigningReview(record, ethereum, prices)
+		record = await commitIfUnchanged(record, async (current) => ({ ...current, reviewReady: true }))
+	}
+	await browser.tabs.create({ url: `${ browser.runtime.getURL(getHtmlFile('directSigning')) }?id=${ encodeURIComponent(record.id) }` })
+	return record
+}
+
 /** Persist before every irreversible boundary; an interrupted submission can only reconcile or resend the same bytes. */
 export async function updateDirectSigning(request: DirectSigningRequest, refreshReview?: (record: DirectSigningRecord) => Promise<void>) {
+	switch (request.method) {
+		case 'signing_approve': return await approveSigningRequest(request)
+		case 'signing_editFees': return await editSigningFees(request, refreshReview)
+		case 'signing_broadcast': return await broadcast(request)
+		default: break
+	}
 	return await withDirectSigningRecords(async (records) => {
 		const record = (await records.read()).find((item) => item.id === request.id)
 		if (record === undefined) throw signingOperationError('Signing request not found')
@@ -135,23 +177,21 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 			if (record.phase === 'submitting' || record.phase === 'submitted' || record.phase === 'confirmed') throw signingOperationError('A submitted transaction cannot be cancelled here. Reconcile it by its transaction hash.')
 			return await records.store({ ...record, phase: 'cancelled', revision: crypto.randomUUID() })
 		}
-		if (request.method === 'signing_broadcast' && (record.phase === 'submitting' || record.phase === 'submitted' || record.phase === 'confirmed')) return await broadcast(record, records)
 		await assertCurrentBinding(record)
-		switch (request.method) {
-			case 'signing_editFees': {
-				if (refreshReview === undefined) throw signingOperationError('Fee changes require a refreshed transaction explanation')
-				const edited = editTransactionFees(record, request)
-				// Invalidate approval before changing the derived explanation, even if a later storage write fails.
-				await records.store({ ...record, reviewReady: false })
-				await refreshReview(edited)
-				return await records.store({ ...edited, reviewReady: true })
-			}
-			case 'signing_approve': return await approveSigningRequest(record, records, request)
-			case 'signing_result': return await acceptSigningResult(record, request.result, records)
-			case 'signing_broadcast': return await broadcast(record, records)
-			default: throw signingOperationError('Unsupported signing operation')
-		}
+		if (request.method === 'signing_result') return await acceptSigningResult(record, request.result, records)
+		throw signingOperationError('Unsupported signing operation')
 	})
+}
+
+async function editSigningFees(request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>, refreshReview: ((record: DirectSigningRecord) => Promise<void>) | undefined) {
+	const record = await readRecordForRequest(request)
+	await assertCurrentBinding(record)
+	if (refreshReview === undefined) throw signingOperationError('Fee changes require a refreshed transaction explanation')
+	const edited = editTransactionFees(record, request)
+	// Invalidate approval before changing the derived explanation, even if the refresh later fails.
+	const invalidated = await commitIfUnchanged(record, async (current) => ({ ...current, reviewReady: false }))
+	await refreshReview(edited)
+	return await commitIfUnchanged(invalidated, async () => ({ ...edited, reviewReady: true }))
 }
 
 function editTransactionFees(record: DirectSigningRecord, request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>): DirectSigningRecord {
@@ -199,26 +239,33 @@ export async function authorizeDirectSigningDevice(request: Extract<DirectSignin
 	return { ok: true as const, record }
 }
 
-async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction, approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {
+async function approveSigningRequest(approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {
 	const simulationModeGuard = captureSimulationModeGuard()
+	const record = await readRecordForRequest(approval)
 	if (record.phase !== 'review') throw signingOperationError('Request has already been approved; resume or cancel its current signing operation')
 	if (record.input.method === 'eth_sendTransaction' && record.reviewReady !== true) throw signingOperationError('Wait for the refreshed transaction explanation before approving')
-	await assertApprovalForReviewedResult(record, approval)
-	const { simulationMode } = await getSettings()
-	assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
-	const pending = await getPendingTransactionsAndMessages()
-	const conflictingTransaction = (await records.read()).find((candidate) => {
-		if (candidate.id === record.id || candidate.input.method !== 'eth_sendTransaction') return false
-		if (candidate.binding.wallet.address !== record.binding.wallet.address || candidate.input.chainId !== record.input.chainId) return false
-		// An ambiguous submission retains its nonce even after the website request disappears.
-		if (candidate.phase === 'submitting') return true
-		return (candidate.phase === 'approved' || candidate.phase === 'signed')
-			&& pending.some((request) => isRecordForPendingRequest(candidate, request))
-	})
-	if (record.input.method === 'eth_sendTransaction' && conflictingTransaction !== undefined) throw signingOperationError('Finish or cancel this account’s pending transaction before approving another nonce')
+	await assertCurrentBinding(record)
+	// The live-chain checks run without the record lock.
 	await checkTransactionFreshness(record)
-	assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
-	return await records.store({ ...record, phase: 'approved' })
+	return await commitIfUnchanged(record, async (current, records) => {
+		if (current.input.method === 'eth_sendTransaction' && current.reviewReady !== true) throw signingOperationError(SIGNING_REQUEST_CHANGED_MESSAGE)
+		await assertCurrentBinding(current)
+		await assertApprovalForReviewedResult(current, approval)
+		const { simulationMode } = await getSettings()
+		const pending = await getPendingTransactionsAndMessages()
+		const conflictingTransaction = (await records.read()).find((candidate) => {
+			if (candidate.id === current.id || candidate.input.method !== 'eth_sendTransaction') return false
+			if (candidate.binding.wallet.address !== current.binding.wallet.address || candidate.input.chainId !== current.input.chainId) return false
+			// An ambiguous submission retains its nonce even after the website request disappears.
+			if (candidate.phase === 'submitting') return true
+			return (candidate.phase === 'approved' || candidate.phase === 'signed')
+				&& pending.some((request) => isRecordForPendingRequest(candidate, request))
+		})
+		if (current.input.method === 'eth_sendTransaction' && conflictingTransaction !== undefined) throw signingOperationError('Finish or cancel this account’s pending transaction before approving another nonce')
+		// The guard was captured before any await and is checked with nothing awaited before the write.
+		assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
+		return { ...current, phase: 'approved' }
+	})
 }
 
 async function acceptSigningResult(record: DirectSigningRecord, result: string, records: DirectSigningRecordsTransaction) {
@@ -228,27 +275,32 @@ async function acceptSigningResult(record: DirectSigningRecord, result: string, 
 	return await records.store({ ...record, phase: 'signed', result: verifiedResult, ...(record.input.method === 'eth_sendTransaction' ? { transactionHash: keccak256(verifiedResult) } : {}) })
 }
 
-async function broadcast(record: DirectSigningRecord, records: DirectSigningRecordsTransaction) {
+async function broadcast(request: Extract<DirectSigningRequest, { method: 'signing_broadcast' }>) {
+	const record = await readRecordForRequest(request)
 	if (record.input.method !== 'eth_sendTransaction' || record.result === undefined || record.transactionHash === undefined || !['signed', 'submitting', 'submitted', 'confirmed'].includes(record.phase)) throw signingOperationError('A verified signed transaction is required')
-	await verifyDirectResult(record.input, record.result)
+	if (record.phase === 'signed') await assertCurrentBinding(record)
+	const signedTransaction = record.result
+	await verifyDirectResult(record.input, signedTransaction)
+	// Reconciliation and submission talk to the RPC without the record lock; each phase change commits only onto the record as read.
 	const rpc = await checkChain(record)
 	const hash = BigInt(record.transactionHash)
 	const receipt = await rpc.getTransactionReceipt(hash, undefined)
 	if (receipt !== null) {
 		if (receipt.transactionHash !== hash) throw signingOperationError('RPC receipt belongs to a different transaction')
-		return await records.store({ ...record, phase: 'confirmed', executionSucceeded: receipt.status === 'success' })
+		return await commitIfUnchanged(record, async (current) => ({ ...current, phase: 'confirmed', executionSucceeded: receipt.status === 'success' }))
 	}
 	const known = await rpc.getTransactionByHash(hash, undefined)
 	if (known !== null) {
 		if (known.hash !== hash) throw signingOperationError('RPC returned a different transaction while reconciling submission')
-		return await records.store({ ...record, phase: 'submitted' })
+		return await commitIfUnchanged(record, async (current) => ({ ...current, phase: 'submitted' }))
 	}
 	if (record.phase === 'submitted' || record.phase === 'confirmed') throw signingOperationError('Previously submitted transaction is not currently visible. Keep its hash and check the configured RPC before taking further action.')
 	if (record.phase === 'signed') await checkTransactionFreshness(record)
-	const submitting = await records.store({ ...record, phase: 'submitting' })
-	const returnedHash = await rpc.sendRawTransaction(bytesFromHex(ensureHex(record.result)), undefined)
+	// Persisted before sending, so a concurrent broadcast of a signed record fails this commit instead of sending. Two retries of an already submitting record can both send, but they resend the same signed bytes, which the network accepts at most once.
+	const submitting = await commitIfUnchanged(record, async (current) => ({ ...current, phase: 'submitting' }))
+	const returnedHash = await rpc.sendRawTransaction(bytesFromHex(ensureHex(signedTransaction)), undefined)
 	if (returnedHash !== hash) throw signingOperationError('RPC returned a different transaction hash; reconcile the signed transaction hash before proceeding')
-	return await records.store({ ...submitting, phase: 'submitted' })
+	return await commitIfUnchanged(submitting, async (current) => ({ ...current, phase: 'submitted' }))
 }
 
 /** Refresh the existing explanation using the final nonce and fees, and bind its completion to this payload revision. */

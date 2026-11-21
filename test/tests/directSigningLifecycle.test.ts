@@ -504,3 +504,31 @@ test('a message approval does not need a reachable RPC, while a transaction appr
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([message]) })
 	expect((await approve(message)).phase).toBe('approved')
 })
+
+test('a hung RPC during one record\'s approval does not block loading or cancelling another record', async () => {
+	const other: DirectSigningRecord = { ...record, id: crypto.randomUUID(), revision: crypto.randomUUID() }
+	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record, other]) })
+	const rpcReleased = Promise.withResolvers<void>()
+	const rpcHanging = Promise.withResolvers<void>()
+	duringRpcRequest = async (method) => {
+		if (method !== 'eth_chainId') return
+		rpcHanging.resolve()
+		await rpcReleased.promise
+	}
+	const approval = approve(record)
+	await rpcHanging.promise
+	expect((await updateDirectSigning({ method: 'signing_get', id: other.id })).id).toBe(other.id)
+	expect((await updateDirectSigning({ method: 'signing_cancel', id: other.id })).phase).toBe('cancelled')
+	rpcReleased.resolve()
+	expect((await approval).phase).toBe('approved')
+})
+
+test('a record changed while its approval checked the chain refuses the approval', async () => {
+	duringRpcRequest = async (method) => {
+		if (method !== 'eth_chainId') return
+		duringRpcRequest = undefined
+		await updateDirectSigning({ method: 'signing_cancel', id: record.id })
+	}
+	await expect(approve(record)).rejects.toThrow('changed while it was being checked')
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('cancelled')
+})
