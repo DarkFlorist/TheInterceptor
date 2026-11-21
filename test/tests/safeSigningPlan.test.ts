@@ -32,3 +32,9 @@ test('every site that decides a Safe signer or executor uses the shared plan and
 		assert.doesNotMatch(source, /safeSigningSignerAddress \?\?|safeExecutionAddress \?\?|getSavedSafeSigningAccount/u, path)
 	}
 })
+
+test('a saved signing owner that is no longer one of the Safe\'s owners is not used', () => {
+	const removedOwner = 0x5555555555555555555555555555555555555555n
+	assert.deepEqual(resolveSafeSigningPlan({ ...safe, safeSigningSignerAddress: removedOwner }, walletAccount), { signingOwner: walletAccount, executor: walletAccount })
+	assert.deepEqual(resolveSafeSigningPlan({ ...safe, safeSigningSignerAddress: removedOwner, safeExecutionAddress: savedExecutor }, walletAccount), { signingOwner: walletAccount, executor: savedExecutor })
+})

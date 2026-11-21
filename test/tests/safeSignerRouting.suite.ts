@@ -1686,3 +1686,22 @@ test('accepting a separately paid Safe execution whose execution account signs w
 	assert.equal((await readDirectSigningRecords()).length, 1, 'accepting opens direct signing for the execution account')
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })
+
+test('refreshing a Safe\'s owners clears a saved signing owner removed on chain, so the signing plan no longer uses it', async () => {
+	const { resolveSafeSigningPlan } = await import('../../app/ts/utils/safeSigningPlan.js')
+	const removedOwner = 0x1234567890123456789012345678901234567890n
+	fakeSafeContract.owners = [recipientAddress]
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ useAsActiveAddress: false, safeSignerAddresses: [removedOwner, recipientAddress], safeSigningSignerAddress: removedOwner, safeExecutionAddress: removedOwner, safeVersion: '1.3.0' })])
+	const reply = await modules.setSafeSimulationSigner(
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
+		new Map(),
+		{ method: 'popup_setSafeSimulationSigner', data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: undefined } },
+	)
+	assert.deepEqual(reply, { type: 'SetSafeSimulationSignerReply', ok: true })
+	const refreshed = (await modules.getUserAddressBookEntries())[0]
+	if (refreshed?.type !== 'safe') throw new Error('Expected the refreshed Safe')
+	assert.equal(refreshed.safeSigningSignerAddress, undefined)
+	// The execution account only pays, so it is kept.
+	assert.equal(refreshed.safeExecutionAddress, removedOwner)
+	assert.equal(resolveSafeSigningPlan(refreshed, recipientAddress).signingOwner, recipientAddress)
+})

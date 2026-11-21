@@ -425,9 +425,11 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	const updatedEntry = await updateSafeAddressBookEntryDetails(request.data.chainId, request.data.safeAddress, (details) => {
-		const { safeSimulationSignerAddress: _previousSafeSimulationSignerAddress, ...detailsWithoutSimulationSigner } = details
+		const { safeSimulationSignerAddress: _previousSafeSimulationSignerAddress, safeSigningSignerAddress: savedSigningOwner, ...detailsWithoutSimulationSigner } = details
 		return {
 			...detailsWithoutSimulationSigner,
+			// A saved signing owner removed on chain is cleared with the refreshed owners.
+			...(savedSigningOwner === undefined || !validatedSafeState.owners.includes(savedSigningOwner) ? {} : { safeSigningSignerAddress: savedSigningOwner }),
 			...(request.data.safeSimulationSignerAddress === undefined ? {} : { safeSimulationSignerAddress: request.data.safeSimulationSignerAddress }),
 			safeSignerAddresses: [...validatedSafeState.owners],
 			safeVersion: validatedSafeState.version,
