@@ -65,8 +65,8 @@ export function getAcceptRefusal(pending: PendingTransactionOrSignableMessage, a
 
 export const isAcceptForStoredResult = (pending: PendingTransactionOrSignableMessage, accept: ReviewedAccept) => getAcceptRefusal(pending, accept) === undefined
 
-// What a page approving the stored request must show and echo back: the reviewed-result id, whether only rejection is possible, and why a send-anyway override is needed.
+// What a page approving the stored request must show and echo back: the reviewed-result id, whether only rejection is possible, why a send-anyway override is needed, and whether an edited gas limit has no results yet, which also needs it.
 export const getPendingRequestReview = (pending: PendingTransactionOrSignableMessage) => {
 	const sendAnywayReason = getSendAnywayOverrideReason(pending)
-	return { reviewedResultId: getReviewedResultId(pending), rejectOnly: isRejectOnlyTransaction(pending), ...sendAnywayReason === undefined ? {} : { sendAnywayReason } }
+	return { reviewedResultId: getReviewedResultId(pending), rejectOnly: isRejectOnlyTransaction(pending), unsimulatedGasLimit: !isPendingTransactionGasLimitCurrent(pending), ...sendAnywayReason === undefined ? {} : { sendAnywayReason } }
 }

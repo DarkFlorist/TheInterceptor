@@ -6,7 +6,7 @@ import type { SendAnywayOverrideReason } from '../utils/sendAnywayConsent.js'
 
 const SendAnywayOverrideReasonCodec: funtypes.Codec<SendAnywayOverrideReason> = funtypes.Union(funtypes.Literal('failingTransaction'), funtypes.Literal('quarantinedTransaction'), funtypes.Literal('quarantinedSignature'))
 // The website request's current reviewed result (getPendingRequestReview), which a direct signing approval must name, with the policy the page applies before offering approval.
-const PendingRequestReview = funtypes.ReadonlyObject({ reviewedResultId: funtypes.String, rejectOnly: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ sendAnywayReason: SendAnywayOverrideReasonCodec }))
+const PendingRequestReview = funtypes.ReadonlyObject({ reviewedResultId: funtypes.String, rejectOnly: funtypes.Boolean, unsimulatedGasLimit: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ sendAnywayReason: SendAnywayOverrideReasonCodec }))
 export type PendingRequestReview = funtypes.Static<typeof PendingRequestReview>
 
 const Failure = funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String })

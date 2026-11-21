@@ -478,3 +478,19 @@ test('a signing record neither approves nor cancels a newer request the page sen
 	expect(cancelled.ok).toBe(true)
 	expect((await getPendingTransactionsAndMessages()).map((pending) => pending.instanceId)).toEqual(['replacement request'])
 })
+
+// A gas edit in the confirmation is stored before it is simulated again; like the confirmation accept, the signing page offers its approval only with send anyway.
+test('an edited gas limit without results needs send anyway on the signing page too', async () => {
+	const { getPendingRequestReview } = await import('../../app/ts/background/reviewedResult.js')
+	const { updatePendingTransactionOrMessageInstance } = await import('../../app/ts/background/storageVariables.js')
+	await updatePendingTransactionOrMessageInstance({ uniqueRequestIdentifier: record.request, instanceId: record.requestInstanceId }, async (pending) => {
+		if (pending.type !== 'Transaction' || pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending
+		const [transaction] = pending.originalRequestParameters.params
+		return { ...pending, originalRequestParameters: { ...pending.originalRequestParameters, params: [{ ...transaction, gas: 30_000n }] } }
+	})
+	const [edited] = await getPendingTransactionsAndMessages()
+	if (edited === undefined) throw new Error('Expected the website request')
+	expect(getPendingRequestReview(edited)).toMatchObject({ rejectOnly: false, unsimulatedGasLimit: true })
+	await expect(approve(record)).rejects.toThrow('gas limit changed')
+	expect((await approve(record, true)).phase).toBe('approved')
+})
