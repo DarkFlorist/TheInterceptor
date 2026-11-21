@@ -1727,3 +1727,25 @@ for (const mode of ['simulation', 'signing'] as const) test(`a message from a se
 	assert.equal(message.safeMessageCoSignSnapshot, undefined)
 	await setSelectedSigningAddress(undefined)
 })
+
+test('a pending request\'s signing wallet is looked up for the signer its Safe flow names', async () => {
+	const { getPendingRequestSigner } = await import('../../app/ts/background/pendingSigningWallet.js')
+	const { getSafeFlowSignerAddress, getSafePendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
+	const owner = 0x1111111111111111111111111111111111111111n
+	const executor = 0x2222222222222222222222222222222222222222n
+	const ordinary = { ...pendingTransaction, simulationMode: false }
+	const flows = {
+		ordinary,
+		unformedProposal: { ...ordinary, safeFlow: { kind: 'proposal', state: 'formationFailed' } },
+		createdProposal: { ...ordinary, safeFlow: { kind: 'proposal', state: 'created', safeTransaction: { safeSignerAddress: owner } } },
+		directExecution: { ...ordinary, activeAddress: executor, safeFlow: { kind: 'directExecution', safeExecutionOriginalRequestParameters: ordinary.originalRequestParameters, safeExecutionSignerAddress: executor, safeExecutionSigningOwnerAddress: owner } },
+	} as const
+	for (const [kind, pending] of Object.entries(flows)) {
+		const safeFlow = getSafePendingFlow(pending)
+		assert.equal(getPendingRequestSigner(pending), safeFlow === undefined ? pending.activeAddress : getSafeFlowSignerAddress(safeFlow), kind)
+	}
+	// A direct execution's wallet sends the transaction, so it is the execution account's, not the signing owner's.
+	assert.equal(getPendingRequestSigner(flows.directExecution), executor)
+	assert.equal(getPendingRequestSigner(flows.createdProposal), owner)
+	assert.equal(getPendingRequestSigner(flows.unformedProposal), ordinary.activeAddress)
+})
