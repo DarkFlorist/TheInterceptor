@@ -16,7 +16,7 @@ import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } 
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
 import { getConfiguredSafeEntry } from './safeSigningAccount.js'
-import { getPendingTransactionSigningWalletBinding } from './pendingSigningWallet.js'
+import { getPendingRequestSigningWalletBinding } from './pendingSigningWallet.js'
 import { resolveSafeSigningPlan, type SafeSigningPlan } from '../utils/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
@@ -344,10 +344,8 @@ function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, ref
 		&& pending.approvalStatus.message === refreshResult.approvalStatus.message
 }
 
-// The refreshed transaction's signing wallet, resolved before the storage update because a refresh can change who signs.
-async function getRefreshedSigningWalletBinding(refreshed: PendingTransactionOrSignableMessage) {
-	return refreshed.type === 'Transaction' ? await getPendingTransactionSigningWalletBinding(refreshed) : refreshed.signingWalletBinding
-}
+// The refreshed request's signing wallet, resolved before the storage update because a refresh can change who signs.
+const getRefreshedSigningWalletBinding = async (refreshed: PendingTransactionOrSignableMessage) => await getPendingRequestSigningWalletBinding(refreshed)
 
 function mergeSafeSignerSelectionRefresh(
 	current: PendingTransactionOrSignableMessage,
@@ -359,6 +357,7 @@ function mergeSafeSignerSelectionRefresh(
 	if (currentFlow === undefined || refreshedFlow === undefined || currentFlow.kind !== refreshedFlow.kind) return current
 	if (currentFlow.kind === 'messageCoSign' && refreshedFlow.kind === 'messageCoSign') return modifyObject(currentFlow.pending, {
 		safeMessageCoSignSnapshot: refreshedFlow.pending.safeMessageCoSignSnapshot,
+		signingWalletBinding,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
 	if (currentFlow.kind === 'directExecution' && refreshedFlow.kind === 'directExecution') return modifyObject(currentFlow.pending, {
@@ -467,6 +466,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		refreshResult = await handleSafeSignerSelectionRefreshFailure(error, undefined, 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
+	const signingWalletBinding = refreshResult.status === 'refreshed' ? await getRefreshedSigningWalletBinding(refreshResult.pending) : undefined
 	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		// Do not overwrite a cancellation, another completed refresh, or changed review data while the owner lookup was pending.
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
@@ -474,7 +474,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 			|| stringifyJSONWithBigInts(current.signedMessageTransaction.safeMessageReview) !== stringifyJSONWithBigInts(pending.signedMessageTransaction.safeMessageReview)
 			|| stringifyJSONWithBigInts(current.originalRequestParameters) !== stringifyJSONWithBigInts(pending.originalRequestParameters)) return current
 		if (refreshResult.status === 'refreshed' && refreshResult.pending.type === 'SignableMessage') {
-			persistedPending = { ...current, safeMessageCoSignSnapshot: refreshResult.pending.safeMessageCoSignSnapshot, approvalStatus: refreshResult.pending.approvalStatus }
+			persistedPending = { ...current, safeMessageCoSignSnapshot: refreshResult.pending.safeMessageCoSignSnapshot, signingWalletBinding, approvalStatus: refreshResult.pending.approvalStatus }
 		} else if (refreshResult.status === 'blocked' && !isSameSafeSignerError(current, refreshResult)) {
 			persistedPending = { ...current, approvalStatus: refreshResult.approvalStatus }
 		}

@@ -416,6 +416,31 @@ test('refuses a Safe co-signing accept when the signer refresh during resolution
 	assert.equal(getForwardedSigner(), addressString(selectedOwner))
 })
 
+test('a Safe co-signing refreshed to another owner is accepted with that owner\'s saved wallet', async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' }), ...[reviewedOwner, selectedOwner].map((owner) => ({ type: 'contact' as const, name: `Owner ${ owner.toString(16) }`, address: owner, chainId: 'AllChains' as const, entrySource: 'User' as const }))])
+	for (const owner of [reviewedOwner, selectedOwner]) await saveAddressSigningWallet(owner, { type: 'browser', address: owner, label: 'Owner account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined)
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const selectInWallet = async (owner: bigint) => await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerName: 'MetaMask', signerProvider: undefined, signerConnected: true, signerAccounts: [owner], activeSigningAddress: owner, signerChain: fakeRpcNetwork.chainId }))
+	await selectInWallet(reviewedOwner)
+	const { websiteTabConnections, getForwardedSigner } = createSignerConnection()
+	const signRequest = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
+	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
+	assert.equal((await getStoredRequest()).signingWalletBinding?.wallet.address, reviewedOwner)
+	await selectInWallet(selectedOwner)
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), false)
+	const refreshed = await getStoredRequest()
+	assert.equal(refreshed.type === 'SignableMessage' ? refreshed.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, selectedOwner)
+	assert.equal(refreshed.signingWalletBinding?.wallet.address, selectedOwner, 'the stored wallet belongs to the refreshed owner')
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
+	assert.equal(getForwardedSigner(), addressString(selectedOwner))
+})
+
 test('an identical replacement request instance needs a new reviewed approval', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
 	const reviewed = { ...makeReviewedTransaction(succeeded, false), instanceId: 'reviewed instance' }

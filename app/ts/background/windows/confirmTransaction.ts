@@ -1,7 +1,6 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
 import { findSafeEntry, resolveSafeSigningPlan } from '../../utils/safeSigningPlan.js'
-import { getPendingTransactionSigningWalletBinding } from '../pendingSigningWallet.js'
-import { getSigningWalletBinding } from '../signingWalletStore.js'
+import { getPendingRequestSigningWalletBinding } from '../pendingSigningWallet.js'
 import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
@@ -971,7 +970,7 @@ async function createConfirmationForMessage(
 				signedMessageTransaction,
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}
-			await appendPendingTransactionOrMessage({ ...pendingMessage, signingChainId: ethereumClientService.getChainId(), signingWalletBinding: simulationMode ? undefined : await getSigningWalletBinding(simulationSignerAddress) })
+			await appendPendingTransactionOrMessage({ ...pendingMessage, signingChainId: ethereumClientService.getChainId(), signingWalletBinding: await getPendingRequestSigningWalletBinding(pendingMessage) })
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessageInstance(pendingMessage, async (message) => {
@@ -1110,7 +1109,7 @@ async function createConfirmationForTransaction(
 				approvalStatus: safeSignerMismatch ?? { status: 'WaitingForUser' as const },
 				safeFlow,
 			}
-			const storedPendingTransaction = { ...pendingTransaction, signingChainId: ethereumClientService.getChainId(), signingWalletBinding: await getPendingTransactionSigningWalletBinding(pendingTransaction) }
+			const storedPendingTransaction = { ...pendingTransaction, signingChainId: ethereumClientService.getChainId(), signingWalletBinding: await getPendingRequestSigningWalletBinding(pendingTransaction) }
 			await appendPendingTransactionOrMessage(storedPendingTransaction)
 			storedConfirmation = storedPendingTransaction
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
