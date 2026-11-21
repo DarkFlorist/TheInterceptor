@@ -91,10 +91,11 @@ export async function getSafeExecutionReviewedState(
 
 // The plan's executor sends the outer transaction and pays its gas; its signing owner supplies the missing owner signature (see prepareSafeExecutionSignerRoute).
 export function getSafeExecutionSignerRoute(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined, plan: SafeSigningPlan) {
-	const { executor } = plan
+	const { executor, signingOwner } = plan
 	if (safeEntry === undefined || executor === undefined || !isSafeExecutionRequestForActiveSafe(transactionParams, safeEntry)) return undefined
 	return {
 		executor,
+		signingOwner,
 		transactionParams: {
 			...transactionParams,
 			params: [{

@@ -140,6 +140,7 @@ export async function prepareSafeTransactionConfirmation(
 			kind: 'directExecution',
 			safeExecutionOriginalRequestParameters: transactionParams,
 			...(safeExecutionSignerRoute === undefined ? {} : { safeExecutionSignerAddress: safeExecutionSignerRoute.executor }),
+			...(safeExecutionSignerRoute?.signingOwner === undefined ? {} : { safeExecutionSigningOwnerAddress: safeExecutionSignerRoute.signingOwner }),
 			...(safeExecutionReviewedState === undefined ? {} : { safeExecutionReviewedSafeState: safeExecutionReviewedState }),
 		}
 		: safeEntry !== undefined ? unsupportedSafeRequestReason === undefined ? { kind: 'proposal' } : { kind: 'unsupportedSafeRequest' }

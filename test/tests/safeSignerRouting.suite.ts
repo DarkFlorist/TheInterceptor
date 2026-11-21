@@ -882,6 +882,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 
 	assert.deepEqual(modules.getSafeExecutionSignerRoute(transaction, safeEntry, { signingOwner: safeSignerAddress, executor: safeSignerAddress }), {
 		executor: safeSignerAddress,
+		signingOwner: safeSignerAddress,
 		transactionParams: {
 			method: 'eth_sendTransaction',
 			params: [{
@@ -1530,4 +1531,28 @@ test('a direct Safe execution is pre-validated by the saved signing owner and pa
 	const preValidatedBy = (owner: bigint) => `${ owner.toString(16).padStart(64, '0') }${ '00'.repeat(32) }01`
 	assert.ok(calldata.includes(preValidatedBy(safeTestOwnerAddress)), 'the saved signing owner supplies the owner signature')
 	assert.equal(calldata.includes(preValidatedBy(recipientAddress)), false, 'the execution account is not an owner and signs nothing for the Safe')
+})
+
+test('refreshing a direct Safe execution keeps the reviewed wallet owner when only a separate execution account is saved', async () => {
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const { refreshSafeExecutionSignerSelection } = await import('../../app/ts/background/safeSignerSelectionRefresh.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	fakeSafeContract.threshold = 1n
+	// No saved signing owner, so the wallet's account (an owner) signs; the saved execution account pays.
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeExecutionAddress: recipientAddress })])
+	const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }] })
+	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: request }, false, activeAddress, safeTestOwnerAddress))
+	assert.equal(preparation.rejection, undefined)
+	const { safeFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	if (safeFlow.kind !== 'directExecution') throw new Error('Expected a direct Safe execution')
+	assert.equal(safeFlow.safeExecutionSignerAddress, recipientAddress)
+	assert.equal(safeFlow.safeExecutionSigningOwnerAddress, safeTestOwnerAddress)
+	const pending = { ...pendingTransaction, simulationMode: false, activeAddress: preparation.transactionExecutor, originalRequestParameters: preparation.effectiveTransactionParams, safeFlow }
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Expected the routed execution transaction')
+	const refreshed = await withSilencedConsole(async () => await refreshSafeExecutionSignerSelection(ethereum, { kind: 'directExecution', pending: { ...pending, safeFlow } }))
+	if (refreshed?.type !== 'Transaction' || refreshed.safeFlow.kind !== 'directExecution') throw new Error('Expected the refreshed execution')
+	assert.equal(refreshed.safeFlow.safeExecutionSignerAddress, recipientAddress)
+	assert.equal(refreshed.safeFlow.safeExecutionSigningOwnerAddress, safeTestOwnerAddress)
+	assert.deepEqual(refreshed.originalRequestParameters, preparation.effectiveTransactionParams)
 })

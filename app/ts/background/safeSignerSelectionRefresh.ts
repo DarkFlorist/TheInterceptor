@@ -15,7 +15,7 @@ import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnect
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
-import { resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
+import { resolveSafeSigningPlan, type SafeSigningPlan } from '../safe/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -176,6 +176,13 @@ async function refreshSafeMessageCoSignSignerSelection(
 	})
 }
 
+// A newly selected wallet account resolves a new plan; otherwise the refresh keeps the reviewed signing owner and execution account, never deriving the owner from the payer. A request stored before the owner was recorded resolves its plan from the reviewed execution account, as it was reviewed.
+function getRefreshedSafeExecutionPlan(safeEntry: SafeEntry | undefined, safeFlow: DirectSafeExecutionFlow['pending']['safeFlow'], selectedSigner: bigint | undefined): SafeSigningPlan {
+	if (selectedSigner !== undefined) return resolveSafeSigningPlan(safeEntry, selectedSigner)
+	if (safeFlow.safeExecutionSigningOwnerAddress === undefined) return resolveSafeSigningPlan(safeEntry, safeFlow.safeExecutionSignerAddress)
+	return { signingOwner: safeFlow.safeExecutionSigningOwnerAddress, executor: safeFlow.safeExecutionSignerAddress }
+}
+
 export async function refreshSafeExecutionSignerSelection(
 	ethereum: EthereumClientService,
 	flow: DirectSafeExecutionFlow,
@@ -189,8 +196,7 @@ export async function refreshSafeExecutionSignerSelection(
 	const safeAddress = originalRequest.params[0].from
 	if (safeAddress === undefined) throw createSafeContractValidationFailure('The original Gnosis Safe execution request is missing its Gnosis Safe address.')
 	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
-	// A newly selected wallet account, else the reviewed executor, stands in for the wallet account in the shared signing plan.
-	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, resolveSafeSigningPlan(safeEntry, selectedSigner ?? pending.safeFlow.safeExecutionSignerAddress))
+	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, getRefreshedSafeExecutionPlan(safeEntry, pending.safeFlow, selectedSigner))
 	if (refreshedRoute === undefined) throw createSafeContractValidationFailure('The configured Gnosis Safe execution route is no longer available.')
 	assertSafeContractStateUnchanged(reviewedSafeState, refreshedRoute.safeState)
 	if (selectedSigner === undefined && (
@@ -200,7 +206,12 @@ export async function refreshSafeExecutionSignerSelection(
 	return modifyObject(pending, {
 		activeAddress: refreshedRoute.executor,
 		originalRequestParameters: refreshedRoute.transactionParams,
-		safeFlow: modifyObject(pending.safeFlow, { safeExecutionSignerAddress: refreshedRoute.executor, safeExecutionReviewedSafeState: refreshedRoute.safeState }),
+		safeFlow: {
+			...pending.safeFlow,
+			safeExecutionSignerAddress: refreshedRoute.executor,
+			...(refreshedRoute.signingOwner === undefined ? {} : { safeExecutionSigningOwnerAddress: refreshedRoute.signingOwner }),
+			safeExecutionReviewedSafeState: refreshedRoute.safeState,
+		},
 		approvalStatus: { status: 'WaitingForUser' as const },
 	})
 }
@@ -300,7 +311,8 @@ export async function refreshSafeSignerSelection(
 function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
 	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
 	switch (flow.kind) {
-		case 'directExecution': return flow.pending.safeFlow.safeExecutionSignerAddress !== selectedSigner
+		// The wallet account stands in for the signing owner, so a new selection matters only when it differs from the reviewed owner.
+		case 'directExecution': return (flow.pending.safeFlow.safeExecutionSigningOwnerAddress ?? flow.pending.safeFlow.safeExecutionSignerAddress) !== selectedSigner
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
 		case 'proposal': return (
 			flow.pending.approvalStatus.status === 'WaitingForUser'
@@ -405,6 +417,7 @@ function pendingSafeRefreshBaseMatches(
 			&& refreshBaseFlow.pending.originalRequestParameters.method === 'eth_sendTransaction'
 			&& areSafeExecutionSignerRequestsEqual(currentFlow.pending.originalRequestParameters, refreshBaseFlow.pending.originalRequestParameters)
 			&& currentFlow.pending.safeFlow.safeExecutionSignerAddress === refreshBaseFlow.pending.safeFlow.safeExecutionSignerAddress
+			&& currentFlow.pending.safeFlow.safeExecutionSigningOwnerAddress === refreshBaseFlow.pending.safeFlow.safeExecutionSigningOwnerAddress
 			&& areSafeContractStateSnapshotsEqual(currentFlow.pending.safeFlow.safeExecutionReviewedSafeState, refreshBaseFlow.pending.safeFlow.safeExecutionReviewedSafeState)
 	}
 	if (currentFlow.kind !== 'proposal' || refreshBaseFlow.kind !== 'proposal') return false

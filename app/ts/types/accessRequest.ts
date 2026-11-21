@@ -120,7 +120,10 @@ export const PendingTransactionSafeFlow = funtypes.Union(
 		kind: funtypes.Literal('directExecution'),
 		safeExecutionOriginalRequestParameters: SendTransactionParams,
 	}).And(funtypes.ReadonlyPartial({
+		// The execution account that sends and pays for the outer transaction.
 		safeExecutionSignerAddress: EthereumAddress,
+		// The reviewed signing owner whose pre-validated signature completes the execution; it differs from the execution account when a Safe saves a separate payer.
+		safeExecutionSigningOwnerAddress: EthereumAddress,
 		safeExecutionReviewedSafeState: SafeContractStateSnapshot,
 	})),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('created'), safeTransaction: SafeTransactionSigningRequest }),
