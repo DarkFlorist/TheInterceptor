@@ -1590,3 +1590,20 @@ test('a direct Safe execution from a separate execution account is refused befor
 	assert.equal(fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length, ethSimulateCalls, 'the refused execution is not simulated')
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })
+
+test('with a saved signing owner and execution account, a wallet selection does not refresh the direct Safe execution again', async () => {
+	const { refreshAndPersistSafeSignerSelection } = await import('../../app/ts/background/safeSignerSelectionRefresh.js')
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	fakeSafeContract.threshold = 1n
+	fakeSafeContract.ownersApprovedHash = [safeTestOwnerAddress]
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1', safeSignerAddresses: [safeTestOwnerAddress], safeSigningSignerAddress: safeTestOwnerAddress, safeExecutionAddress: recipientAddress })])
+	const walletAccount = 0x5555555555555555555555555555555555555555n
+	const preparation = await withSilencedConsole(async () => await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: separatePayerExecution(recipientAddress) }, false, activeAddress, walletAccount))
+	const { safeFlow } = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	const pending = { ...pendingTransaction, simulationMode: false, activeAddress: preparation.transactionExecutor, originalRequestParameters: preparation.effectiveTransactionParams, safeFlow }
+	// The wallet's selection differs from both the saved owner and the execution account, but changes neither, so the accept proceeds without a refresh.
+	const refresh = await withSilencedConsole(async () => await refreshAndPersistSafeSignerSelection(ethereum, pending, walletAccount, async () => { throw new Error('No refresh expected') }))
+	assert.equal(refresh.refreshRequired, false)
+	assert.equal(refresh.refreshResult.status, 'unchanged')
+})

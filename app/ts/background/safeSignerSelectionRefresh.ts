@@ -15,6 +15,7 @@ import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnect
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
+import { getConfiguredSafeEntry } from './safeSigningAccount.js'
 import { resolveSafeSigningPlan, type SafeSigningPlan } from '../safe/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
@@ -309,11 +310,21 @@ export async function refreshSafeSignerSelection(
 	}
 }
 
-function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
+// The saved Safe entry a direct execution's signing plan is resolved from; the other flows decide without it.
+async function getDirectExecutionSafeEntry(ethereum: EthereumClientService, flow: SafePendingFlow | undefined) {
+	if (flow?.kind !== 'directExecution') return undefined
+	return await getConfiguredSafeEntry(flow.pending.safeFlow.safeExecutionOriginalRequestParameters.params[0].from, ethereum.getChainId())
+}
+
+function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint, directExecutionSafeEntry: SafeEntry | undefined) {
 	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
 	switch (flow.kind) {
-		// The wallet account stands in for the signing owner, so a new selection matters only when it differs from the reviewed owner.
-		case 'directExecution': return (flow.pending.safeFlow.safeExecutionSigningOwnerAddress ?? flow.pending.safeFlow.safeExecutionSignerAddress) !== selectedSigner
+		// Refresh only when the plan resolved with the current wallet selection differs from the reviewed one. With a saved signing owner and execution account, the wallet selection changes neither, so the comparison converges.
+		case 'directExecution': {
+			const plan = resolveSafeSigningPlan(directExecutionSafeEntry, selectedSigner)
+			const reviewedExecutor = flow.pending.safeFlow.safeExecutionSignerAddress
+			return plan.executor !== reviewedExecutor || plan.signingOwner !== (flow.pending.safeFlow.safeExecutionSigningOwnerAddress ?? reviewedExecutor)
+		}
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
 		case 'proposal': return (
 			flow.pending.approvalStatus.status === 'WaitingForUser'
@@ -471,7 +482,8 @@ export async function refreshAndPersistSafeSignerSelection(
 	const recoveredMessage = await recoverSafeMessageReview(ethereum, pending, selectedSigner)
 	if (recoveredMessage !== undefined) return recoveredMessage
 	const flow = getSafePendingFlow(pending)
-	if (flow === undefined || !shouldRefreshSafeSignerSelection(flow, selectedSigner)) {
+	const directExecutionSafeEntry = await getDirectExecutionSafeEntry(ethereum, flow)
+	if (flow === undefined || !shouldRefreshSafeSignerSelection(flow, selectedSigner, directExecutionSafeEntry)) {
 		return {
 			refreshRequired: false,
 			refreshResult: { status: 'unchanged', pending },
@@ -502,7 +514,7 @@ export async function refreshAndPersistSafeSignerSelection(
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
 	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
-		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
+		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner, directExecutionSafeEntry)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
 		persistedPending = refreshResult.status === 'refreshed'
 			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
