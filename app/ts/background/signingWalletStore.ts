@@ -26,6 +26,12 @@ export async function getAddressBookAndSigningWalletBindings() {
 	})
 }
 
+// The same eligible bindings without taking the settings storage lock, for per-tab paths such as the toolbar icon that must not wait for address-book or settings writes. The two reads may straddle a write; the next refresh corrects that.
+export async function readEligibleSigningWalletBindings(): Promise<SigningWalletBindings> {
+	const [entries, bindings] = await Promise.all([getUserAddressBookEntries(), readSigningWalletBindings()])
+	return reconcileSigningWalletBindings(entries, bindings)
+}
+
 export async function getSigningWalletBindings(): Promise<SigningWalletBindings> {
 	return (await getAddressBookAndSigningWalletBindings()).signingWalletBindings
 }

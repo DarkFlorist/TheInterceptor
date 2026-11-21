@@ -1,7 +1,7 @@
 import { getCreatedSafeProposal } from '../safe/safePendingFlow.js'
 import type { PendingTransactionSafeFlow } from '../types/accessRequest.js'
 import type { SafeMessageCoSignSnapshot } from '../types/safeTypes.js'
-import { getSigningWalletBinding, getSigningWalletBindings } from './signingWalletStore.js'
+import { getSigningWalletBinding, readEligibleSigningWalletBindings } from './signingWalletStore.js'
 import { isActiveAddressSigningDirectly } from '../utils/requestRouting.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 
@@ -20,7 +20,7 @@ export async function getPendingRequestSigningWalletBinding(pending: PendingSign
 	return await getSigningWalletBinding(getPendingSigner(pending))
 }
 
-// The background's answer to whether the active address signs directly, from the same reconciled bindings the popup is sent, so the toolbar tooltip and the popup banner never disagree.
+// The background's answer to whether the active address signs directly, from the same reconciled bindings the popup is sent, so the toolbar tooltip and the popup banner never disagree. The toolbar icon updates per tab, so this reads without the settings storage lock.
 export async function isActiveAddressSigningDirectlyNow(activeAddress: AddressBookEntry | undefined, walletSelectedAccount: bigint | undefined) {
-	return isActiveAddressSigningDirectly(activeAddress, await getSigningWalletBindings(), walletSelectedAccount)
+	return isActiveAddressSigningDirectly(activeAddress, await readEligibleSigningWalletBindings(), walletSelectedAccount)
 }

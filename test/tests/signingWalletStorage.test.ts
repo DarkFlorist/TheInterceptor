@@ -284,3 +284,16 @@ test('the toolbar tooltip and the popup decide direct signing from the same reco
 	expect(popupSignsDirectly).toBe(false)
 	expect(await isActiveAddressSigningDirectlyNow(contact, undefined)).toBe(popupSignsDirectly)
 })
+
+test('deciding direct signing for the toolbar icon does not take the settings storage lock', async () => {
+	const settingsStorageTransaction = await import('../../app/ts/background/settingsStorageTransaction.js')
+	const { isActiveAddressSigningDirectlyNow } = await import('../../app/ts/background/pendingSigningWallet.js')
+	const saved = await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const contact = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
+	const lock = spyOn(settingsStorageTransaction, 'runSettingsStorageTransaction')
+	try {
+		expect(await isActiveAddressSigningDirectlyNow(contact, undefined)).toBe(true)
+		expect(lock).not.toHaveBeenCalled()
+	} finally { lock.mockRestore() }
+	expect(saved).toBeDefined()
+})
