@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { getNetworkWithoutRpcWarningState } from '../../app/ts/utils/networkWithoutRpcUi.js'
 import { SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'

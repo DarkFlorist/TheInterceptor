@@ -1,4 +1,4 @@
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { bytesFromHex, bytesToHex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { expect, test } from 'bun:test'

@@ -11,7 +11,7 @@ export function createDirectSigningFlowPendingRequest(record: DirectSigningRecor
 	const originalRequestParameters = method === 'eth_sendTransaction' ? { method, params: [{ from: address, to: address, value: '0x0' }] } : method === 'personal_sign' ? { method, params: [data, address] } : { method, params: [address, data] }
 	const website = { websiteOrigin: record.websiteOrigin }
 	const created = '0x1'
-	const common = { popupOrTabId: { type: 'tab', id: record.request.requestSocket.tabId }, originalRequestParameters, uniqueRequestIdentifier, simulationMode: false, activeAddress: address, created, website, approvalStatus: { status: 'WaitingForUser' }, transactionOrMessageCreationStatus: 'Simulated', signingWalletBinding: SigningWalletBinding.serialize(record.binding), signingChainId: '0x1' }
+	const common = { instanceId: record.requestInstanceId, popupOrTabId: { type: 'tab', id: record.request.requestSocket.tabId }, originalRequestParameters, uniqueRequestIdentifier, simulationMode: false, activeAddress: address, created, website, approvalStatus: { status: 'WaitingForUser' }, transactionOrMessageCreationStatus: 'Simulated', signingWalletBinding: SigningWalletBinding.serialize(record.binding), signingChainId: '0x1' }
 	const addressEntry = { type: 'contact', address, name: 'Public test account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true }
 	const rpcNetwork = { name: 'Local fixture', chainId: '0x1', httpsRpc: record.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	if (method === 'eth_sendTransaction') {

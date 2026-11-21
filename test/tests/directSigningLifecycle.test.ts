@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, spyOn, test } from 'bun:test'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState, ethereum, simulator, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import { doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
@@ -66,7 +66,7 @@ beforeEach(async () => {
 	const binding = await saveAddressSigningWallet(address, { type: 'ledger', label: 'Main Ledger', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Savings')
 	if (binding === undefined) throw new Error('Missing binding')
 	const input = { method: 'eth_sendTransaction' as const, address: account.address, chainId: 1n, data: serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n, to: account.address, value: 0n }) }
-	record = { id: crypto.randomUUID(), request: pendingTransaction.uniqueRequestIdentifier, binding, websiteOrigin: pendingTransaction.website.websiteOrigin, rpcUrl: 'https://rpc.example.test', input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
+	record = { id: crypto.randomUUID(), request: pendingTransaction.uniqueRequestIdentifier, requestInstanceId: pendingTransaction.instanceId, binding, websiteOrigin: pendingTransaction.website.websiteOrigin, rpcUrl: 'https://rpc.example.test', input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
 	await appendPendingTransactionOrMessage({ ...reviewedTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: binding, signingChainId: 1n })
 	// The website request was made in signing mode, and the Interceptor is still in it.
 	await browser.storage.local.set({ simulationMode: false, directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
@@ -85,9 +85,9 @@ async function approve(item: DirectSigningRecord, forceSend = false) {
 async function sign() {
 	record = await approve(record)
 	const payload = prepareTransactionSigningPayload(record.input.data, account.address, 1n)
-	const signature = secp256k1.sign(bytesFromHex(payload.digest), bytesFromHex(privateKey))
-	const bytes = new Uint8Array(65)
-	bytes.set(signature.toCompactRawBytes()); bytes[64] = signature.recovery + 27
+	// A recovered signature is the recovery id followed by r and s; Ethereum orders them r, s, v.
+	const recovered = secp256k1.sign(bytesFromHex(payload.digest), bytesFromHex(privateKey), { prehash: false, format: 'recovered' })
+	const bytes = Uint8Array.from([...recovered.slice(1), (recovered[0] ?? 0) + 27])
 	const result = await assembleSignedTransaction(payload, bytesToHex(bytes))
 	record = await updateDirectSigning({ method: 'signing_result', id: record.id, revision: record.revision, result })
 	return record
@@ -288,8 +288,8 @@ const reverted = { transactionStatus: 'Transaction Failed' as const, error: { co
 
 // Stands in for refreshDirectSigningReview: the fee change stores a refreshed simulation result on the website request.
 const storeRefreshedResult = (refreshed: (pending: typeof reviewedTransaction) => typeof reviewedTransaction) => async () => {
-	const { updatePendingTransactionOrMessage } = await import('../../app/ts/background/storageVariables.js')
-	await updatePendingTransactionOrMessage(record.request, async (pending) => pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' ? { ...pending, popupVisualisation: refreshed(reviewedTransaction).popupVisualisation } : pending)
+	const { updatePendingTransactionOrMessageInstance } = await import('../../app/ts/background/storageVariables.js')
+	await updatePendingTransactionOrMessageInstance({ uniqueRequestIdentifier: record.request, instanceId: record.requestInstanceId }, async (pending) => pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' ? { ...pending, popupVisualisation: refreshed(reviewedTransaction).popupVisualisation } : pending)
 }
 
 test('a refresh that makes the transaction revert blocks approval until the refreshed result is approved with send anyway', async () => {
@@ -466,4 +466,15 @@ for (const [instruction, read] of [[6, 'app configuration'], [2, 'account']] as 
 			expect(page().error).toContain('switched to simulation mode')
 		})
 	} finally { ledger.restore() }
+})
+
+// A page can send a new request under the id of one a signing record was made for; the record keeps to its own request instance.
+test('a signing record neither approves nor cancels a newer request the page sent under the same request id', async () => {
+	await clearPendingTransactions()
+	const replacement = { ...reviewedTransaction, instanceId: 'replacement request', simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: 1n }
+	await appendPendingTransactionOrMessage(replacement)
+	await expect(approve(record)).rejects.toThrow('no longer active')
+	const cancelled = await dispatchSigningPageRequest({ method: 'signing_cancel', id: record.id }, simulator, new Map())
+	expect(cancelled.ok).toBe(true)
+	expect((await getPendingTransactionsAndMessages()).map((pending) => pending.instanceId)).toEqual(['replacement request'])
 })

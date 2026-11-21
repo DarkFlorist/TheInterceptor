@@ -1,4 +1,4 @@
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import encodeQR from 'qr'
 import type { DirectSigningRecord } from '../../app/ts/types/directSigning.js'
 import { bytesFromHex, bytesToHex, ensureHex } from '../../app/ts/utils/ethereumBytes.js'

@@ -3,8 +3,12 @@ import { DirectSigningRecords, type DirectSigningRecord } from '../types/directS
 import { signingOperationError } from '../signing/signingOperationError.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { getPendingTransactionsAndMessages } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, isSamePendingRequestInstance } from './storageVariables.js'
+import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+
+// The pending request instance a record signs for. A page can send a new request under the id of an earlier one, so records match pending requests by instance, never by request id alone.
+export const getRecordRequestInstance = (record: DirectSigningRecord) => ({ uniqueRequestIdentifier: record.request, instanceId: record.requestInstanceId })
+export const isRecordForPendingRequest = (record: DirectSigningRecord, pending: Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>) => isSamePendingRequestInstance(pending, getRecordRequestInstance(record))
 
 /** Corrupt signing history must remain available for recovery, especially after ambiguous submission. */
 export async function readDirectSigningRecords(): Promise<readonly DirectSigningRecord[]> {
@@ -57,7 +61,7 @@ export async function storeDirectSigningRecord(record: DirectSigningRecord) {
 async function persistDirectSigningRecord(record: DirectSigningRecord) {
 	const records = await readDirectSigningRecords()
 	const pending = await getPendingTransactionsAndMessages()
-	const retained = records.filter((item) => item.id !== record.id && (item.phase === 'submitting' || pending.some((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, item.request))))
+	const retained = records.filter((item) => item.id !== record.id && (item.phase === 'submitting' || pending.some((request) => isRecordForPendingRequest(item, request))))
 	const history = records.filter((item) => item.id !== record.id && !retained.includes(item) && ['submitted', 'confirmed', 'cancelled'].includes(item.phase)).slice(-4)
 	const next = [...history, ...retained, record]
 	const serialized = DirectSigningRecords.serialize(next)

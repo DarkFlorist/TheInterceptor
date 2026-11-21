@@ -3,6 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 import { SigningWallet, SigningWalletBinding } from './signingWallet.js'
 import { UniqueRequestIdentifier } from '../utils/requests.js'
+import { PendingRequestInstanceId } from './accessRequest.js'
 
 export type DirectSigningInput = funtypes.Static<typeof DirectSigningInput>
 export const DirectSigningInput = funtypes.ReadonlyObject({
@@ -15,6 +16,8 @@ export type DirectSigningRecord = funtypes.Static<typeof DirectSigningRecord>
 export const DirectSigningRecord = funtypes.ReadonlyObject({
 	id: funtypes.String,
 	request: UniqueRequestIdentifier,
+	// The pending request instance the record signs for; the page can reuse the request id for a later request.
+	requestInstanceId: PendingRequestInstanceId,
 	binding: SigningWalletBinding,
 	websiteOrigin: funtypes.String,
 	rpcUrl: funtypes.String,

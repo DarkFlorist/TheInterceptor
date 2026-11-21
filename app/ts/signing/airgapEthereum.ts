@@ -2,7 +2,7 @@ import { isUuidV4 } from '../utils/browserProviderIdentity.js'
 import { hmac } from '@noble/hashes/hmac'
 import { sha512 } from '@noble/hashes/sha512'
 import { concatBytes } from '@noble/hashes/utils'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { publicKeyAddress } from './publicAccountIdentity.js'
 import { bytesFromHex, bytesToHex, ensureHex, getAddress, type Hex } from '../utils/ethereumBytes.js'
 import { decodeAirGapCbor, encodeAirGapCbor, type AirGapCbor } from './airgapCbor.js'
@@ -32,10 +32,10 @@ function publicChild(publicKey: Uint8Array, chainCode: Uint8Array, index: number
 	new DataView(encodedIndex.buffer).setUint32(0, index)
 	const digest = hmac(sha512, chainCode, concatBytes(publicKey, encodedIndex))
 	const tweak = BigInt(bytesToHex(digest.subarray(0, 32)))
-	if (tweak === 0n || tweak >= secp256k1.CURVE.n) throw new Error('Invalid BIP-32 child; choose a different account index')
-	const point = secp256k1.ProjectivePoint.fromHex(publicKey).add(secp256k1.ProjectivePoint.BASE.multiply(tweak))
-	if (point.equals(secp256k1.ProjectivePoint.ZERO)) throw new Error('Invalid BIP-32 child point')
-	return { publicKey: point.toRawBytes(true), chainCode: digest.slice(32) }
+	if (tweak === 0n || tweak >= secp256k1.Point.Fn.ORDER) throw new Error('Invalid BIP-32 child; choose a different account index')
+	const point = secp256k1.Point.fromBytes(publicKey).add(secp256k1.Point.BASE.multiply(tweak))
+	if (point.equals(secp256k1.Point.ZERO)) throw new Error('Invalid BIP-32 child point')
+	return { publicKey: point.toBytes(true), chainCode: digest.slice(32) }
 }
 
 function importHdKey(value: AirGapCbor, masterFingerprint: number | undefined, childIndex: number): AirGapPublicAccount {
@@ -45,7 +45,7 @@ function importHdKey(value: AirGapCbor, masterFingerprint: number | undefined, c
 	if (fields.has(7n)) throw new Error('AirGap child-range exports are unsupported; export a concrete Ethereum account')
 	const rawKey = fields.get(3n)
 	if (!(rawKey instanceof Uint8Array) || rawKey.length !== 33 || (rawKey[0] !== 2 && rawKey[0] !== 3)) throw new Error('AirGap export must contain a compressed secp256k1 public key')
-	secp256k1.ProjectivePoint.fromHex(rawKey).assertValidity()
+	secp256k1.Point.fromBytes(rawKey).assertValidity()
 	if (fields.has(5n)) {
 		const use = map(tagged(fields.get(5n), 305n))
 		if (use.get(1n) !== 60n) throw new Error('AirGap export is not an Ethereum account')

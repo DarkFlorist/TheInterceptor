@@ -16,10 +16,9 @@ import { EIP712Message } from '../types/eip721.js'
 import { bytesFromHex, bytesToHex, ensureHex, keccak256 } from '../utils/ethereumBytes.js'
 import { parseTransaction, serializeTransaction } from '../utils/ethereumTransactions.js'
 import { DIRECT_SIGNING_CAPABILITY_ERROR, getSigningMethodError, prepareDirectPayload, verifyDirectResult } from '../signing/backend.js'
-import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { getSigningWalletBinding } from './signingWalletStore.js'
-import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
-import { withDirectSigningRecords, type DirectSigningRecordsTransaction } from './directSigningStore.js'
+import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessageInstance } from './storageVariables.js'
+import { getRecordRequestInstance, isRecordForPendingRequest, withDirectSigningRecords, type DirectSigningRecordsTransaction } from './directSigningStore.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getAcceptRefusal } from './reviewedResult.js'
 import { getSettings } from './settings.js'
@@ -28,7 +27,7 @@ import { captureSimulationModeGuard, type SimulationModeGuard } from '../utils/s
 
 /** Read afresh at each lifecycle boundary; a request can disappear while a device is signing. */
 async function findPendingSigningRequest(record: DirectSigningRecord) {
-	return (await getPendingTransactionsAndMessages()).find((item) => doesUniqueRequestIdentifiersMatch(item.uniqueRequestIdentifier, record.request))
+	return (await getPendingTransactionsAndMessages()).find((item) => isRecordForPendingRequest(record, item))
 }
 
 async function assertCurrentBinding(record: DirectSigningRecord) {
@@ -89,7 +88,7 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 		if (pending.simulationMode || pending.signingWalletBinding === undefined || pending.signingWalletBinding.wallet.type === 'browser') throw signingOperationError('This request is not bound to a direct signing wallet')
 		assertSigningWalletIdentity(pending.signingWalletBinding.wallet)
 		if (pending.signingChainId !== ethereum.getChainId()) throw signingOperationError('Signing network changed. Return to the request’s original network before continuing.')
-		const existing = (await records.read()).find((record) => doesUniqueRequestIdentifiersMatch(record.request, pending.uniqueRequestIdentifier))
+		const existing = (await records.read()).find((record) => isRecordForPendingRequest(record, pending))
 		let record = existing
 		if (record === undefined) {
 			const binding = pending.signingWalletBinding
@@ -109,7 +108,7 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 			} else throw signingOperationError(DIRECT_SIGNING_CAPABILITY_ERROR)
 			const input = { method: request.method, data, address, chainId: ethereum.getChainId() }
 			prepareDirectPayload(input)
-			record = { id: crypto.randomUUID(), request: pending.uniqueRequestIdentifier, binding, websiteOrigin: pending.website.websiteOrigin, rpcUrl, input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }
+			record = { id: crypto.randomUUID(), request: pending.uniqueRequestIdentifier, requestInstanceId: pending.instanceId, binding, websiteOrigin: pending.website.websiteOrigin, rpcUrl, input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }
 			await assertCurrentBinding(record)
 			await records.store(record)
 		}
@@ -165,6 +164,7 @@ const approvalRefusalMessages = {
 	staleReview: 'The transaction explanation changed. Review the current result before approving.',
 	rejectOnly: 'Interceptor could not determine this transaction’s result, so it can only be cancelled.',
 	sendAnywayRequired: 'This result fails or is flagged. Tick send anyway to approve it.',
+	unsimulatedGasLimit: 'The gas limit changed after the last simulation. Tick send anyway to approve it without a new simulation.',
 } as const
 
 // The explanation is refreshed after the confirmation accept, for example after a fee change, so the approval must name the refreshed result and meet its reject-only and send-anyway rules like a confirmation accept.
@@ -211,7 +211,7 @@ async function approveSigningRequest(record: DirectSigningRecord, records: Direc
 		// An ambiguous submission retains its nonce even after the website request disappears.
 		if (candidate.phase === 'submitting') return true
 		return (candidate.phase === 'approved' || candidate.phase === 'signed')
-			&& pending.some((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, candidate.request))
+			&& pending.some((request) => isRecordForPendingRequest(candidate, request))
 	})
 	if (record.input.method === 'eth_sendTransaction' && conflictingTransaction !== undefined) throw signingOperationError('Finish or cancel this account’s pending transaction before approving another nonce')
 	await checkTransactionFreshness(record)
@@ -262,8 +262,9 @@ export async function refreshDirectSigningReview(record: DirectSigningRecord, et
 	if (popupVisualisation === undefined) throw signingOperationError('The refreshed explanation was interrupted; review again')
 	if (popupVisualisation.statusCode === 'failed') throw signingOperationError('Unable to refresh the transaction explanation. Retry the fee change when the RPC connection is available.')
 	await assertCurrentBinding(record)
-	await updatePendingTransactionOrMessage(record.request, async (current) => {
+	const stillPending = await updatePendingTransactionOrMessageInstance(getRecordRequestInstance(record), async (current) => {
 		if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction changed during explanation refresh')
 		return { ...current, transactionToSimulate, popupVisualisation }
 	})
+	if (!stillPending) throw signingOperationError('The original signing request is no longer active')
 }

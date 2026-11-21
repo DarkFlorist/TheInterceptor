@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../utils/pendingTransactionSimulation.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { encodeBigIntOrBytesForJson } from '../utils/bigint.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -27,6 +28,8 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	signingChainId: true,
 	// Identity and signer round-trip bookkeeping, which change without changing what the user reviewed.
 	type: false,
+	// A replacement with identical content still needs its own approval.
+	instanceId: true,
 	uniqueRequestIdentifier: false,
 	popupOrTabId: false,
 	approvalStatus: false,
@@ -54,6 +57,8 @@ export type ReviewedAccept = { readonly reviewedResultId: string, readonly force
 export function getAcceptRefusal(pending: PendingTransactionOrSignableMessage, accept: ReviewedAccept) {
 	if (getReviewedResultId(pending) !== accept.reviewedResultId) return 'staleReview' as const
 	if (isRejectOnlyTransaction(pending)) return 'rejectOnly' as const
+	// A gas edit is stored before it is simulated again, so only the send-anyway override accepts it without results for the edited gas.
+	if (!accept.forceSend && !isPendingTransactionGasLimitCurrent(pending)) return 'unsimulatedGasLimit' as const
 	if (!accept.forceSend && getSendAnywayOverrideReason(pending) !== undefined) return 'sendAnywayRequired' as const
 	return undefined
 }

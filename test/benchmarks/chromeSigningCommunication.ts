@@ -2,7 +2,7 @@ import { installFlowCamera, installFlowLedger } from './directSigningFlowFixture
 import { DirectSigningRecord } from '../../app/ts/types/directSigning.js'
 import { prepareDirectPayload } from '../../app/ts/signing/backend.js'
 import { bytesFromHex, bytesToHex } from '../../app/ts/utils/ethereumBytes.js'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { captureExtensionScreenshot } from './screenshotCapture.js'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
@@ -196,8 +196,8 @@ async function main() {
 						const stored = await signing.evaluate(`(async () => (await browser.runtime.sendMessage({method:'signing_get', id: new URLSearchParams(location.search).get('id')})).record)()`)
 						const record = DirectSigningRecord.parse(stored)
 						const digest = prepareDirectPayload(record.input).digest
-						const signature = secp256k1.sign(bytesFromHex(digest), bytesFromHex('0x0000000000000000000000000000000000000000000000000000000000000001'))
-						const bytes = Uint8Array.from([...signature.toCompactRawBytes(), signature.recovery + 27])
+						const recovered = secp256k1.sign(bytesFromHex(digest), bytesFromHex('0x0000000000000000000000000000000000000000000000000000000000000001'), { prehash: false, format: 'recovered' })
+						const bytes = Uint8Array.from([...recovered.slice(1), (recovered[0] ?? 0) + 27])
 						const clickText = async (text: string) => await signing.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${ JSON.stringify(text) }); if (!b || b.disabled) throw new Error('Missing signing action'); b.click(); })()`)
 						if (directWallet === 'ledger') await installFlowLedger(signing, record, bytes, undefined)
 						await clickText(`Approve and continue with ${ directWallet === 'ledger' ? 'Ledger' : 'AirGap Vault' }`)

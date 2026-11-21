@@ -1,4 +1,4 @@
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { bytesFromHex, bytesToHex, ensureHex, getAddress, isHexString, keccak256, type Hex } from '../utils/ethereumBytes.js'
 import { hashMessage, hashTypedData, recoverAddress } from '../utils/ethereumSigning.js'
 import { parseTransaction, recoverTransactionSender, serializeTransaction } from '../utils/ethereumTransactions.js'
@@ -124,7 +124,7 @@ function signatureParts(signature: string) {
 	if (recovery !== 0 && recovery !== 1 && recovery !== 27 && recovery !== 28) throw invalidSigningResponse('Invalid signature recovery byte')
 	const r = BigInt(bytesToHex(bytes.subarray(0, 32)))
 	const s = BigInt(bytesToHex(bytes.subarray(32, 64)))
-	if (r <= 0n || r >= secp256k1.CURVE.n || s <= 0n || s > secp256k1.CURVE.n / 2n) throw invalidSigningResponse('Invalid or noncanonical Ethereum signature')
+	if (r <= 0n || r >= secp256k1.Point.Fn.ORDER || s <= 0n || s > secp256k1.Point.Fn.ORDER / 2n) throw invalidSigningResponse('Invalid or noncanonical Ethereum signature')
 	return { r, s, yParity: recovery >= 27 ? recovery - 27 : recovery }
 }
 
@@ -170,7 +170,7 @@ export function verifySignedTransaction(payload: TransactionSigningPayload, sign
 	if (parsed.type !== 'eip1559' || parsed.r === undefined || parsed.s === undefined || parsed.yParity === undefined) throw new Error('Expected a signed EIP-1559 transaction')
 	if (serializeTransaction(parsed).toLowerCase() !== prepared.unsignedTransaction) throw new Error('Signed transaction fields differ from the reviewed payload')
 	const signature = { r: parsed.r, s: parsed.s, yParity: parsed.yParity }
-	if (BigInt(signature.s) > secp256k1.CURVE.n / 2n) throw new Error('Noncanonical transaction signature')
+	if (BigInt(signature.s) > secp256k1.Point.Fn.ORDER / 2n) throw new Error('Noncanonical transaction signature')
 	if (serializeTransaction(parsed, signature).toLowerCase() !== signed) throw new Error('Noncanonical signed transaction')
 	if (recoverTransactionSender(signed).toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw new Error('Signed transaction has the wrong sender')
 	return signed

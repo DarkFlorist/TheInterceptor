@@ -4,7 +4,7 @@ import { createDirectSigningFlowPendingRequest } from './directSigningFlowPendin
 /** Built-page walkthrough with public test keys, scripted HID, synthetic QR camera and local RPC. No physical-device claim. */
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { type DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
 import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { type SigningWalletBinding, SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
@@ -64,7 +64,7 @@ try {
 		sends = 0; submittedHash = undefined; confirmed = false; failSubmission = type === 'airgap'
 		const binding: SigningWalletBinding = { revision: crypto.randomUUID(), wallet: { type, address: BigInt(address), label: 'Walkthrough public test account', publicKey: bytesToHex(secp256k1.getPublicKey(key, type === 'airgap')), derivationPath: path, ...(type === 'airgap' ? { sourceFingerprint: 0xf23f9fd2 } : {}) } }
 		const data = method === 'eth_sendTransaction' ? serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 2000000000n, maxPriorityFeePerGas: 1000000000n, to: address, value: 1000000000000000n }) : method === 'personal_sign' ? '0x48656c6c6f2066726f6d207468652077616c6b7468726f756768' : typed
-		const record: DirectSigningRecord = { id: crypto.randomUUID(), request: { requestId: 1, requestSocket: { tabId: 98765, connectionName: 0n } }, binding, websiteOrigin: 'https://walkthrough.example.test', rpcUrl: `http://127.0.0.1:${ server.port }`, input: { method, data, address, chainId: 1n }, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
+		const record: DirectSigningRecord = { id: crypto.randomUUID(), request: { requestId: 1, requestSocket: { tabId: 98765, connectionName: 0n } }, requestInstanceId: crypto.randomUUID(), binding, websiteOrigin: 'https://walkthrough.example.test', rpcUrl: `http://127.0.0.1:${ server.port }`, input: { method, data, address, chainId: 1n }, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
 		// Seed only the pre-existing explanation/request boundary, in signing mode as the request was made; approval, signing, verification and submission use production handlers.
 		const pending = createDirectSigningFlowPendingRequest(record)
 		await background.evaluate(`browser.storage.local.set(${ JSON.stringify({ simulationMode: false, signingWalletBindings: SigningWalletBindings.serialize([binding]), directSigningRequestsV1: DirectSigningRecords.serialize([record]), pendingTransactionsAndMessages: [PendingTransactionOrSignableMessage.serialize(pending)], pendingTerminalReplies: [] }) })`)
@@ -75,8 +75,8 @@ try {
 		for (const text of [record.websiteOrigin, address, 'Chain 1', 'Signing mode', type === 'ledger' ? 'Ledger' : 'AirGap']) await wait(page, text)
 		await captureExtensionScreenshot(page, `${ output }/${ type }-${ method }-review.png`, 'page')
 		const payload = prepareDirectPayload(record.input)
-		const signed = secp256k1.sign(bytesFromHex(payload.digest), key)
-		const signature = Uint8Array.from([...signed.toCompactRawBytes(), signed.recovery + 27])
+		const recovered = secp256k1.sign(bytesFromHex(payload.digest), key, { prehash: false, format: 'recovered' })
+		const signature = Uint8Array.from([...recovered.slice(1), (recovered[0] ?? 0) + 27])
 		if (type === 'ledger') await installFlowLedger(page, record, signature, method === 'personal_sign' ? 'reject' : method === 'eth_signTypedData_v4' ? 'disconnect' : undefined)
 		await click(page, `Approve and continue with ${ type === 'ledger' ? 'Ledger' : 'AirGap Vault' }`)
 		if (type === 'ledger' && method === 'personal_sign') {

@@ -11,7 +11,7 @@ import { SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
 import { serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
 import { bytesFromHex, bytesToHex, keccak256 } from '../../app/ts/utils/ethereumBytes.js'
 import { assembleSignedTransaction, prepareTransactionSigningPayload } from '../../app/ts/signing/exactPayload.js'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const address = '0x7e5f4552091a69125d5dfcb7b8c2659029395bdf'
 const key = bytesFromHex('0x0000000000000000000000000000000000000000000000000000000000000001')
@@ -51,6 +51,7 @@ const data = serializeTransaction({
 const record = {
 	id: '33333333-3333-4333-8333-333333333333',
 	request: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+	requestInstanceId: 'signing screenshots',
 	binding,
 	websiteOrigin: 'https://swap.example.test',
 	rpcUrl: 'https://rpc.example.invalid',
@@ -60,10 +61,8 @@ const record = {
 	phase: 'review' as const
 }
 const payload = prepareTransactionSigningPayload(data, address, 1n)
-const signature = secp256k1.sign(bytesFromHex(payload.digest), key)
-const bytes = new Uint8Array(65)
-bytes.set(signature.toCompactRawBytes())
-bytes[64] = signature.recovery + 27
+const recovered = secp256k1.sign(bytesFromHex(payload.digest), key, { prehash: false, format: 'recovered' })
+const bytes = Uint8Array.from([...recovered.slice(1), (recovered[0] ?? 0) + 27])
 const signed = await assembleSignedTransaction(payload, bytesToHex(bytes))
 // Never use a developer's saved Chrome profile for fixtures.
 const profileDir = await mkdtemp(join(tmpdir(), 'interceptor-screenshots-'))

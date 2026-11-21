@@ -1,6 +1,6 @@
 import encodeQR from 'qr'
 import { addr } from 'micro-eth-signer'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { frameLedgerApdu } from '../../app/ts/signing/ledgerFraming.js'
 import { encodeAirGapCbor, type AirGapCbor } from '../../app/ts/signing/airgapCbor.js'
 import { createAirGapUrEncoder } from '../../app/ts/signing/airgapUr.js'
