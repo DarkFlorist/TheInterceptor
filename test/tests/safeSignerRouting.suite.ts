@@ -1744,6 +1744,14 @@ test('a pending request\'s signing wallet is looked up for the signer its Safe f
 		const safeFlow = getSafePendingFlow(pending)
 		assert.equal(getPendingRequestSigner(pending), safeFlow === undefined ? pending.activeAddress : getSafeFlowSignerAddress(safeFlow), kind)
 	}
+	// A message co-sign is signed by its snapshot's owner, not the account the message was created for.
+	const messageAccount = 0x3333333333333333333333333333333333333333n
+	const messageCoSign = { type: 'SignableMessage', simulationMode: false, signedMessageTransaction: { fakeSignedFor: messageAccount }, safeMessageCoSignSnapshot: { safeSignerAddress: owner } } as const
+	const messageCoSignFlow = getSafePendingFlow(messageCoSign)
+	if (messageCoSignFlow === undefined) throw new Error('Expected a message co-sign flow')
+	assert.equal(getPendingRequestSigner(messageCoSign), getSafeFlowSignerAddress(messageCoSignFlow))
+	assert.equal(getPendingRequestSigner(messageCoSign), owner)
+	assert.equal(getPendingRequestSigner({ ...messageCoSign, safeMessageCoSignSnapshot: undefined }), messageAccount)
 	// A direct execution's wallet sends the transaction, so it is the execution account's, not the signing owner's.
 	assert.equal(getPendingRequestSigner(flows.directExecution), executor)
 	assert.equal(getPendingRequestSigner(flows.createdProposal), owner)
