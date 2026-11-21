@@ -590,6 +590,20 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	test('one Home load requests the signing wallet bindings once', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		try {
+			await act(() => { render(h(Home, createHomeParams({ simVisResults: new Signal(PASSTHROUGH_STATE) })), dom.document.body) })
+			await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
+			assert.equal(browserMock.sentMessages.filter((message) => hasMethod(message, 'signing_walletBindings')).length, 1)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+		}
+	})
+
 	test('shows a skeleton until initial simulation status is known', async () => {
 		const dom = installDomMock()
 		const simulationUpdatingState = new Signal<'done' | 'updating' | 'failed' | undefined>(undefined)

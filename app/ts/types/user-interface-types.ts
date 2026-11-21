@@ -1,3 +1,4 @@
+import type { SigningWalletBindingsState } from '../components/hooks/useSigningWalletBindings.js'
 import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
@@ -80,6 +81,8 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
+	// The page's one signing wallet bindings snapshot, so every part of Home shows the same bindings and a popup load requests them once.
+	wallets: SigningWalletBindingsState
 	isActiveAddressChanging: Signal<boolean>
 	isActiveAddressChangePending: ReadonlySignal<boolean>
 	isSettingsChangePending: ReadonlySignal<boolean>

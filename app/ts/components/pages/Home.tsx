@@ -447,7 +447,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 }
 
 function FirstCard(param: FirstCardParams) {
-	const wallets = useSigningWalletBindings()
+	const { wallets } = param
 	const timeSelectorMode = useSignal<TimePickerMode>('For')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
@@ -976,6 +976,7 @@ export function Home(param: HomeParams) {
 		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } signerAvailability = { tabSignerAvailability.value } activeAddressSignsDirectly = { activeAddressSignsDirectly }/>
 
 		<FirstCard
+			wallets = { wallets }
 			isActiveAddressChanging = { param.isActiveAddressChanging }
 			isActiveAddressChangePending = { param.isActiveAddressChangePending }
 			isSettingsChangePending = { param.isSettingsChangePending }
