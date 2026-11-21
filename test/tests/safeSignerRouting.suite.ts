@@ -1705,3 +1705,25 @@ test('refreshing a Safe\'s owners clears a saved signing owner removed on chain,
 	assert.equal(refreshed.safeExecutionAddress, removedOwner)
 	assert.equal(resolveSafeSigningPlan(refreshed, recipientAddress).signingOwner, recipientAddress)
 })
+
+for (const mode of ['simulation', 'signing'] as const) test(`a message from a selected contact that shares a Safe's address is an ordinary message (${ mode } mode)`, async () => {
+	const simulationMode = mode === 'simulation'
+	fakeSafeContract.owners = [recipientAddress]
+	// The contact is saved for this chain before the Safe, so simulation resolves the selected address to it; in signing mode it is the explicitly selected account.
+	await modules.updateAddressBookAndSigningWalletBindings(() => [
+		{ type: 'contact', name: 'Account at the Safe address', address: activeAddress, chainId: fakeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true },
+		createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress, safeSignerAddresses: [recipientAddress], safeSigningSignerAddress: recipientAddress }),
+	])
+	await modules.changeSimulationMode(simulationMode ? { simulationMode: true, activeSimulationAddress: activeAddress } : { simulationMode: false, activeSigningAddress: activeAddress })
+	const { setSelectedSigningAddress } = await import('../../app/ts/background/settings.js')
+	await setSelectedSigningAddress(simulationMode ? undefined : activeAddress)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const parameters = { method: 'personal_sign' as const, params: ['0x48656c6c6f', activeAddress] as const }
+	const request = { method: parameters.method, params: ['0x48656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters }, simulationMode, activeAddress, { websiteOrigin: 'https://contact.example', icon: undefined, title: 'Contact' }, new Map()))
+	const [message] = await modules.getPendingTransactionsAndMessages()
+	if (message?.type !== 'SignableMessage') throw new Error('Expected the pending message')
+	assert.equal(message.signedMessageTransaction.fakeSignedFor, activeAddress, 'signed by the contact, not a Safe owner')
+	assert.equal(message.safeMessageCoSignSnapshot, undefined)
+	await setSelectedSigningAddress(undefined)
+})

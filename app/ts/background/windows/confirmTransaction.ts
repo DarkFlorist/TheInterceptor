@@ -1,5 +1,6 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
-import { findSafeEntry, resolveSafeSigningPlan } from '../../utils/safeSigningPlan.js'
+import { resolveSafeSigningPlan } from '../../utils/safeSigningPlan.js'
+import { getActiveSelectionSafeEntry } from '../safeSigningAccount.js'
 import { getPendingRequestSigningWalletBinding } from '../pendingSigningWallet.js'
 import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -20,7 +21,6 @@ import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactio
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from '../addressBookStore.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
@@ -903,8 +903,8 @@ async function createConfirmationForMessage(
 ) {
 	const transactionParams = confirmation.parameters
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
-	// A Safe saved at the active address is its entry even when a contact or contract entry shares the address.
-	const activeAddressEntry = findSafeEntry(await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()), activeAddress, ethereumClientService.getChainId())
+	// The message acts as a Safe only when the active selection is that Safe, not merely because a Safe shares the address.
+	const activeAddressEntry = await getActiveSelectionSafeEntry(await getSettings(), simulationMode, activeAddress, ethereumClientService.getChainId())
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	// Signing mode signs a Safe's messages with the shared plan's signing owner, from the entry read once above.
 	const signingPlan = resolveSafeSigningPlan(activeAddressEntry, getWalletSelectedAccount(signerTabState))
