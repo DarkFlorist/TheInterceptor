@@ -62,6 +62,14 @@ sha512-/VrrACmOAwZVipuRITwfEwOL5oAMEHH5PTmBWaGtlTom2Thxaa+rhmna4zU9PRN2uLw2wdccb
 
 The registry publication date is 2026-08-31; the package points to Paul Miller's QR project at commit `be475cca488635b8a71e158ac6190a5c78a201a8`. Its published manifest has no runtime dependencies or installation hooks. Installed `index.js`, `decode.js`, `dom.js`, manifest, and both license files match the tarball byte-for-byte. The package offers MIT or Apache-2.0; the existing bundled license retains the Apache-2.0 license.
 
+Rechecked on 2026-11-21, independently of the note above:
+
+- **Integrity:** the tarball downloaded from the registry hashes to the same SHA-512 as the registry's `dist.integrity` and `bun.lock`'s entry for `qr@0.7.0`.
+- **Author:** the registry names Paul Miller (`paulmillr`) as author and sole maintainer, the same maintainer as `@noble/curves`, `@noble/hashes` and `micro-eth-signer`, which Interceptor already depends on.
+- **Dependencies:** none (no `dependencies`, `peerDependencies` or `optionalDependencies`).
+- **Provenance:** 0.7.0 was published from GitHub Actions as a trusted publisher, approved by `paulmillr`. Its SLSA v1 provenance attestation names the workflow `.github/workflows/release.yml` of `github.com/paulmillr/qr` at tag `0.7.0`, commit `be475cca488635b8a71e158ac6190a5c78a201a8`, for the same SHA-512. `npm audit signatures` on a clean install reports a verified registry signature and a verified attestation.
+- **Use:** `components/subcomponents/SigningQr.tsx` encodes AirGap request QR codes (`qr`) and decodes AirGap response frames (`qr/decode.js`) on the signing page.
+
 Source review focused on the imported encoder and decoder, their local-only module imports, output generation, image bounds and decode entrypoints. No network calls, dynamic code execution or dependency loading were found in those runtime paths. Interceptor imports neither the package's camera helpers nor its DOM module: our scanner bounds frames to 640×480 and validates decoded UR/CBOR and signatures separately. This is a scoped dependency review, not a complete independent QR algorithm audit. Recheck provenance, integrity, imports and scanner bounds when upgrading.
 
 ## Verification record and limitations
