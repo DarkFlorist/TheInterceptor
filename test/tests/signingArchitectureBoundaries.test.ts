@@ -67,3 +67,9 @@ test('address metadata does not depend on signing wallet storage or popup broadc
 	// metadataUtils is used throughout the background; it caches identified addresses with addressBookStore's eligibility-neutral addition instead.
 	assert.deepEqual(imports.filter((file) => ['background/signingAddressBookCoordinator.ts', 'background/signingWalletStore.ts', 'background/backgroundUtils.ts'].includes(file)), [])
 })
+
+test('direct signing reaches the reviewed network through the Ethereum client factory, not a raw request handler', async () => {
+	const imports = (await getValueImports(resolve(sourceRoot, 'background/directSigning.ts'))).map((file) => relative(sourceRoot, file))
+	assert.equal(imports.includes('simulation/services/EthereumJSONRpcRequestHandler.ts'), false)
+	assert.equal(imports.includes('simulation/serviceLifecycle.ts'), true)
+})

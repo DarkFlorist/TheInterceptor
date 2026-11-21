@@ -10,8 +10,7 @@ import type { PendingTransactionOrSignableMessage } from '../types/accessRequest
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { EthereumJSONRpcRequestHandler } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EthereumBytes32, EthereumQuantity } from '../types/wire-types.js'
+import { createEthereumClientService } from '../simulation/serviceLifecycle.js'
 import { EIP712Message } from '../types/eip721.js'
 import { bytesFromHex, bytesToHex, ensureHex, keccak256 } from '../utils/ethereumBytes.js'
 import { parseTransaction, serializeTransaction } from '../utils/ethereumTransactions.js'
@@ -38,24 +37,26 @@ async function assertCurrentBinding(record: DirectSigningRecord) {
 	if (pending === undefined || pending.simulationMode || pending.website.websiteOrigin !== record.websiteOrigin || pending.signingWalletBinding?.revision !== record.binding.revision) throw signingOperationError('The original signing request is no longer active')
 }
 
-function rpcFor(record: DirectSigningRecord) { return new EthereumJSONRpcRequestHandler(record.rpcUrl, false) }
+// A client for the network the record was reviewed on, made by the same factory as the simulation services and pinned to the reviewed RPC URL and chain. Each operation gets its own, so its response cache never outlives the operation.
+function clientFor(record: DirectSigningRecord) {
+	return createEthereumClientService({ name: 'Reviewed signing network', chainId: record.input.chainId, httpsRpc: record.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: true }, async () => undefined, async () => undefined)
+}
 
 async function checkChain(record: DirectSigningRecord) {
-	const rpc = rpcFor(record)
-	const chainId = EthereumQuantity.parse(await rpc.jsonRpcRequest({ method: 'eth_chainId' }))
-	if (chainId !== record.input.chainId) throw signingOperationError('RPC chain differs from the reviewed signing network')
-	return rpc
+	const client = clientFor(record)
+	if (await client.getNetworkChainId(undefined) !== record.input.chainId) throw signingOperationError('RPC chain differs from the reviewed signing network')
+	return client
 }
 
 async function checkTransactionFreshness(record: DirectSigningRecord) {
 	const rpc = await checkChain(record)
 	if (record.input.method !== 'eth_sendTransaction') return
 	const transaction = parseTransaction(ensureHex(record.input.data))
-	const nonce = EthereumQuantity.parse(await rpc.jsonRpcRequest({ method: 'eth_getTransactionCount', params: [record.binding.wallet.address, 'pending'] }))
+	const nonce = await rpc.getTransactionCount(record.binding.wallet.address, 'pending', undefined)
 	if (nonce !== BigInt(transaction.nonce ?? 0)) throw signingOperationError('The account nonce changed. Cancel and review a new transaction before signing again.')
-	const gasPrice = EthereumQuantity.parse(await rpc.jsonRpcRequest({ method: 'eth_gasPrice' }))
+	const gasPrice = await rpc.getGasPrice(undefined)
 	if (gasPrice > (transaction.maxFeePerGas ?? 0n)) throw signingOperationError('Network fees increased beyond the approved maximum. Review updated fees and obtain a new signature.')
-	const balance = EthereumQuantity.parse(await rpc.jsonRpcRequest({ method: 'eth_getBalance', params: [record.binding.wallet.address, 'pending'] }))
+	const balance = await rpc.getBalance(record.binding.wallet.address, 'pending', undefined)
 	if (balance < (transaction.value ?? 0n) + BigInt(transaction.gas ?? 0) * (transaction.maxFeePerGas ?? 0n)) throw signingOperationError('Insufficient live-chain balance for the approved value and maximum fee')
 }
 
@@ -231,21 +232,20 @@ async function broadcast(record: DirectSigningRecord, records: DirectSigningReco
 	await verifyDirectResult(record.input, record.result)
 	const rpc = await checkChain(record)
 	const hash = BigInt(record.transactionHash)
-	const receipt: unknown = await rpc.jsonRpcRequest({ method: 'eth_getTransactionReceipt', params: [hash] })
-	if (receipt !== null) {
-		const parsed = funtypes.ReadonlyObject({ transactionHash: EthereumBytes32, blockNumber: EthereumQuantity, status: funtypes.Union(funtypes.Literal('0x0'), funtypes.Literal('0x1')) }).parse(receipt)
-		if (parsed.transactionHash !== hash) throw signingOperationError('RPC receipt belongs to a different transaction')
-		return await records.store({ ...record, phase: 'confirmed', executionSucceeded: parsed.status === '0x1' })
+	const receipt = await rpc.getTransactionOutcome(hash, undefined)
+	if (receipt !== undefined) {
+		if (receipt.transactionHash !== hash) throw signingOperationError('RPC receipt belongs to a different transaction')
+		return await records.store({ ...record, phase: 'confirmed', executionSucceeded: receipt.status === '0x1' })
 	}
-	const known: unknown = await rpc.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] })
-	if (known !== null) {
-		if (funtypes.ReadonlyObject({ hash: EthereumBytes32 }).parse(known).hash !== hash) throw signingOperationError('RPC returned a different transaction while reconciling submission')
+	const knownHash = await rpc.getKnownTransactionHash(hash, undefined)
+	if (knownHash !== undefined) {
+		if (knownHash !== hash) throw signingOperationError('RPC returned a different transaction while reconciling submission')
 		return await records.store({ ...record, phase: 'submitted' })
 	}
 	if (record.phase === 'submitted' || record.phase === 'confirmed') throw signingOperationError('Previously submitted transaction is not currently visible. Keep its hash and check the configured RPC before taking further action.')
 	if (record.phase === 'signed') await checkTransactionFreshness(record)
 	const submitting = await records.store({ ...record, phase: 'submitting' })
-	const returnedHash = EthereumBytes32.parse(await rpc.jsonRpcRequest({ method: 'eth_sendRawTransaction', params: [bytesFromHex(ensureHex(record.result))] }))
+	const returnedHash = await rpc.sendRawTransaction(bytesFromHex(ensureHex(record.result)), undefined)
 	if (returnedHash !== hash) throw signingOperationError('RPC returned a different transaction hash; reconcile the signed transaction hash before proceeding')
 	return await records.store({ ...submitting, phase: 'submitted' })
 }
