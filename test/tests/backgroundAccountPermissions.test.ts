@@ -1,3 +1,4 @@
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
@@ -117,7 +118,7 @@ describe('background eth_accounts', () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
-		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false), 'number')
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
 	})
@@ -130,7 +131,7 @@ describe('background eth_accounts', () => {
 			await releaseCallback.promise
 			throw new Error('Async observer failed')
 		} } })
-		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false), 'number')
 		releaseCallback.resolve(undefined)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
@@ -143,11 +144,11 @@ describe('background eth_accounts', () => {
 		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
 		const second = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('second') } } })
 		const settings = await getSettings()
-		await updateWebsiteApprovalAccesses(undefined, first, settings, false, true)
+		await updateWebsiteApprovalAccesses(undefined, first, settings, false)
 		assert.deepEqual(calls, ['first'])
-		await updateWebsiteApprovalAccesses(undefined, new Map(), settings, false, true)
+		await updateWebsiteApprovalAccesses(undefined, new Map(), settings, false)
 		assert.deepEqual(calls, ['first'])
-		await updateWebsiteApprovalAccesses(undefined, second, settings, false, true)
+		await updateWebsiteApprovalAccesses(undefined, second, settings, false)
 		assert.deepEqual(calls, ['first', 'second'])
 	})
 
@@ -2591,7 +2592,7 @@ describe('background eth_accounts', () => {
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, signerAddress)
 	})
 
-	test('clears dapp accounts and finishes opening access approval when the active address is unapproved', async () => {
+	test('clears dapp accounts before deferred access approval opens for an unapproved address', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -2631,6 +2632,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'disconnect'])
 		assert.deepEqual(messages[0]?.result, [])
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
+		await waitForBackgroundTasks()
 		const pendingRequest = (await getPendingAccessRequests()).find((request) => request.requestAccessToAddress?.address === nextAccount)
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, nextAccount)

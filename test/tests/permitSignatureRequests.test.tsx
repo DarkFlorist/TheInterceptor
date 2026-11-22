@@ -6,6 +6,7 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { findPermit2WitnessField, getPermit2SignatureTransferKind, VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
+import { identifyAddress } from '../../app/ts/background/metadataUtils.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { checksummedAddress, stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
@@ -14,7 +15,7 @@ import { MockRequestHandler } from '../MockRequestHandler.js'
 import { Permit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
 import { getMessageAndDomainHash } from '../../app/ts/utils/eip712.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
-import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, safeTx, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
+import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, openSeaWithTotalOriginalConsiderationItems, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, safeTx, seaportJsSeaport16Listing, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
 
 // Address metadata, tab state and RPC lookups read extension storage, which is empty for these requests.
 Object.defineProperty(globalThis, 'browser', {
@@ -77,7 +78,7 @@ function createSignedTypedDataTransaction(typedData: EIP712Message): SignedMessa
 // Decodes the typed data JSON string the same way an eth_signTypedData_v4 request is decoded before it is visualized.
 async function visualizeTypedData(typedData: string, rpcNetwork: RpcEntry = mainnet) {
 	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
-	return await craftPersonalSignPopupMessage(ethereum, undefined, createSignedTypedDataTransaction(EIP712Message.parse(typedData)), rpcNetwork)
+	return await craftPersonalSignPopupMessage(async (address) => await identifyAddress(ethereum, undefined, address), createSignedTypedDataTransaction(EIP712Message.parse(typedData)), rpcNetwork)
 }
 
 // The address metadata identifies this MetaSamurai collection as an ERC721 token.
@@ -601,7 +602,7 @@ describe('EIP-2612 permit signature requests', () => {
 	test('quarantines a permit whose owner is not the signing account', async () => {
 		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.message.owner = '0x5555555555555555555555555555555555555555' }))
 		assert.equal(visualized.quarantine, true)
-		assert.deepEqual(visualized.quarantineReasons, ['The signature request is for an account that is different from your active address.'])
+		assert.deepEqual(visualized.quarantineReasons, ['The account named in the message differs from the signing account.'])
 	})
 
 	test('renders a permit after it is serialized for the popup and the simulation stack', async () => {
@@ -626,7 +627,6 @@ describe('EIP-2612 permit signature requests', () => {
 
 describe('Raw message of identified typed data', () => {
 	test('shows every identified message type as the request the website sent, not re-encoded', async () => {
-		// OrderComponents is left out because no valid request reaches it: its runtime type requires totalOriginalConsiderationItems, which an order that declares all of its fields in the EIP-712 types does not have.
 		const requests = [
 			['Permit', eip2612UsdcPermitMessage],
 			['Permit2', permit2Message],
@@ -636,6 +636,8 @@ describe('Raw message of identified typed data', () => {
 			['Permit2SignatureTransfer', permit2UniswapXWitnessTransferFromMessage],
 			['Permit2SignatureTransfer', permit2BatchWitnessTransferFromMessage],
 			['SafeTx', safeTx],
+			['OrderComponents', seaportJsSeaport16Listing],
+			['OrderComponents', openSeaWithTotalOriginalConsiderationItems],
 			['EIP712', eip712Example],
 		] as const
 		for (const [expectedType, typedData] of requests) {

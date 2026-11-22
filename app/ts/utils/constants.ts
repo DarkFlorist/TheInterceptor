@@ -8,6 +8,9 @@ export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1cE17f2641f24aE83637ab66a2cca9C3
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
 export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEn
+// Canonical Seaport deployments, at the same address on every chain, from CROSS_CHAIN_SEAPORT_V1_5_ADDRESS and CROSS_CHAIN_SEAPORT_V1_6_ADDRESS in https://github.com/ProjectOpenSea/seaport-js/blob/main/src/constants.ts
+export const SEAPORT_V1_5_ADDRESS = 0x00000000000000ADc04C56Bf30aC9d3c0aAF14dCn
+export const SEAPORT_V1_6_ADDRESS = 0x0000000000000068F116a894984e2DB1123eB395n
 // export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 // export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 
@@ -132,6 +135,7 @@ export const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
 // const METAMASK_ERROR_RATE_LIMITED = -32005
 
 export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'The Interceptor is disabled' } }
+export const ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST = { error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'The Interceptor switched to simulation mode after this request was made. Reject this request and send it again.' } }
 export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: 'Access request pending already.' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Interceptor: Not connected to chain' } }

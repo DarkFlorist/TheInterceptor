@@ -1,9 +1,10 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
+import type { Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
@@ -21,7 +22,7 @@ import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
-import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
+import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
 
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
@@ -39,45 +40,6 @@ export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabCo
 			if (connection.websiteOrigin !== websiteOrigin) continue
 			connection.wantsToConnect = false
 		}
-	}
-}
-
-const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
-
-function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
-	const socketIdentifier = websiteSocketToString(socket)
-	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, (unscopedConnectionEventSuppressionCounts.get(socketIdentifier) ?? 0) + 1)
-	return socketIdentifier
-}
-
-function decrementUnscopedConnectionEventSuppression(socketIdentifier: string) {
-	const previousCount = unscopedConnectionEventSuppressionCounts.get(socketIdentifier)
-	if (previousCount === undefined || previousCount <= 1) {
-		unscopedConnectionEventSuppressionCounts.delete(socketIdentifier)
-		return
-	}
-	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, previousCount - 1)
-}
-
-function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
-	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
-}
-
-export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
-	}
-}
-
-export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return await action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
 	}
 }
 
@@ -104,35 +66,6 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
-}
-
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
-		}
-	}
-}
-export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
-			const activeAddress = await getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
-				type: 'result' as const,
-				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress.address] : []
-			})
-		}
-	}
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -263,7 +196,8 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+// Awaited; reports each failed prompt and continues with the next connection.
+async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections): Promise<void> {
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.wantsToConnect) continue
@@ -274,8 +208,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
-				if (throwOnError) throw error
-				await reportUnexpectedError(error)
+				await reportUnexpectedError(error, { source: 'website_access_prompt', details: { websiteOrigin: connection.websiteOrigin, socket: connection.socket } })
 			}
 		}
 	}
@@ -381,11 +314,43 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
-// Reconcile approvals with the committed settings while the caller owns the settings lock.
-export async function reconcileWebsiteApprovalAccesses(
+// Awaited; reconciles live connections with the stored authority after a website-access or address-book change, and on failure clears every approval (fails closed), starts an icon refresh and rethrows.
+export async function reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections: WebsiteTabConnections): Promise<WebsiteAccessUpdate> {
+	try {
+		return await reconcileApprovalsWithSettings(websiteTabConnections, await getSettings(), async error => { throw error })
+	} catch (error) {
+		const connections = [...websiteTabConnections.values()].flatMap(tab => Object.values(tab.connections))
+		const approvedConnections = new Set(connections.filter(connection => connection.approved))
+		// Clear authority before notifying any port; one broken port must not retain another port's approval.
+		for (const connection of connections) connection.approved = false
+		const notificationErrors: unknown[] = []
+		for (const connection of connections) {
+			try {
+				if (approvedConnections.has(connection)) disconnectFromPort(websiteTabConnections, connection.socket)
+				// Invalidate in-flight Safe Apps publications even on ports that were not approved yet.
+				else notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, connection.socket, false)
+			} catch (notificationError) { notificationErrors.push(notificationError) }
+		}
+		// Failed reconciliation has no returned update. Refresh icons from current storage after clearing authority, including for address-book callers that will return an error.
+		startWebsiteAccessUiUpdateInBackground(undefined, websiteTabConnections, {
+			popupRefreshGeneration: bumpPopupRefreshGeneration(),
+			iconRefreshTargets: connections.map(connection => ({ tabId: connection.socket.tabId, websiteOrigin: connection.websiteOrigin })),
+		}, false)
+		for (const notificationError of notificationErrors) await reportUnexpectedError(notificationError)
+		throw error
+	}
+}
+
+// Awaited; reconciles approvals with the committed settings while the caller owns the settings lock, reporting failures and continuing.
+export async function reconcileWebsiteApprovalAccesses(websiteTabConnections: WebsiteTabConnections, settings: Settings): Promise<WebsiteAccessUpdate> {
+	return await reconcileApprovalsWithSettings(websiteTabConnections, settings, async error => { await reportUnexpectedError(error) })
+}
+
+// Shared body of the two reconcile entry points above, which differ only in what a failure does: reporting and continuing, or rethrowing to fail closed.
+async function reconcileApprovalsWithSettings(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
-	throwOnError = false,
+	handleError: (error: unknown) => Promise<void>,
 ): Promise<WebsiteAccessUpdate> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
@@ -393,36 +358,37 @@ export async function reconcileWebsiteApprovalAccesses(
 	try {
 		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await handleError(error)
 	}
 	const updatePromises = [...websiteTabConnections.values()].map(async (tabConnection) => {
 		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settings)
 		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	try {
-		await Promise.all(updatePromises)
+		// Finish every tab before returning an error so callers can fail closed without a later tab reapproving itself.
+		const results = await Promise.allSettled(updatePromises)
+		for (const result of results) {
+			if (result.status === 'rejected') throw result.reason
+		}
 	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await handleError(error)
 	}
 
 	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
 	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
 }
 
-// Call after releasing the settings lock: access dialogs can activate another address.
-export async function finishWebsiteAccessUpdate(
+// Awaited prompt and icon work, reporting failures; module-private so callers choose between startWebsiteAccessUiUpdateInBackground and updateWebsiteApprovalAccesses. Runs after the settings lock is released, because access dialogs can activate another address.
+async function finishWebsiteAccessUpdate(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
-) {
+): Promise<void> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
 	if (promptForAccessesIfNeeded && simulationServicesOwner !== undefined) {
-		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections, throwOnError)
+		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections)
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
@@ -434,21 +400,31 @@ export async function finishWebsiteAccessUpdate(
 			updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, update.popupRefreshGeneration)
 		))
 	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await reportUnexpectedError(error, { source: 'website_access_icons', details: { popupRefreshGeneration: update.popupRefreshGeneration } })
 	}
 }
 
+// Awaited; reconciles approvals and then awaits the prompt and icon work, reporting failures of both. Local commands use startWebsiteAccessUiUpdateInBackground instead, so they do not wait for prompts.
 export async function updateWebsiteApprovalAccesses(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
 ): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings)
+	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded)
 	return update.popupRefreshGeneration
+}
+
+// Not awaited; starts the prompt and icon work for a finished reconciliation as a background task that reports its own failures, so a local command can reply without waiting for prompts.
+export function startWebsiteAccessUiUpdateInBackground(
+	simulationServicesOwner: SimulationServicesOwner | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	update: WebsiteAccessUpdate,
+	promptForAccessesIfNeeded: boolean,
+): void {
+	backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
+		async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 }
 
 export async function finalizeWebsiteAccessChange(

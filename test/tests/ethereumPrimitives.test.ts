@@ -1,7 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { initSig, sign } from 'micro-eth-signer/utils.js'
+import { addr } from 'micro-eth-signer'
+import { hexToBytes } from '@noble/hashes/utils'
 import type { Abi, Hex } from '../../app/ts/utils/ethereumPrimitives.js'
-import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
+import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, tryRecoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { stringToAddress } from '../../app/ts/utils/bigint.js'
 import { canVerifyStructArray, d2Array, d2ArrayFixed, d3ArrayFixed, hasFixedArray } from './data/eip712Data.js'
@@ -217,6 +220,41 @@ const typedDataArrayVectors = [
 		signature: '0xf5c86ad5e1c3de22b5dc723e6c691569516d5f6f01ae2875498adfc26970f51e1639a9a6452f7461be16b1869e196a7c9234a94cfb224db3e9ee947e6cf4d4721b',
 	},
 ] as const
+
+describe('signature recovery failure contract', () => {
+	const generatorX = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n
+	const digestOne = new Uint8Array(32)
+	digestOne[31] = 1
+
+	test('models non-curve signature points and a recovered point at infinity as no key', async () => {
+		for (const r of [5n, generatorX]) {
+			const parameters = { hash: digestOne, signature: { r, s: 1n, yParity: 0 } }
+			assert.equal(tryRecoverAddress(parameters), undefined)
+			await assert.rejects(recoverAddress(parameters), Error)
+		}
+	})
+
+	test('matches library recovery across hash widths, both parities and high-s signatures', () => {
+		const order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+		// Recover the same signature against short and long digests to check Noble's leftmost-256-bit truncation, both parities and both s forms.
+		const signed = sign(new Uint8Array(32).fill(7), hexToBytes(privateKey.slice(2)), false)
+		for (const width of [0, 1, 31, 32, 33, 65, 8192]) {
+			const digest = Uint8Array.from({ length: width }, (_, index) => (index * 19 + 3) % 256)
+			for (const s of [signed.s, order - signed.s]) for (const yParity of [0, 1]) {
+				const signature = { r: signed.r, s, yParity }
+				const expected = addr.fromPublicKey(initSig(signature, yParity).recoverPublicKey(digest).toBytes(false))
+				assert.equal(tryRecoverAddress({ hash: digest, signature }), expected)
+			}
+		}
+	})
+
+	test('propagates an untagged plain Error raised inside library recovery', async () => {
+		// The library input-size guard fails after constructing a valid signature point, outside the two tagged invalid-point conditions.
+		const parameters = { hash: new Uint8Array(8193), signature: { r: generatorX, s: 1n, yParity: 0 } }
+		assert.throws(() => tryRecoverAddress(parameters), { name: 'Error', message: 'input is too large' })
+		await assert.rejects(recoverAddress(parameters), { name: 'Error', message: 'input is too large' })
+	})
+})
 
 describe('local Ethereum primitive helpers', () => {
 	test('matches reference address, bytes, RLP, selector, and unit formatting vectors', () => {
@@ -839,6 +877,11 @@ describe('local Ethereum primitive helpers', () => {
 			r: '0xbfd5d3b10061eb98701a35adcf1e2a39d5814067517a4f4d0cee146ed56f46b6',
 			s: '0x4bda3d34d90a39235f8ca9dde1cd4a1f48a6b66bbaa616bcd1fbf9ad1aeafbe7',
 		} as const
+		assert.equal(tryRecoverAddress({ hash: recoverHash, signature: recoverSignature }), accountAddress)
+		assert.equal(tryRecoverAddress({ hash: recoverHash, signature: { r: 5n, s: 7n, yParity: 0 } }), undefined)
+		await assert.rejects(recoverAddress({ hash: recoverHash, signature: { r: 5n, s: 7n, yParity: 0 } }), Error)
+		assert.throws(() => tryRecoverAddress({ hash: recoverHash, signature: { r: 0n, s: 7n, yParity: 0 } }), Error)
+
 		assert.equal(await recoverAddress({ hash: recoverHash, signature: recoverSignature }), accountAddress)
 		assert.equal(await recoverAddress({ hash: recoverHash, signature: { ...recoverSignatureObject, v: 0n } }), accountAddress)
 		assert.equal(await recoverAddress({ hash: recoverHash, signature: { ...recoverSignatureObject, v: 27n } }), accountAddress)
