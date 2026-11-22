@@ -818,7 +818,7 @@ test('uses the stack-row revert hint for an unformed transaction confirmation', 
 	const error = { code: 3, message: 'execution reverted', data: encodeErrorString('STF') }
 	const result = await refreshUsdcTransferSimulation(simulator.ethereum, { ...transfer, error })
 	if (result?.statusCode !== 'success' || result.data.transactionToSimulate.success) throw new Error('Expected an unformed transaction confirmation')
-	assert.match(result.data.transactionToSimulate.error.decodedErrorMessage, /^STF - possible Uniswap V3 error:/u)
+	assert.match(result.data.transactionCreationFailureReason ?? '', /^STF - possible Uniswap V3 error:/u)
 	assert.equal(result.data.transactionToSimulate.error.message, error.message)
 	assert.equal(result.data.transactionToSimulate.error.data, error.data)
 })

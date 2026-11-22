@@ -13,7 +13,7 @@ describe('getFailureReasonForDisplay', () => {
 		expect(decodeEthereumError([], revertWithData(encodeErrorString('STF'))).reason).toBe('STF')
 	})
 
-	test('appends Uniswap hints to decoded Error(string) revert reasons', () => {
+	test('appends the protocol hints to decoded Error(string) revert reasons', () => {
 		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('STF')))).toBe(stfWithHint)
 		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('Ownable: caller is not the owner')))).toBe('Ownable: caller is not the owner')
 		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('')))).toBe('Unknown error')
@@ -26,4 +26,10 @@ describe('getFailureReasonForDisplay', () => {
 		expect(getFailureReasonForDisplay([], revertWithData(customStfErrorSelector))).toBe('execution reverted')
 		expect(getFailureReasonForDisplay([], { code: -32000, message: 'STF' })).toBe('STF')
 	})
+})
+
+test('the common display policy preserves explicit transaction-creation explanations before decoding revert data', () => {
+	const revert = revertWithData(encodeErrorString('GS013'))
+	expect(getFailureReasonForDisplay([], { ...revert, safeCallRevertedMessage: 'The Safe call reverted; its inner reason is unavailable.' })).toBe('The Safe call reverted; its inner reason is unavailable.')
+	expect(getFailureReasonForDisplay([], { ...revert, insufficientBalanceMessage: 'The account cannot cover the transaction fees.' })).toBe('The account cannot cover the transaction fees.')
 })
