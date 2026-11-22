@@ -1,6 +1,9 @@
 import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
+
+afterEach(waitForBackgroundTasks)
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
@@ -384,6 +387,42 @@ describe('import simulation stack', () => {
 		assert.deepEqual(visualized.quarantineReasons, ['This sign-in message is for https://example.com, but the Interceptor did not record the full origin of the website that requested it, so it cannot check that they match.'])
 	})
 
+	test('round-trips the declared signer and checks message ownership independently of the importing active account', async () => {
+		const modules = await modulesPromise
+		for (const signer of [VITALIK_ADDRESS, 0x2222222222222222222222222222222222222222n]) {
+			resetEnvironment()
+			storageState.independentActiveSimulationAddress = '0x3333333333333333333333333333333333333333'
+			const message = createSiweMessageOperation(3n, 'https://example.com')
+			const declaredMessage = { ...message.signedMessageTransaction, activeAddress: signer, fakeSignedFor: signer, originalRequestParameters: { ...message.signedMessageTransaction.originalRequestParameters, params: [message.signedMessageTransaction.originalRequestParameters.params[0], signer] } }
+			const parsedExport = InterceptorSimulationExport.parse(InterceptorSimulationExport.serialize({
+				...exportPayload,
+				interceptorSimulateStack: { operations: [{ ...message, signedMessageTransaction: declaredMessage }] },
+			}))
+			const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+			assert.equal(reply.ok, true)
+			const [operation] = InterceptorTransactionStack.parse(storageState.interceptorTransactionStack).operations
+			if (operation?.type !== 'Message') throw new Error('Expected imported message')
+			assert.equal(operation.signedMessageTransaction.fakeSignedFor, signer)
+			assert.equal(operation.signedMessageTransaction.activeAddress, declaredMessage.activeAddress)
+			const rpcEntry = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: false }
+			const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async (request) => {
+				if (request.method === 'eth_getCode') return '0x'
+				throw new Error(`Unexpected RPC: ${ request.method }`)
+			} }, async () => undefined, async () => undefined, rpcEntry)
+			const visualized = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), operation.signedMessageTransaction, rpcEntry)
+			assert.equal(visualized.quarantineReasons.some((reason) => reason.includes('account named in the message')), signer !== VITALIK_ADDRESS)
+			assert.equal(visualized.quarantineReasons.some((reason) => reason.includes('signature was imported')), false)
+			const plainMessage = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), {
+				...operation.signedMessageTransaction,
+				// A Safe's declared account can differ from the owner used to fake its signature.
+				fakeSignedFor: VITALIK_ADDRESS,
+				originalRequestParameters: { method: 'personal_sign', params: ['0x6869', signer] },
+			}, rpcEntry)
+			assert.equal(plainMessage.quarantine, false)
+			assert.deepEqual(plainMessage.quarantineReasons, [])
+		}
+	})
+
 	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {
 		const modules = await modulesPromise
 		resetEnvironment()
@@ -399,6 +438,7 @@ describe('import simulation stack', () => {
 		if (operation === undefined || operation.type !== 'Transaction') throw new Error('Expected imported transaction operation')
 		assert.notEqual(operation.preSimulationTransaction.transactionIdentifier, 77n)
 		const transaction = operation.preSimulationTransaction.signedTransaction
+		assert.equal(transaction.from, 0x1111111111111111111111111111111111111111n)
 		assert.equal(transaction.type, '7702')
 		if (transaction.type !== '7702') throw new Error('Expected imported type-7702 transaction')
 		const [authorization] = transaction.authorizationList

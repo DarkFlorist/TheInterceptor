@@ -19,7 +19,7 @@ export type PopupMessageHandler = (context: PopupMessageDispatcherContext, reque
 export type PopupMessageHandlerMap = Record<PopupMessage['method'], PopupMessageHandler>
 export const popupMessageHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
 
-// One fixed-provider operation: this context deliberately exposes neither reset nor the live owner.
+// One fixed-provider operation: this context deliberately exposes neither the live owner nor the simulation-reset callback.
 export type PopupSnapshotContext = Omit<PopupMessageDispatcherContext, 'simulationServicesOwner' | 'resetSimulationState'> & {
 	readonly services: SimulationServices
 }

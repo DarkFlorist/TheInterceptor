@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
 
@@ -22,7 +23,7 @@ const vendoredDependencies = [
 	'@noble/hashes/utils',
 	'@noble/hashes/hmac',
 	'@noble/hashes/crypto',
-	'@noble/curves/stark',
+	'@noble/curves/secp256k1.js',
 	'@darkflorist/address-metadata',
 	'micro-eth-signer',
 	'micro-eth-signer/advanced/abi.js',
@@ -87,6 +88,7 @@ async function recursiveDirectoryCopy(source: string, destination: string, inclu
 }
 
 async function vendorDependencies() {
+	execFileSync(process.execPath, [path.join(directoryOfThisFile, '..', 'scripts', 'check-recovery-dependency.mts')], { stdio: 'inherit' })
 	await fs.rm(path.join(directoryOfThisFile, '..', 'app', 'vendor'), { recursive: true, force: true })
 	for (const packageRoot of vendoredPackageRoots) {
 		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
