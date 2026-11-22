@@ -1,8 +1,5 @@
 import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
-import { encodeErrorString } from './errorDataFixtures.js'
-import { getFailureReasonForDisplay } from '../../app/ts/simulation/failureReasons.js'
-import { SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { afterEach, describe, test } from 'bun:test'
@@ -237,7 +234,6 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 				simulationStartedTimestamp: created,
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
-				transactionCreationFailureReason: 'simulation failed',
 				signerName: 'NoSignerDetected' as const,
 				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				error: {
@@ -340,7 +336,7 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 				uniqueRequestIdentifier: failed.uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
-				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
+				confirmationRunId: { lifetime: 'fixture', sequence: 2 },
 				addressBookEntries: [safeEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
 				tokenPriceEstimates: [],
 				namedTokenIds: [],
@@ -363,33 +359,6 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 					}],
 				},
 			},
-		},
-	}
-}
-
-// Mirrors the background, which persists the raw gas estimation error and derives the displayed reason when it builds the popup visualisation.
-function makeRevertedGasEstimationPendingTransaction(revertReason: string, requestId: number) {
-	const simulated = makeSimulatedPendingTransaction(0n)
-	const uniqueRequestIdentifier = { ...simulated.uniqueRequestIdentifier, requestId }
-	const transactionIdentifier = BigInt(requestId)
-	const gasEstimationError = { code: -32000, message: 'execution reverted', data: encodeErrorString(revertReason) }
-	const transactionToSimulate = {
-		website: simulated.website,
-		created: simulated.created,
-		originalRequestParameters: simulated.originalRequestParameters,
-		transactionIdentifier,
-		success: false as const,
-		error: gasEstimationError,
-	}
-	return {
-		...simulated,
-		uniqueRequestIdentifier,
-		transactionIdentifier,
-		transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
-		transactionToSimulate,
-		popupVisualisation: {
-			...simulated.popupVisualisation,
-			data: { ...simulated.popupVisualisation.data, uniqueRequestIdentifier, transactionToSimulate, transactionCreationFailureReason: getFailureReasonForDisplay([], gasEstimationError) },
 		},
 	}
 }
@@ -938,118 +907,44 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
-	test('shows the visualised gas estimation failure reason in the current card and the stacked header', async () => {
+	test('names failed transaction addresses and shows calldata parsed with the recipient ABI', async () => {
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
-
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
-
-		await act(() => {
-			browser.dispatch({
-				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: {
-						pendingTransactionAndSignableMessages: [makeRevertedGasEstimationPendingTransaction('STF', 1), makeRevertedGasEstimationPendingTransaction('SPL', 2)].map(toPopupPendingTransactionOrSignableMessage),
-						currentBlockNumber: 123n,
-						rpcConnectionStatus: undefined,
-					},
-				}),
-			})
-		})
-
-		const stfReason = 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed'
-		const splReason = 'SPL - possible Uniswap V3 error: The swap price limit is on the wrong side of the current price'
-		const stackedHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(splReason) === true)
-		const text = dom.document.body.textContent ?? ''
-		assert.equal(text.includes('Gas estimation error'), true)
-		assert.equal(text.includes(stfReason), true)
-		assert.notEqual(stackedHeader, undefined)
-		assert.equal(stackedHeader?.textContent?.includes(stfReason), false)
-
-		await unmountConfirmTransaction(dom)
-		clock.restore()
-		dom.restore()
-	})
-
-	test('shows the gas estimation failure reason instead of the simulation error when both failed', async () => {
-		const dom = installDomMock()
-		const clock = installDateMock('2024-01-01T00:00:10.000Z')
-		const browser = createBrowserMock()
-
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
-
-		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
-		const stfReason = getFailureReasonForDisplay([], transactionToSimulate.error)
-		const pendingTransaction = {
-			...failedPendingTransaction,
-			transactionToSimulate,
-			popupVisualisation: {
-				...failedPendingTransaction.popupVisualisation,
-				data: {
-					...failedPendingTransaction.popupVisualisation.data,
-					transactionToSimulate,
-					transactionCreationFailureReason: stfReason,
-					error: { code: -32000, message: 'eth_simulateV1 rejected the stack', decodedErrorMessage: 'eth_simulateV1 rejected the stack' },
-				},
+		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const { from: senderAddress, to: tokenAddress } = pending.originalRequestParameters.params[0]
+		const supplierAddress = 0x3333333333333333333333333333333333333333n
+		const failedTransactionPreview = {
+			addressBookEntries: [
+				{ type: 'contact' as const, name: 'Invoice Payer', address: senderAddress, entrySource: 'User' as const },
+				{ type: 'ERC20' as const, name: 'USD Coin', symbol: 'USDC', decimals: 6n, address: tokenAddress, entrySource: 'DarkFloristMetadata' as const },
+				{ type: 'contact' as const, name: 'Supplier', address: supplierAddress, entrySource: 'User' as const },
+			],
+			parsedInputData: {
+				type: 'Parsed' as const,
+				input: new Uint8Array(),
+				name: 'transfer',
+				args: [
+					{ paramName: 'dst', typeValue: { type: 'address' as const, value: supplierAddress } },
+					{ paramName: 'wad', typeValue: { type: 'unsignedInteger' as const, value: 2_500_000n } },
+				],
 			},
 		}
-		await act(() => {
-			browser.dispatch({
-				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: {
-						pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
-						currentBlockNumber: 123n,
-						rpcConnectionStatus: undefined,
-					},
-				}),
-			})
-		})
-
-		const text = dom.document.body.textContent ?? ''
-		assert.equal(stfReason.startsWith('STF - possible Uniswap V3 error'), true)
-		assert.equal(text.includes('Gas estimation error'), true)
-		assert.equal(text.includes(stfReason), true)
-		assert.equal(text.includes('eth_simulateV1 rejected the stack'), false)
-
-		await unmountConfirmTransaction(dom)
-		clock.restore()
-		dom.restore()
-	})
-
-	test('shows the Gnosis Safe\'s GS013 explanation of a stored gas estimation failure instead of the bare GS013 its revert data decodes to', async () => {
-		const dom = installDomMock()
-		const clock = installDateMock('2024-01-01T00:00:10.000Z')
-		const browser = createBrowserMock()
+		const pendingWithPreview = {
+			...pending,
+			popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, failedTransactionPreview } },
+		}
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
-
-		// Stored without transactionCreationFailureReason, so the popup derives it from the field the Safe layer wrote on the estimate error.
-		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), safeCallRevertedMessage: SAFE_CALL_REVERTED_MESSAGE } }
-		const { transactionCreationFailureReason: _storedReason, ...dataWithoutReason } = failedPendingTransaction.popupVisualisation.data
-		const pendingTransaction = {
-			...failedPendingTransaction,
-			transactionToSimulate,
-			popupVisualisation: { ...failedPendingTransaction.popupVisualisation, data: { ...dataWithoutReason, transactionToSimulate } },
-		}
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
+						pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(pendingWithPreview)],
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -1057,8 +952,12 @@ describe('ConfirmTransaction', () => {
 			})
 		})
 
-		const text = dom.document.body.textContent ?? ''
-		assert.equal(text.includes(SAFE_CALL_REVERTED_MESSAGE), true)
+		const renderedText = dom.document.body.textContent ?? ''
+		assert.equal(renderedText.includes('Invoice Payer'), true, renderedText)
+		assert.equal(renderedText.includes('USD Coin'), true, renderedText)
+		assert.equal(renderedText.includes('transfer('), true, renderedText)
+		assert.equal(renderedText.includes('Supplier'), true, renderedText)
+		assert.equal(renderedText.includes('No ABI available'), false, renderedText)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
@@ -1114,63 +1013,6 @@ describe('ConfirmTransaction', () => {
 		clock.restore()
 		dom.restore()
 	})
-	test('names failed transaction addresses and shows calldata parsed with the recipient ABI', async () => {
-		const dom = installDomMock()
-		const clock = installDateMock('2024-01-01T00:00:10.000Z')
-		const browser = createBrowserMock()
-		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const { from: senderAddress, to: tokenAddress } = pending.originalRequestParameters.params[0]
-		const supplierAddress = 0x3333333333333333333333333333333333333333n
-		const failedTransactionPreview = {
-			addressBookEntries: [
-				{ type: 'contact' as const, name: 'Invoice Payer', address: senderAddress, entrySource: 'User' as const },
-				{ type: 'ERC20' as const, name: 'USD Coin', symbol: 'USDC', decimals: 6n, address: tokenAddress, entrySource: 'DarkFloristMetadata' as const },
-				{ type: 'contact' as const, name: 'Supplier', address: supplierAddress, entrySource: 'User' as const },
-			],
-			parsedInputData: {
-				type: 'Parsed' as const,
-				input: new Uint8Array(),
-				name: 'transfer',
-				args: [
-					{ paramName: 'dst', typeValue: { type: 'address' as const, value: supplierAddress } },
-					{ paramName: 'wad', typeValue: { type: 'unsignedInteger' as const, value: 2_500_000n } },
-				],
-			},
-		}
-		const pendingWithPreview = {
-			...pending,
-			popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, failedTransactionPreview } },
-		}
-
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
-		await act(() => {
-			browser.dispatch({
-				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: {
-						pendingTransactionAndSignableMessages: [pendingWithPreview].map(toPopupPendingTransactionOrSignableMessage),
-						currentBlockNumber: 123n,
-						rpcConnectionStatus: undefined,
-					},
-				}),
-			})
-		})
-
-		const renderedText = dom.document.body.textContent ?? ''
-		assert.equal(renderedText.includes('Invoice Payer'), true, renderedText)
-		assert.equal(renderedText.includes('USD Coin'), true, renderedText)
-		assert.equal(renderedText.includes('transfer('), true, renderedText)
-		assert.equal(renderedText.includes('Supplier'), true, renderedText)
-		assert.equal(renderedText.includes('No ABI available'), false, renderedText)
-
-		await unmountConfirmTransaction(dom)
-		clock.restore()
-		dom.restore()
-	})
-
 	test('keeps the send-anyway override across per-block re-simulations and clears it when the acknowledged failure or request changes', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()

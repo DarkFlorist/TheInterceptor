@@ -51,12 +51,11 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-	// Names the confirmation simulation run whose metadata this result carries.
+	// Names one confirmation simulation run of this pending transaction.
 	confirmationRunId: ConfirmationRunIdCodec,
 }).And(funtypes.ReadonlyPartial({
+	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
 	failedTransactionPreview: FailedTransactionPreview,
-	// Displayed reason when transactionToSimulate failed to be created, derived only by getFailureReasonForDisplay. Optional so visualisations stored before it existed still parse; the confirmation popup fills it in for them with addMissingTransactionCreationFailureReason.
-	transactionCreationFailureReason: funtypes.String,
 }))
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>

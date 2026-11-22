@@ -1,13 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { uniswapV3RevertReasonHintProvider } from '../../app/ts/simulation/uniswapV3RevertReasons.js'
+import { explainUniswapV3RevertReason } from '../../app/ts/simulation/uniswapV3RevertReasons.js'
 
-const explain = uniswapV3RevertReasonHintProvider.explainRevertReason
+const explain = explainUniswapV3RevertReason
 
-describe('Uniswap V3 revert reason hint provider', () => {
-	test('labels its hints as Uniswap V3', () => {
-		expect(uniswapV3RevertReasonHintProvider.protocolName).toBe('Uniswap V3')
-	})
-
+describe('Uniswap V3 revert explanations', () => {
 	test('explains Uniswap V3 short error codes', () => {
 		expect(explain('STF')).toBe('Token transfer from the sender via safeTransferFrom failed, usually due to insufficient token balance or allowance')
 		expect(explain('LOK')).toBe('The pool is locked, either because the call re-entered the pool or because the pool has not been initialized')
