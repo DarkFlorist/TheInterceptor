@@ -118,8 +118,8 @@ async function handleRPCRequest(
 		if (safePolicyReply !== undefined) return replyWithoutFollowUp(safePolicyReply)
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
-		// A readable invalid-params error deliberately tells the page which methods the Interceptor parses and what their parameters are (issue #118): both are public source, it carries no user data, and website access was already checked before this request was handled. While a Safe signs through the wallet, the Safe signing-mode policy above still answers the malformed requests that reach it with its not-supported reply. The logged failure of a supported method is from its own codec only, not from the whole request union.
-		if (requestCodec !== undefined) return replyWithoutFollowUp(getInvalidRpcParamsReply(request, requestCodec, maybeParsedRequest))
+		// Report the existing method failure after applying the Safe signing policy.
+		if (requestCodec !== undefined) return replyWithoutFollowUp(getInvalidRpcParamsReply(request, maybeParsedRequest))
 		// Without a method codec the method is not supported here (wallet_revokePermissions is handled before handleRPCRequest), so forward it to the wallet if a signer is available
 		if (forwardToSigner) return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })
 		return replyWithoutFollowUp({
@@ -348,7 +348,7 @@ function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabCo
 	const maybeParsedRequest = WalletRevokePermissions.safeParse(request)
 	if (maybeParsedRequest.success) return maybeParsedRequest.value
 	// Any page may revoke its own permissions, so this runs before the access check; the readable error only describes wallet_revokePermissions, whose parameters are the public EIP-2255 shape.
-	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request, WalletRevokePermissions, maybeParsedRequest), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request, maybeParsedRequest), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	return undefined
 }
 

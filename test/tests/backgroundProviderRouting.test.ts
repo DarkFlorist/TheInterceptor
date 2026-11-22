@@ -4,7 +4,6 @@ import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.j
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
-import { FUNTYPES_ADAPTER_ENABLED } from '../../app/ts/background/funtypesFailureExplanation.js'
 
 async function captureConsoleWarnings(run: () => Promise<unknown>) {
 	const warnings: unknown[][] = []
@@ -558,8 +557,7 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
-	// Asserts the detailed invalid-params wording, which a disabled funtypes adapter does not produce (docs/readable-rpc-param-errors.md).
-	test.skipIf(!FUNTYPES_ADAPTER_ENABLED)('returns readable invalid params errors for malformed supported methods', async () => {
+	test('returns readable invalid params errors for malformed supported methods', async () => {
 		installBrowserMock()
 		const { defaultActiveAddresses, handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -580,10 +578,10 @@ describe('background eth_accounts', () => {
 		const requestUnionParse = spyOn(EthereumJsonRpcRequest, 'safeParse')
 		try {
 			for (const [requestId, method, params, message] of [
-				[1, 'eth_getBalance', [address, 'latest', '0x1'], 'eth_getBalance expects 2 parameters (address, block tag), but received 3.'],
-				[2, 'eth_sendTransaction', [{ from: address, to: '0x1234', value: '0x1' }], 'Invalid eth_sendTransaction parameter 1 (transaction object) field "to": expected a 20-byte hex address, but received "0x1234".'],
-				[3, 'eth_getBlockByNumber', ['newest', false], 'Invalid eth_getBlockByNumber parameter 1 (block tag): expected a block number, block hash or block tag ("latest", "pending", "safe", "finalized" or "earliest"), but received "newest".'],
-				[4, 'eth_subscribe', ['newBlocks'], 'Invalid eth_subscribe parameter 1: expected "newHeads", "logs", "newPendingTransactions" or "syncing", but received "newBlocks".'],
+				[1, 'eth_getBalance', [address, 'latest', '0x1'], 'Invalid eth_getBalance parameters: Expected an array of length 2, but was 3.'],
+				[2, 'eth_sendTransaction', [{ from: address, to: '0x1234', value: '0x1' }], 'Invalid eth_sendTransaction parameters: Expected ParsedValue<string> | null, but was "0x1234".'],
+				[3, 'eth_getBlockByNumber', ['newest', false], 'Invalid eth_getBlockByNumber parameters: Expected ParsedValue<string> | ParsedValue<string> | "earliest" | "safe" | "latest" | "pending" | "finalized", but was "newest".'],
+				[4, 'eth_subscribe', ['newBlocks'], 'Invalid eth_subscribe parameters: Expected "newHeads" | "logs" | "newPendingTransactions" | "syncing", but was "newBlocks".'],
 			] as const) {
 				const warnings = await captureConsoleWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,

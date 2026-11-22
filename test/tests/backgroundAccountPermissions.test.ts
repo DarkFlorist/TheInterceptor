@@ -4,7 +4,6 @@ import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-ty
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
-import { FUNTYPES_ADAPTER_ENABLED } from '../../app/ts/background/funtypesFailureExplanation.js'
 
 const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
 
@@ -2815,8 +2814,7 @@ describe('background eth_accounts', () => {
 		assert.equal(pendingRequests[0]?.website.websiteOrigin, websiteOrigin)
 	})
 
-	// Asserts the detailed invalid-params wording, which a disabled funtypes adapter does not produce (docs/readable-rpc-param-errors.md).
-	test.skipIf(!FUNTYPES_ADAPTER_ENABLED)('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {
+	test('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -2834,11 +2832,11 @@ describe('background eth_accounts', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const unsupportedParams: [unknown[], string][] = [
-			[[], 'wallet_revokePermissions is missing required parameter 1: expected 1 parameter, but received 0.'],
-			[[{ wallet_switchEthereumChain: {} }], 'Invalid wallet_revokePermissions parameter 1: missing required field "eth_accounts".'],
-			[[{ wallet_snap: {} }], 'Invalid wallet_revokePermissions parameter 1: missing required field "eth_accounts".'],
-			[[{ eth_accounts: {}, wallet_snap: {} }], 'Invalid wallet_revokePermissions parameter 1: Unexpected property: wallet_snap.'],
-			[[{ eth_accounts: { foo: 1 } }], 'Invalid wallet_revokePermissions parameter 1 field "eth_accounts": Unexpected property: foo.'],
+			[[], 'Invalid wallet_revokePermissions parameters: Expected an array of length 1, but was 0.'],
+			[[{ wallet_switchEthereumChain: {} }], 'Invalid wallet_revokePermissions parameters: Expected {}, but was undefined.'],
+			[[{ wallet_snap: {} }], 'Invalid wallet_revokePermissions parameters: Expected {}, but was undefined.'],
+			[[{ eth_accounts: {}, wallet_snap: {} }], 'Invalid wallet_revokePermissions parameters: Unexpected property: wallet_snap.'],
+			[[{ eth_accounts: { foo: 1 } }], 'Invalid wallet_revokePermissions parameters: Unexpected property: foo.'],
 		]
 		for (const [index, [params, expectedMessage]] of unsupportedParams.entries()) {
 			const requestId = 13 + index

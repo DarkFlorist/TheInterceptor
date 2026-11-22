@@ -5,7 +5,6 @@ import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
-import { FUNTYPES_ADAPTER_ENABLED } from '../../app/ts/background/funtypesFailureExplanation.js'
 
 // Far past the deepest limit measured on any engine (about 4600 levels), so these tests do not depend on the stack size.
 const NESTING_LEVELS = 100_000
@@ -68,8 +67,7 @@ describe('typed data nested past the call stack limit', () => {
 		assert.equal(EIP712Message.safeParse(shallowTypedDataJson).success, true)
 	})
 
-	// Asserts the detailed invalid-params wording, which a disabled funtypes adapter does not produce (docs/readable-rpc-param-errors.md).
-	test.skipIf(!FUNTYPES_ADAPTER_ENABLED)('a deep document gets the invalid params reply instead of an unknown error', async () => {
+	test('a deep document gets the invalid params reply instead of an unknown error', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://deep-typed-data.example'
@@ -97,7 +95,7 @@ describe('typed data nested past the call stack limit', () => {
 		const reply = messages.find((message) => message.requestId === 7)
 		// Invalid params of a supported method get the readable invalid-params reply, which names the nesting rather than calling the document invalid JSON.
 		assert.equal(reply?.error?.code, -32602)
-		assert.equal(reply?.error?.message, 'Invalid eth_signTypedData_v4 parameter 2 (typed data): the JSON string is nested too deeply to validate; EIP-712 typed data must be a JSON object with types, primaryType, domain and message.')
+		assert.equal(reply?.error?.message, 'Invalid eth_signTypedData_v4 parameters: EIP712 message is nested too deeply to validate.')
 	})
 
 	test('a deep Safe typed message within the 100000 character limit is rejected as invalid', () => {

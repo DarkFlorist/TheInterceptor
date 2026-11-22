@@ -1,9 +1,8 @@
 import * as funtypes from 'funtypes'
 import { isStackOverflowError } from '../utils/caughtErrors.js'
-import { JSONEncodeableObject, jsonParserWithNumbersAsStringsConverter } from '../utils/json.js'
+import { JSONEncodeableObject, isJSON, jsonParserWithNumbersAsStringsConverter } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
 import { EthereumQuantity, NonHexBigInt, serialize } from './wire-types.js'
-import type { CodecDescription } from './codecDescription.js'
 
 export type EIP712Types = funtypes.Static<typeof EIP712Types>
 export const EIP712Types = funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
@@ -18,17 +17,12 @@ const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	message: JSONEncodeableObject,
 })
 
-// The one way an EIP-712 typed data string is decoded and checked, used by EIP712Message and by its invalid-params explanation (EIP712MessageDescription), so both agree on which strings are typed data. Decoding throws a SyntaxError for text that is not JSON and a stack overflow error for nesting too deep for the reviver; both are a property of the page's string.
-const decodeEIP712MessageJson = (text: string): unknown => jsonParserWithNumbersAsStringsConverter(text)
-
 const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: value => {
 		try {
-			const decoded = decodeEIP712MessageJson(value)
-			if (!EIP712MessageUnderlying.test(decoded)) return { success: false, message: `${ value } is not EIP712 message` }
-			return { success: true, value: EIP712MessageUnderlying.parse(decoded) }
+			if (!isJSON(value) || !EIP712MessageUnderlying.test(jsonParserWithNumbersAsStringsConverter(value))) return { success: false, message: `${ value } is not EIP712 message` }
+			return { success: true, value: EIP712MessageUnderlying.parse(jsonParserWithNumbersAsStringsConverter(value)) }
 		} catch (error: unknown) {
-			if (error instanceof SyntaxError) return { success: false, message: `${ value } is not EIP712 message` }
 			// Websites control this string, and both the JSON reviver and the codecs recurse once per nesting level.
 			if (isStackOverflowError(error)) return { success: false, message: 'EIP712 message is nested too deeply to validate.' }
 			throw error
@@ -42,13 +36,6 @@ const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUn
 
 export type EIP712Message = funtypes.Static<typeof EIP712Message>
 export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
-// How invalid-params errors describe EIP712Message. A string that is not typed data is explained inside its JSON document, decoded with decodeEIP712MessageJson and checked against EIP712MessageUnderlying, exactly as EIP712MessageParser does, so the explanation and the parser agree on what is typed data. The explanation only words a rejection EIP712Message already made; typed data is only ever accepted through EIP712Message. The document codec stays unexported and is reachable only here, as a ReflectedCodec.
-export const EIP712MessageDescription: CodecDescription = {
-	codec: EIP712Message,
-	label: 'typed data',
-	expected: 'EIP-712 typed data encoded as a JSON string',
-	jsonDocument: { name: 'EIP-712 typed data', shape: 'a JSON object with types, primaryType, domain and message', codec: EIP712MessageUnderlying, parse: decodeEIP712MessageJson },
-}
 
 export type TypeEnrichedEIP712MessageRecord = EnrichedGroupedSolidityType
 	| { type: 'record', value: { [x: string]: TypeEnrichedEIP712MessageRecord | undefined } }
