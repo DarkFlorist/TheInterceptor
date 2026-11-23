@@ -7,8 +7,18 @@ export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'intercepto
 export function getWebsiteAccessAuthorityForOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
 	const match = findWebsiteAccessEntryForOrigin(websiteAccess, websiteOrigin)
 	const exactAccess = match?.kind === 'exact' ? match.entry : undefined
-	const legacyAccessEntries = websiteAccess.filter((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)).map(legacyWebsiteRestrictions)
-	return { exactAccess, legacyAccessEntries }
+	const legacyDenials = getLegacyWebsiteDenials(websiteAccess.filter((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)))
+	return { exactAccess, legacyDenials }
+}
+
+// Everything scheme-ambiguous legacy records decide for an origin: whether they deny the website and which addresses they deny. They are read only through legacyWebsiteRestrictions, so they can never grant, and the access checks consult them only through this summary.
+function getLegacyWebsiteDenials(legacyEntries: readonly WebsiteAccess[]) {
+	const restrictions = legacyEntries.map(legacyWebsiteRestrictions)
+	const deniedAddresses = new Set(restrictions.flatMap((entry) => entry.addressAccess?.filter((address) => !address.access).map((address) => address.address) ?? []))
+	return {
+		deniesWebsite: restrictions.some((entry) => entry.access === false),
+		deniesAddress: (address: bigint) => deniedAddresses.has(address),
+	}
 }
 
 // Scheme-ambiguous records carry only restrictions until explicit consent rebinds them. Policy reads and consent mutations share this projection so legacy grants cannot leak through either path.
@@ -34,17 +44,17 @@ export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAcce
 }
 
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	const { exactAccess, legacyAccessEntries } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
+	const { exactAccess, legacyDenials } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
 	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	// Only an exact, scheme-bound record can grant access. Legacy approval remains pending until the user explicitly rebinds it.
 	if (exactAccess?.access === true) return 'hasAccess'
 	// Legacy grants are scheme-ambiguous, but applying a legacy denial to both schemes cannot expose an account that the user did not authorize.
-	if (exactAccess?.access === false || legacyAccessEntries.some((entry) => entry.access === false)) return 'noAccess'
+	if (exactAccess?.access === false || legacyDenials.deniesWebsite) return 'noAccess'
 	return 'askAccess'
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	const { exactAccess, legacyAccessEntries } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
+	const { exactAccess, legacyDenials } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
 	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	if (exactAccess?.access === false) return 'noAccess'
 	if (exactAccess?.access === true) {
@@ -55,11 +65,11 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 				}
 			}
 		}
-		if (legacyAccessEntries.some((legacy) => legacy.addressAccess?.some((entry) => entry.address === address.address && entry.access === false) === true)) return 'noAccess'
+		// The exact grant overrides a legacy website denial, but a legacy address denial still applies to that address.
+		if (legacyDenials.deniesAddress(address.address)) return 'noAccess'
 		if (address.askForAddressAccess === false) return 'hasAccess'
 		return 'askAccess'
 	}
-	if (legacyAccessEntries.some((entry) => entry.access === false)) return 'noAccess'
-	if (legacyAccessEntries.some((legacy) => legacy.addressAccess?.some((entry) => entry.address === address.address && entry.access === false) === true)) return 'noAccess'
+	if (legacyDenials.deniesWebsite || legacyDenials.deniesAddress(address.address)) return 'noAccess'
 	return 'askAccess'
 }

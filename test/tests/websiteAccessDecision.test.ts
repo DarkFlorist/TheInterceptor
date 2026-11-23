@@ -252,3 +252,58 @@ describe('stored website details lookup', () => {
 		assert.equal(rebound[0]?.website.websiteOrigin, 'https://example.test')
 	})
 })
+
+describe('legacy records deny but never grant', () => {
+	const origin = 'https://example.test'
+	const asking: ContactEntry = { type: 'contact', address: firstAddress, name: 'First', entrySource: 'User', askForAddressAccess: true }
+	const notAsking: ContactEntry = { ...asking, askForAddressAccess: false }
+	const exactRecords = {
+		none: [],
+		grant: [{ website: { websiteOrigin: origin }, access: true, addressAccess: undefined }],
+		grantWithAddress: [{ website: { websiteOrigin: origin }, access: true, addressAccess: [{ address: firstAddress, access: true }] }],
+		deny: [{ website: { websiteOrigin: origin }, access: false, addressAccess: undefined }],
+	} satisfies Record<string, WebsiteAccessArray>
+	const legacyRecords = {
+		none: [],
+		websiteGrant: [{ website: { websiteOrigin: 'example.test' }, access: true, addressAccess: undefined }],
+		addressGrant: [{ website: { websiteOrigin: 'example.test' }, access: true, addressAccess: [{ address: firstAddress, access: true }] }],
+		websiteDenial: [{ website: { websiteOrigin: 'example.test' }, access: false, addressAccess: undefined }],
+		addressDenial: [{ website: { websiteOrigin: 'example.test' }, access: true, addressAccess: [{ address: firstAddress, access: false }] }],
+		otherAddressDenial: [{ website: { websiteOrigin: 'example.test' }, addressAccess: [{ address: secondAddress, access: false }] }],
+	} satisfies Record<string, WebsiteAccessArray>
+	// [exact record, legacy record, hasAccess, hasAddressAccess for an asking account, hasAddressAccess for an account that never asks]
+	const cases: readonly (readonly [keyof typeof exactRecords, keyof typeof legacyRecords, string, string, string])[] = [
+		['none', 'none', 'askAccess', 'askAccess', 'askAccess'],
+		['none', 'websiteGrant', 'askAccess', 'askAccess', 'askAccess'],
+		['none', 'addressGrant', 'askAccess', 'askAccess', 'askAccess'],
+		['none', 'websiteDenial', 'noAccess', 'noAccess', 'noAccess'],
+		['none', 'addressDenial', 'askAccess', 'noAccess', 'noAccess'],
+		['none', 'otherAddressDenial', 'askAccess', 'askAccess', 'askAccess'],
+		['grant', 'none', 'hasAccess', 'askAccess', 'hasAccess'],
+		['grant', 'addressGrant', 'hasAccess', 'askAccess', 'hasAccess'],
+		['grant', 'websiteDenial', 'hasAccess', 'askAccess', 'hasAccess'],
+		['grant', 'addressDenial', 'hasAccess', 'noAccess', 'noAccess'],
+		['grant', 'otherAddressDenial', 'hasAccess', 'askAccess', 'hasAccess'],
+		['grantWithAddress', 'none', 'hasAccess', 'hasAccess', 'hasAccess'],
+		['grantWithAddress', 'addressDenial', 'hasAccess', 'hasAccess', 'hasAccess'],
+		['deny', 'websiteGrant', 'noAccess', 'noAccess', 'noAccess'],
+		['deny', 'addressGrant', 'noAccess', 'noAccess', 'noAccess'],
+	]
+	test.each(cases)('exact %s with legacy %s', (exact, legacy, website, askingAddress, notAskingAddress) => {
+		const websiteAccess = [...exactRecords[exact], ...legacyRecords[legacy]]
+		assert.equal(hasAccess(websiteAccess, origin), website)
+		assert.equal(hasAddressAccess(websiteAccess, origin, asking), askingAddress)
+		assert.equal(hasAddressAccess(websiteAccess, origin, notAsking), notAskingAddress)
+	})
+
+	test('adding any legacy record never makes an access decision more permissive', () => {
+		const rank = { noAccess: 0, interceptorDisabled: 0, askAccess: 1, hasAccess: 2 }
+		for (const exact of Object.values(exactRecords)) {
+			for (const legacy of Object.values(legacyRecords)) {
+				const withLegacy: WebsiteAccessArray = [...exact, ...legacy]
+				assert.ok(rank[hasAccess(withLegacy, origin)] <= rank[hasAccess(exact, origin)])
+				for (const address of [asking, notAsking]) assert.ok(rank[hasAddressAccess(withLegacy, origin, address)] <= rank[hasAddressAccess(exact, origin, address)])
+			}
+		}
+	})
+})
