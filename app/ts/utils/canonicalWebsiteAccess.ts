@@ -33,16 +33,25 @@ const mergeRestrictiveFlag = (first: boolean | undefined, second: boolean | unde
 	return first ?? second
 }
 
-// Two records for one origin are merged so that the more restrictive decision wins on each field: a denial over a grant, a disabled Interceptor over an enabled one, and blocking over not blocking. Every reader then sees at most one record per origin, so lookups that take the first match and lookups that take any match agree.
+// How two records for one origin combine on each field, the more restrictive decision winning: a denial over a grant, a disabled Interceptor over an enabled one, and blocking over not blocking. The mapped type names every WebsiteAccess field, so a new field fails to compile until it gets a rule here.
+const websiteAccessMergeRules: { readonly [Field in keyof WebsiteAccess]-?: (first: WebsiteAccess[Field], second: WebsiteAccess[Field]) => WebsiteAccess[Field] } = {
+	website: mergeStoredWebsiteMetadata,
+	addressAccess: mergeAddressAccesses,
+	access: (first, second) => mergeRestrictiveFlag(first, second, false),
+	interceptorDisabled: (first, second) => mergeRestrictiveFlag(first, second, true),
+	declarativeNetRequestBlockMode: (first, second) => first === 'block-all' || second === 'block-all' ? 'block-all' : first ?? second,
+}
+
+// Every reader then sees at most one record per origin, so lookups that take the first match and lookups that take any match agree. The spread keeps any field the rules do not know, such as one stored by a newer release, with the later record's value.
 function mergeWebsiteAccessEntries(first: WebsiteAccess, second: WebsiteAccess): WebsiteAccess {
-	const access = mergeRestrictiveFlag(first.access, second.access, false)
-	const interceptorDisabled = mergeRestrictiveFlag(first.interceptorDisabled, second.interceptorDisabled, true)
-	const declarativeNetRequestBlockMode = first.declarativeNetRequestBlockMode === 'block-all' || second.declarativeNetRequestBlockMode === 'block-all'
-		? 'block-all'
-		: first.declarativeNetRequestBlockMode ?? second.declarativeNetRequestBlockMode
+	const access = websiteAccessMergeRules.access(first.access, second.access)
+	const interceptorDisabled = websiteAccessMergeRules.interceptorDisabled(first.interceptorDisabled, second.interceptorDisabled)
+	const declarativeNetRequestBlockMode = websiteAccessMergeRules.declarativeNetRequestBlockMode(first.declarativeNetRequestBlockMode, second.declarativeNetRequestBlockMode)
 	return {
-		website: mergeStoredWebsiteMetadata(first.website, second.website),
-		addressAccess: mergeAddressAccesses(first.addressAccess, second.addressAccess),
+		...first,
+		...second,
+		website: websiteAccessMergeRules.website(first.website, second.website),
+		addressAccess: websiteAccessMergeRules.addressAccess(first.addressAccess, second.addressAccess),
 		...access === undefined ? {} : { access },
 		...interceptorDisabled === undefined ? {} : { interceptorDisabled },
 		...declarativeNetRequestBlockMode === undefined ? {} : { declarativeNetRequestBlockMode },
