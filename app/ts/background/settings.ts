@@ -1,13 +1,13 @@
 import { getNormalizedWebsiteAccessFromStorage, getWebsiteAccess } from './websiteAccessStorage.js'
-export { getWebsiteAccess } from './websiteAccessStorage.js'
-import { haveSameDisabledSites, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { refreshContentScriptInjectionAfterAccessChange } from '../utils/contentScriptsUpdating.js'
+import { getParsedStorageValueOrDefault, getParsedStorageValueOrDefaultFromItems } from '../utils/storageDefaults.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -16,7 +16,6 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -44,35 +43,6 @@ const wethForChainId = new Map<string, EthereumAddress>([
 export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://api.etherscan.io/v2/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
-
-type StartupStorageDefaults = {
-	independentActiveSimulationAddress: Settings['activeSimulationAddress']
-	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
-	openedPageV2: Page
-	useSignersAddressAsActiveAddress: boolean
-	websiteAccess: WebsiteAccessArray
-	simulationMode: boolean
-	activeRpcNetwork: RpcNetwork
-	makeCurrentAddressRich: boolean
-	fixedAddressRichList: readonly RichListElement[]
-	signingAddressPreferences: SigningAddressPreferences
-}
-
-async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
-	const rawValue = storedItems[key]
-	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
-	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = browserStorageLocalSafeParse(storedItem)
-	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
-	if (rawValue === undefined) return defaultValue
-	console.warn(`${ key } was corrupt:`)
-	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
-	return defaultValue
-}
-
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
-	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
-}
 
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
@@ -318,7 +288,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		})
 	}
 	// Import owns this derived registration state, so direct callers and popup callers follow the same policy.
-	if (!haveSameDisabledSites(previousWebsiteAccess, await getWebsiteAccess())) await updateContentScriptInjectionStrategy()
+	await refreshContentScriptInjectionAfterAccessChange(previousWebsiteAccess, await getWebsiteAccess())
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
