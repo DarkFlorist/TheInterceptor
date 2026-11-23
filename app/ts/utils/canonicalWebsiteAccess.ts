@@ -33,8 +33,25 @@ const mergeRestrictiveFlag = (first: boolean | undefined, second: boolean | unde
 	return first ?? second
 }
 
-// How two records for one origin combine on each field, the more restrictive decision winning: a denial over a grant, a disabled Interceptor over an enabled one, and blocking over not blocking. The mapped type names every WebsiteAccess field, so a new field fails to compile until it gets a rule here.
-const websiteAccessMergeRules: { readonly [Field in keyof WebsiteAccess]-?: (first: WebsiteAccess[Field], second: WebsiteAccess[Field]) => WebsiteAccess[Field] } = {
+// A rule per field of a record type, saying how that field of two records combines into one.
+export type FieldMergeRules<RecordType extends object> = { readonly [Field in keyof RecordType]-?: (first: RecordType[Field], second: RecordType[Field]) => RecordType[Field] }
+
+// Object.keys of a rule table, typed by the table's own keys.
+const getRuleFields = <RecordType extends object>(rules: FieldMergeRules<RecordType>) => Object.keys(rules).filter((field): field is Extract<keyof RecordType, string> => field in rules)
+
+function applyFieldMergeRule<RecordType extends object, Field extends keyof RecordType>(merged: { -readonly [Key in keyof RecordType]: RecordType[Key] }, rules: FieldMergeRules<RecordType>, field: Field, first: RecordType, second: RecordType) {
+	merged[field] = rules[field](first[field], second[field])
+}
+
+// Merges two records by applying every rule in the table, so adding a rule is all it takes for a field to merge by it. The spread of both records is only the base for fields the table does not know, such as one stored by a newer release, which keep the later record's value.
+export function mergeRecordsByFieldRules<RecordType extends object>(rules: FieldMergeRules<RecordType>, first: RecordType, second: RecordType): RecordType {
+	const merged: { -readonly [Key in keyof RecordType]: RecordType[Key] } = { ...first, ...second }
+	for (const field of getRuleFields(rules)) applyFieldMergeRule(merged, rules, field, first, second)
+	return merged
+}
+
+// How two records for one origin combine on each field, the more restrictive decision winning: a denial over a grant, a disabled Interceptor over an enabled one, and blocking over not blocking. The mapped type names every WebsiteAccess field, so a new field fails to compile until it gets a rule here, and mergeRecordsByFieldRules then applies it.
+export const websiteAccessMergeRules: FieldMergeRules<WebsiteAccess> = {
 	website: mergeStoredWebsiteMetadata,
 	addressAccess: mergeAddressAccesses,
 	access: (first, second) => mergeRestrictiveFlag(first, second, false),
@@ -42,21 +59,8 @@ const websiteAccessMergeRules: { readonly [Field in keyof WebsiteAccess]-?: (fir
 	declarativeNetRequestBlockMode: (first, second) => first === 'block-all' || second === 'block-all' ? 'block-all' : first ?? second,
 }
 
-// Every reader then sees at most one record per origin, so lookups that take the first match and lookups that take any match agree. The spread keeps any field the rules do not know, such as one stored by a newer release, with the later record's value.
-function mergeWebsiteAccessEntries(first: WebsiteAccess, second: WebsiteAccess): WebsiteAccess {
-	const access = websiteAccessMergeRules.access(first.access, second.access)
-	const interceptorDisabled = websiteAccessMergeRules.interceptorDisabled(first.interceptorDisabled, second.interceptorDisabled)
-	const declarativeNetRequestBlockMode = websiteAccessMergeRules.declarativeNetRequestBlockMode(first.declarativeNetRequestBlockMode, second.declarativeNetRequestBlockMode)
-	return {
-		...first,
-		...second,
-		website: websiteAccessMergeRules.website(first.website, second.website),
-		addressAccess: websiteAccessMergeRules.addressAccess(first.addressAccess, second.addressAccess),
-		...access === undefined ? {} : { access },
-		...interceptorDisabled === undefined ? {} : { interceptorDisabled },
-		...declarativeNetRequestBlockMode === undefined ? {} : { declarativeNetRequestBlockMode },
-	}
-}
+// Every reader then sees at most one record per origin, so lookups that take the first match and lookups that take any match agree.
+const mergeWebsiteAccessEntries = (first: WebsiteAccess, second: WebsiteAccess) => mergeRecordsByFieldRules(websiteAccessMergeRules, first, second)
 
 function mergeDuplicateWebsiteOrigins(websiteAccess: WebsiteAccessArray): WebsiteAccessArray {
 	const entriesByOrigin = new Map<string, WebsiteAccess>()
