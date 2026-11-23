@@ -917,9 +917,9 @@ describe('background signer lifecycle and chain switching', () => {
 			assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 19).map((message) => message.result), [permissionResult])
 			assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'accountsChanged', 'wallet_requestPermissions'])
 			assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
-			assert.equal(browserMock.requestBlockingCalls.webRequestListenerAdds > 0, manifestVersion === 2)
-			assert.equal(browserMock.requestBlockingCalls.webRequestListenerRemovals > 0, manifestVersion === 2)
-			assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates > 0, manifestVersion === 3)
+			assert.equal(browserMock.calls.webRequestListenerAdds.length > 0, manifestVersion === 2)
+			assert.equal(browserMock.calls.webRequestListenerRemovals.length > 0, manifestVersion === 2)
+			assert.equal(browserMock.calls.declarativeNetRequestUpdates.length > 0, manifestVersion === 3)
 		})
 	}
 

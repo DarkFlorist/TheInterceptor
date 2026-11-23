@@ -1,3 +1,4 @@
+import { isSameConfirmationSimulation, shouldReplaceConfirmationSimulation } from '../confirmationSimulationIdentity.js'
 import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
@@ -121,16 +122,6 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-type SimulationTimestamps = {
-	readonly data: {
-		readonly simulationStartedTimestamp: Date
-		readonly simulationState: { readonly simulationConductedTimestamp: Date }
-	}
-}
-
-const isSameSimulation = (first: SimulationTimestamps, second: SimulationTimestamps) => first.data.simulationStartedTimestamp.getTime() === second.data.simulationStartedTimestamp.getTime()
-	&& first.data.simulationState.simulationConductedTimestamp.getTime() === second.data.simulationState.simulationConductedTimestamp.getTime()
-
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const [first] = await getPendingTransactionsAndMessages()
 	if (first === undefined) return
@@ -175,7 +166,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				// Patch only the visualisation, and only while the stored request still holds the simulation it was computed from; the user may have accepted or a newer simulation may have landed meanwhile.
 				const storedFirst = await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode !== 'success') return undefined
-					if (!isSameSimulation(current.popupVisualisation, first.popupVisualisation)) return undefined
+					if (!isSameConfirmationSimulation(current.popupVisualisation, first.popupVisualisation)) return undefined
 					return { ...current, popupVisualisation: visualizedPopupVisualisation }
 				})
 				if (storedFirst === undefined) return
@@ -189,16 +180,6 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 		default: assertNever(first)
 	}
 }
-
-type TimestampedPopupVisualisation = {
-	data: {
-		simulationState: {
-			simulationConductedTimestamp: Date
-		}
-	}
-}
-
-const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
 export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	const [firstTxn] = await getPendingTransactionsAndMessages()
@@ -233,9 +214,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
 				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
-				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
-				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
-				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
+				if (!shouldReplaceConfirmationSimulation(transactionOrMessage.popupVisualisation, refreshMessage)) return transactionOrMessage
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,
