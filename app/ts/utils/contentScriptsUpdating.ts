@@ -146,3 +146,9 @@ export const updateContentScriptInjectionStrategy = async () => {
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
 }
+
+export async function refreshContentScriptInjectionAfterAccessChange(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
+	const disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
+	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
+	return disabledSitesChanged
+}
