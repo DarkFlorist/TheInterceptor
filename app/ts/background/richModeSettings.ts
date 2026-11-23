@@ -37,7 +37,7 @@ async function updateRichMode<Result>(operation: (store: ReturnType<typeof creat
 	return outcome.value
 }
 
-// The funding writes that keep rich mode consistent with new address-book entries. Only addressBookStorage calls this, inside the settings storage transaction that writes those entries, so no address-book write can skip reconciliation. fundingChanged says whether any account's funded balances changed.
+// The funding writes that keep rich mode consistent with new address-book entries. Only addressBookCoordinator calls this, inside the settings storage transaction that writes those entries, so no address-book write can skip reconciliation; addressBookStorage stays free of rich-mode imports. fundingChanged says whether any account's funded balances changed.
 export async function getRichModeWritesForAddressBook(entries: AddressBookEntries, importedState?: RichModeState) {
 	const store = createRichModeTransaction(await getRichModeState())
 	if (importedState !== undefined) store.replace(importedState)

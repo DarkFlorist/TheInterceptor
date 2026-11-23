@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 import { RichToken } from './richMode.js'
+import type { ModifyMakeMeRich } from './popupSettingsRequests.js'
 
 export type ModifyRichTokenRequest = funtypes.Static<typeof ModifyRichTokenRequest>
 export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
@@ -48,3 +49,12 @@ export const ModifyRichTokenReply = funtypes.ReadonlyObject({
 })
 
 export const createRichTokenFailureReply = (error: string) => ({ method: 'popup_modifyRichToken' as const, result: { success: false as const, error } })
+
+// The two rich-funding popup commands.
+export type RichSettingsRequest = ModifyMakeMeRich | ModifyRichTokenRequest
+
+// The one result of both rich-funding commands, which reply the same way: expected failures (a rejected change, a change saved while the simulation is unavailable, a missing reply, a refused admission) come back as ok: false and never throw. simulationRefresh says whether a token change's simulation is current or superseded; the rich setting reply carries no refresh detail, so it is undefined there.
+export type RichSettingsChangeResult =
+	| { readonly ok: true, readonly richToken: RichToken | undefined, readonly simulationRefresh: RichTokenSimulationRefresh | undefined }
+	| { readonly ok: false, readonly error: string }
+export type ChangeRichSettings = (message: RichSettingsRequest) => Promise<RichSettingsChangeResult>

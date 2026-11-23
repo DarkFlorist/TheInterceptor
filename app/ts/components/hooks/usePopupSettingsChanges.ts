@@ -7,7 +7,8 @@ import type { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
-import { type CoordinatedPopupSettingsRequest, type ChangeRichSettings, requestPopupSettingsChange, requestRichSettingsChange } from '../popupSettingsChange.js'
+import { type CoordinatedPopupSettingsRequest, requestPopupSettingsChange, requestRichSettingsChange } from '../popupSettingsChange.js'
+import type { ChangeRichSettings } from '../../types/richModeRequests.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
 
 const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, string>> = {

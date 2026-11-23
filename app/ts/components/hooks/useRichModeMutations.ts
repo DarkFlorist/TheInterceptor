@@ -5,7 +5,7 @@ import type { RichTokenOption } from '../../types/richMode.js'
 import { getRichTokenIdentityKey, getRichTokenLabel } from '../../utils/richTokens.js'
 import { assertNever } from '../../utils/typescript.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import type { ChangeRichSettings } from '../popupSettingsChange.js'
+import type { ChangeRichSettings } from '../../types/richModeRequests.js'
 import type { RichFundingFeedback } from '../subcomponents/RichModeShared.js'
 
 const SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE = 'The token funding was saved. A newer simulation refresh is in progress; its result will update the simulation.'

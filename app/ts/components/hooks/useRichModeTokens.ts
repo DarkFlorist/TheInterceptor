@@ -1,5 +1,5 @@
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
-import type { ChangeRichSettings } from '../popupSettingsChange.js'
+import type { ChangeRichSettings } from '../../types/richModeRequests.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
