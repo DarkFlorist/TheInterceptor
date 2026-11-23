@@ -1,3 +1,4 @@
+import { withSettingsTransitionLock } from './settingsTransitionLock.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -26,7 +27,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -62,6 +63,7 @@ const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.s
 
 async function handleRPCRequest(
 	simulationServicesOwner: SimulationServicesOwner,
+	services: SimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -73,8 +75,8 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Select one execution pair after admission; lazy simulation preparation uses this same pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+	// Admission pins this pair before asynchronous Safe preparation; execution never reads a newer owner pair.
+	const { ethereum, tokenPriceService } = services
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
@@ -360,7 +362,7 @@ async function getActiveAddressForRequest(settings: Settings, websiteTabConnecti
 // Resolves a request's active address entry from settings. A context keeps the resolver that produced its address, so a request that waited reads the same entry again rather than another entry for the same address.
 type ReadActiveAddress = (settings: Settings) => Promise<AddressBookEntry | undefined>
 
-// One settings snapshot and the active address derived from it. A request's access is decided and the request executed on the same context; it is re-read only after waiting on the signer wallet, whose reply can change both, and access is decided again if what decided it changes while the website metadata loads (see executeOnceWebsiteLoads).
+// Access is decided on one settings/address context. After metadata and Safe preparation, final admission rechecks that context under the settings transition lock and redecides access if it changed.
 type InterceptedRequestContext = {
 	readonly settings: Settings
 	readonly activeAddress: AddressBookEntry | undefined
@@ -549,46 +551,43 @@ function getRequestDecisionFingerprint(settings: Settings, websiteOrigin: string
 	])
 }
 
-// Waits for the website metadata, which can take as long as the tab takes to load, then executes the request on the snapshot its access was decided on. If anything that decided it changed meanwhile, for example the user revoked the website's access, stopped sharing the address without asking, switched the active address or mode, or switched networks (which installs simulation services for the new network), access is decided again on the current state instead. Deciding again passes the loaded metadata, and a request whose metadata had already loaded did not wait, so it executes without this check and a request decides at most twice. The services are still taken from the owner when the request executes, a few storage reads later, and some writers install services outside the settings transition lock, so a switch inside that short window can still mix networks; #1657 tracks publishing settings and services through one boundary.
-async function executeOnceWebsiteLoads(port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus, { settings, activeAddress, readActiveAddress }: InterceptedRequestContext & { readonly activeAddress: AddressBookEntry }) {
-	if (!('then' in websitePromise)) return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, websitePromise, settings, activeAddress, publishRpcConnectionStatus)
+// Metadata and Safe preparation may outlive a settings transition. Final admission rechecks the decision under the transition lock, then starts execution with the same services used during preparation.
+async function executeOnceWebsiteLoads(port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus, context: InterceptedRequestContext & { readonly activeAddress: AddressBookEntry }) {
 	const website = await websitePromise
-	const currentSettings = await getSettings()
-	// The active address is resolved again the way it was for the decision: the wallet can switch accounts, and editing the address book entry, for example to ask before sharing the address, changes the policy's answer without changing the settings.
-	const currentActiveAddress = await readActiveAddress(currentSettings)
-	if (currentActiveAddress === undefined || getRequestDecisionFingerprint(currentSettings, websiteOrigin, currentActiveAddress) !== getRequestDecisionFingerprint(settings, websiteOrigin, activeAddress)) {
-		return await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
-	}
-	return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, settings, activeAddress, publishRpcConnectionStatus)
+	const retryRequest = async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+	return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, context, publishRpcConnectionStatus, retryRequest)
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, settings: Settings, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, { settings, activeAddress, readActiveAddress }: InterceptedRequestContext & { readonly activeAddress: AddressBookEntry }, publishRpcConnectionStatus: PublishRpcConnectionStatus, retryRequest: () => Promise<unknown>): Promise<unknown> {
 	try {
+		const services = simulationServicesOwner.getCurrent()
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
-		let rpcContext: RpcRequestContext = { request }
-		if (request.method === 'safe_apps_request') {
-			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
-			if (admission.kind === 'reply') return replyToInterceptedRequest(websiteTabConnections, admission.reply)
-			rpcContext = admission.context
-		}
+		const admission = request.method === 'safe_apps_request'
+			? await prepareSafeAppsRequest(services.ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+			: { kind: 'execute' as const, context: { request } }
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
-		// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
-		const resolved = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
-		await persistApprovedAccountsForAccountRequest(
-			websiteTabConnections,
-			request,
-			website,
-			settings,
-			resolved,
-			activeAddress.address,
-		)
-		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+		const execution = await withSettingsTransitionLock(async (lock) => {
+			const currentSettings = (await lock.readSettings()).settings
+			const currentActiveAddress = await readActiveAddress(currentSettings)
+			if (currentActiveAddress === undefined
+				|| getRequestDecisionFingerprint(currentSettings, website.websiteOrigin, currentActiveAddress) !== getRequestDecisionFingerprint(settings, website.websiteOrigin, activeAddress)
+				|| simulationServicesOwner.getCurrent() !== services) return undefined
+			// Start synchronously, but return the promise in an object: the lock must be released before awaiting execution, which may itself switch networks or wait for a user confirmation.
+			return { result: (async () => {
+				if (admission.kind === 'reply') return await replyToInterceptedRequest(websiteTabConnections, admission.reply)
+				const resolved = await handleRPCRequest(simulationServicesOwner, services, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, admission.context, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+				await persistApprovedAccountsForAccountRequest(websiteTabConnections, request, website, settings, resolved, activeAddress.address)
+				replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
+				return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+			})() }
+		})
+		if (execution === undefined) return await retryRequest()
+		return await execution.result
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
