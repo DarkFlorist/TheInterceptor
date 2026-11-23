@@ -1,26 +1,29 @@
-import { describe, test } from 'bun:test'
+import { getPreparedSimulationPrefix } from '../../app/ts/simulation/services/preparedSimulationPrefix.js'
+import { describe, test, spyOn } from 'bun:test'
 import * as assert from 'assert'
-import { authorization as eip7702Authorization } from 'micro-eth-signer'
+import { addr, authorization as eip7702Authorization } from 'micro-eth-signer'
 import { isAbiDataDecodeError, keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, getEip7702AuthorizationSigningHash, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { addressString, bigintToUint8Array, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
 import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getDeployedContractAddress, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHash, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, toSimulationStateInputMinimalData } from '../../app/ts/types/visualizer-types.js'
-import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { type SignedMessageTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, toSimulationStateInputMinimalData } from '../../app/ts/types/visualizer-types.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from '../../app/ts/simulation/storageReader.js'
-import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
+import { getCodeByteCode, getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
 import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
+import { type Eip7702Authorization, getDelegateFromCode, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
+import { getAccountNonceAfterTransactions } from '../../app/ts/simulation/accountNonce.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -84,6 +87,20 @@ function testBytes32(suffix: string) {
 
 const zeroBytes256 = `0x${'0'.repeat(512)}`
 
+const createRawLog = (address: bigint, topics: readonly string[], data: string) => ({
+	address: addressString(address),
+	topics,
+	data,
+	blockNumber: '0x1463610',
+	transactionHash: testBytes32('1'),
+	transactionIndex: '0x0',
+	blockHash: testBytes32('2'),
+	logIndex: '0x1',
+	removed: false,
+})
+const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const ERC1155_TRANSFER_SINGLE_TOPIC = '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62'
+
 const blockNumber = 8443561n
 const rpcNetwork = {
 	name: 'Goerli',
@@ -105,6 +122,12 @@ class MockEthereumJSONRpcRequestHandler {
 	public minimumSuccessfulGasLimit: bigint | undefined = undefined
 	public malformedGetCodeReturn = false
 	public balance = 0n
+	public failedAggregate3Batches: 'none' | 'containing-token-query' | 'all' = 'none'
+	public additionalTransactionLogs: readonly ReturnType<typeof createRawLog>[] = []
+	public readonly codeByAddress = new Map<bigint, string>([[0x1234n, '0x1234']])
+	public readonly codeChangesByInput = new Map<string, { address: bigint, code: string }>()
+	public transactionCountReads = 0
+	public blockReadError: Error | undefined
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
 	public syncingResponse: unknown = false
@@ -113,7 +136,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetStorageAtCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBlockByHashErrorsByHash = new Map<bigint, Error>()
-	public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, lastCallGas: bigint | undefined, lastCallNonce: bigint | undefined, lastCallAuthorizationList: readonly { chainId: bigint, address: bigint, nonce: bigint, r?: bigint, s?: bigint, yParity?: 'even' | 'odd' }[] | undefined, hasGetCodeOverride: boolean, traceTransfers: boolean | undefined, validation: boolean | undefined, parentBlockTag: EthSimulateV1BlockTag | undefined }[] = []
+	public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, aggregate3Targets: readonly bigint[] | undefined, lastCallGas: bigint | undefined, lastCallNonce: bigint | undefined, lastCallAuthorizationList: readonly { chainId: bigint, address: bigint, nonce: bigint, r?: bigint, s?: bigint, yParity?: 'even' | 'odd' }[] | undefined, hasGetCodeOverride: boolean, traceTransfers: boolean | undefined, validation: boolean | undefined, parentBlockTag: EthSimulateV1BlockTag | undefined }[] = []
 	public readonly ethSimulateV1Requests: EthSimulateV1Params[] = []
 
 	public clearCache = () => undefined
@@ -126,7 +149,8 @@ class MockEthereumJSONRpcRequestHandler {
 			case 'eth_syncing':
 				this.ethSyncingBypassCacheArguments.push(bypassCache)
 				return this.syncingResponse
-			case 'eth_getTransactionCount': return '0x0'
+			case 'eth_getTransactionCount': { this.transactionCountReads++; return '0x0' }
+			case 'eth_getCode': return this.codeByAddress.get(rpcRequest.params[0]) ?? '0x'
 			case 'eth_getBalance':
 				this.ethGetBalanceCalls.push(rpcRequest)
 				return `0x${ this.balance.toString(16) }`
@@ -148,6 +172,7 @@ class MockEthereumJSONRpcRequestHandler {
 				}
 			}
 			case 'eth_getBlockByNumber': {
+				if (this.blockReadError !== undefined) throw this.blockReadError
 				if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
@@ -162,6 +187,14 @@ class MockEthereumJSONRpcRequestHandler {
 			}
 			case 'eth_simulateV1': {
 				this.ethSimulateV1Requests.push(rpcRequest)
+				// Like geth's StateOverride.Apply, refuse to move a precompile onto an address the same block overrides.
+				for (const blockStateCall of rpcRequest.params[0].blockStateCalls) {
+					const overriddenAddresses = new Set(Object.keys(blockStateCall.stateOverrides ?? {}).map((address) => BigInt(address)))
+					for (const accountOverride of Object.values(blockStateCall.stateOverrides ?? {})) {
+						if (accountOverride.movePrecompileToAddress === undefined || !overriddenAddresses.has(accountOverride.movePrecompileToAddress)) continue
+						throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: `account ${ addressString(accountOverride.movePrecompileToAddress) } is already overridden` } })
+					}
+				}
 				const lastBlockStateCall = rpcRequest.params[0]?.blockStateCalls.at(-1)
 				const lastCall = lastBlockStateCall?.calls[0]
 				const lastCallInput = lastCall?.input
@@ -169,19 +202,32 @@ class MockEthereumJSONRpcRequestHandler {
 				const lastCallNonce = lastCall?.nonce
 				const lastCallAuthorizationList = lastCall?.authorizationList
 				const hasGetCodeOverride = lastBlockStateCall?.stateOverrides?.[addressString(0x1ce438391307f908756fefe0fe220c0f0d51508an)]?.code !== undefined
-				const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
+				const aggregate3Targets = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
 					? (() => {
 						const decoded = decodeFunctionDataStrict(Multicall3ABI, dataStringWith0xStart(lastCallInput))
 						if (decoded.functionName !== 'aggregate3') throw new Error('expected aggregate3 call')
-						return decoded.args[0].length
+						return decoded.args[0].map((call) => BigInt(call.target))
 					})()
 					: undefined
+				const aggregate3BalanceQueryCount = aggregate3Targets?.length
 				const blockStateCallCount = rpcRequest.params[0]?.blockStateCalls.length ?? 0
-				this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount, lastCallGas, lastCallNonce, lastCallAuthorizationList, hasGetCodeOverride, traceTransfers: rpcRequest.params[0].traceTransfers, validation: rpcRequest.params[0].validation, parentBlockTag: rpcRequest.params[1] })
+				this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount, aggregate3Targets, lastCallGas, lastCallNonce, lastCallAuthorizationList, hasGetCodeOverride, traceTransfers: rpcRequest.params[0].traceTransfers, validation: rpcRequest.params[0].validation, parentBlockTag: rpcRequest.params[1] })
 				if (this.rejectOmittedGas && lastCallGas === undefined) {
 					throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'gas required' } })
 				}
 				if (lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith(getCodeSelector)) {
+					const decoded = decodeFunctionDataStrict(getCodeAbi, dataStringWith0xStart(lastCallInput))
+					if (decoded.functionName !== 'at') throw new Error('Expected code lookup')
+					const target = BigInt(decoded.args[0])
+					let code = this.codeByAddress.get(target) ?? '0x'
+					for (const prefix of rpcRequest.params[0].blockStateCalls.slice(0, -1)) {
+						const override = prefix.stateOverrides?.[addressString(target)]?.code
+						if (override !== undefined) code = dataStringWith0xStart(override)
+						for (const call of prefix.calls) {
+							const change = this.codeChangesByInput.get(call.input === undefined ? '0x' : dataStringWith0xStart(call.input))
+							if (change?.address === target) code = change.code
+						}
+					}
 					const singleTransactionBlock = ethSimulateSingleBlockResult[0]
 					const singleCall = singleTransactionBlock?.calls[0]
 					if (singleTransactionBlock === undefined || singleCall === undefined) throw new Error('missing single transaction simulation fixture')
@@ -189,7 +235,7 @@ class MockEthereumJSONRpcRequestHandler {
 						...singleTransactionBlock,
 						calls: [{
 							...singleCall,
-							returnData: this.malformedGetCodeReturn ? '0x' : encodeFunctionReturn(getCodeAbi, 'at', ['0x1234']),
+							returnData: this.malformedGetCodeReturn ? '0x' : encodeFunctionReturn(getCodeAbi, 'at', [code]),
 						}],
 					})
 				}
@@ -228,9 +274,15 @@ class MockEthereumJSONRpcRequestHandler {
 					})
 				}
 				const result = createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
-				if (aggregate3BalanceQueryCount !== undefined) return result
 				const lastBlock = result.at(-1)
 				const lastResult = lastBlock?.calls[0]
+				if (aggregate3Targets !== undefined) {
+					const failsThisBatch = this.failedAggregate3Batches === 'all' || (this.failedAggregate3Batches === 'containing-token-query' && aggregate3Targets.some((target) => target !== MULTICALL3))
+					if (!failsThisBatch) return result
+					if (lastBlock === undefined || lastResult === undefined) throw new Error('missing aggregate3 simulation fixture block')
+					const { returnData: _returnData, logs: _logs, ...failedCallBase } = lastResult
+					return createMockEthSimulateV1ResultWithCustomLastBlock(blockStateCallCount, { ...lastBlock, calls: [{ ...failedCallBase, returnData: '0x', status: '0x0', error: { code: -32000, message: 'out of gas' } }] })
+				}
 				if (lastBlock === undefined || lastResult === undefined) return result
 				const gasUsed = this.simulatedCallGasUsed === undefined ? lastResult.gasUsed : `0x${ this.simulatedCallGasUsed.toString(16) }`
 				const maxUsedGas = this.simulatedCallMaxUsedGas === undefined ? lastResult.maxUsedGas ?? gasUsed : `0x${ this.simulatedCallMaxUsedGas.toString(16) }`
@@ -238,6 +290,7 @@ class MockEthereumJSONRpcRequestHandler {
 					...lastResult,
 					gasUsed,
 					maxUsedGas,
+					logs: [...('logs' in lastResult ? lastResult.logs : []), ...this.additionalTransactionLogs],
 				}
 				const callResult = lastCallGas !== undefined && this.minimumSuccessfulGasLimit !== undefined && lastCallGas < this.minimumSuccessfulGasLimit
 					? (() => {
@@ -305,6 +358,13 @@ describe('SimulationModeEthereumClientService', () => {
 		type: '7702',
 		authorizationList: [],
 	} as const
+	// The node recovers an authorization's authority from its signature alone, so tests sign with test keys instead of naming an authority.
+	const testAuthorityPrivateKey = '0x000000000000000000000000000000000000000000000000000000000000beef'
+	const testAuthority = EthereumAddress.parse(addr.fromPrivateKey(testAuthorityPrivateKey))
+	const signTestAuthorization = (chainId: bigint, nonce: bigint, address = 0n, privateKey = testAuthorityPrivateKey) => {
+		const signed = eip7702Authorization.sign({ address: addressString(address), chainId, nonce }, privateKey)
+		return { chainId, address, nonce, r: BigInt(signed.r), s: BigInt(signed.s), yParity: signed.yParity === 0 ? 'even' as const : 'odd' as const }
+	}
 
 	test('preserves the 20-byte sender width when deriving contract addresses', () => {
 		const senderWithLeadingZeroBytes = 1n
@@ -386,6 +446,67 @@ describe('SimulationModeEthereumClientService', () => {
 	const createDappEthSimulateV1Request = (blockTag: EthSimulateV1BlockTag | undefined = 'latest', validation = false): EthSimulateV1Params => ({
 		method: 'eth_simulateV1',
 		params: blockTag === undefined ? [createDappEthSimulateV1Payload(validation)] : [createDappEthSimulateV1Payload(validation), blockTag],
+	})
+
+	describe('token balances after a transaction', () => {
+		const sender = exampleTransaction.from
+		const ethReceiver = exampleTransaction.to
+		const firstToken = 0x7000n
+		const secondToken = 0x7001n
+		const erc1155Token = 0x7002n
+		const tokenReceiver = 0xabcdn
+		const tokenId = 5n
+		const createErc20TransferLog = (token: bigint) => createRawLog(token, [ERC20_TRANSFER_TOPIC, bytes32String(sender), bytes32String(tokenReceiver)], bytes32String(1n))
+		const createErc1155TransferLog = () => createRawLog(erc1155Token, [ERC1155_TRANSFER_SINGLE_TOPIC, bytes32String(sender), bytes32String(sender), bytes32String(tokenReceiver)], encodeAbiValues(['uint256', 'uint256'], [tokenId, 1n]))
+		const createEthereumWithTokenLogs = (failedAggregate3Batches: MockEthereumJSONRpcRequestHandler['failedAggregate3Batches']) => {
+			const handler = new MockEthereumJSONRpcRequestHandler()
+			handler.failedAggregate3Batches = failedAggregate3Batches
+			handler.additionalTransactionLogs = [createErc20TransferLog(firstToken), createErc20TransferLog(secondToken), createErc1155TransferLog()]
+			return { handler, tokenEthereum: new EthereumClientService(handler, async () => undefined, async () => undefined, rpcNetwork) }
+		}
+		const getTokenBalancesAfter = async (tokenEthereum: EthereumClientService) => {
+			const simulationState = await createSimulationState(tokenEthereum, undefined, createSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const transaction = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]
+			if (transaction === undefined) throw new Error('simulated transaction missing')
+			return transaction.tokenBalancesAfter
+		}
+		const getAggregate3Batches = (handler: MockEthereumJSONRpcRequestHandler) => handler.ethSimulateV1Calls.flatMap((call) => call.aggregate3Targets === undefined ? [] : [call.aggregate3Targets])
+
+		test('keeps ETH balances and leaves token balances unknown when an aggregate3 containing token queries fails', async () => {
+			const { handler, tokenEthereum } = createEthereumWithTokenLogs('containing-token-query')
+			const tokenBalancesAfter = await getTokenBalancesAfter(tokenEthereum)
+
+			assert.deepEqual(tokenBalancesAfter.filter((balance) => balance.token === ETHEREUM_LOGS_LOGGER_ADDRESS), [
+				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: sender, balance: 1n },
+				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: ethReceiver, balance: 2n },
+			])
+			assert.deepEqual(tokenBalancesAfter.filter((balance) => balance.token !== ETHEREUM_LOGS_LOGGER_ADDRESS), [
+				{ token: firstToken, tokenId: undefined, owner: sender, balance: undefined },
+				{ token: firstToken, tokenId: undefined, owner: tokenReceiver, balance: undefined },
+				{ token: secondToken, tokenId: undefined, owner: sender, balance: undefined },
+				{ token: secondToken, tokenId: undefined, owner: tokenReceiver, balance: undefined },
+				{ token: erc1155Token, tokenId, owner: sender, balance: undefined },
+				{ token: erc1155Token, tokenId, owner: tokenReceiver, balance: undefined },
+			])
+			assert.deepEqual(getAggregate3Batches(handler).at(-1), [MULTICALL3, MULTICALL3])
+		})
+
+		test('queries ETH and token balances in one aggregate3 when it succeeds', async () => {
+			const { handler, tokenEthereum } = createEthereumWithTokenLogs('none')
+			const tokenBalancesAfter = await getTokenBalancesAfter(tokenEthereum)
+
+			assert.equal(getAggregate3Batches(handler).length, 1)
+			assert.equal(tokenBalancesAfter.length, 8)
+			assert.equal(tokenBalancesAfter.every((balance) => balance.balance !== undefined), true)
+		})
+
+		test('still fails when an aggregate3 of only ETH queries fails', async () => {
+			const { handler, tokenEthereum } = createEthereumWithTokenLogs('all')
+
+			await assert.rejects(getTokenBalancesAfter(tokenEthereum), /Failed aggregate3/)
+			assert.equal(getAggregate3Batches(handler).length, 2)
+		})
 	})
 
 	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {
@@ -531,21 +652,13 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('sponsored 7702 authorizations increment both the sponsor and authority nonces', async () => {
-			const authority = 0x0000000000000000000000000000000000000004n
+			const authority = testAuthority
 			const simulationState = await createSimulationState(ethereum, undefined, [{
 				stateOverrides: {},
 				transactions: [{
 					signedTransaction: mockSignTransaction({
 						...example7702Transaction,
-						authorizationList: [{
-							chainId: example7702Transaction.chainId,
-							address: 0n,
-							nonce: 0n,
-							authority,
-							r: 1n,
-							s: 2n,
-							yParity: 'even',
-						}],
+						authorizationList: [{ ...signTestAuthorization(rpcNetwork.chainId, 0n), authority }],
 					}),
 					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 					created: new Date(),
@@ -563,21 +676,13 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('input-based nonce and estimation account for sponsored 7702 authorities', async () => {
-			const authority = 0x0000000000000000000000000000000000000004n
+			const authority = testAuthority
 			const simulationStateInput = [{
 				stateOverrides: {},
 				transactions: [{
 					signedTransaction: mockSignTransaction({
 						...example7702Transaction,
-						authorizationList: [{
-							chainId: example7702Transaction.chainId,
-							address: 0n,
-							nonce: 0n,
-							authority,
-							r: 1n,
-							s: 2n,
-							yParity: 'even',
-						}],
+						authorizationList: [{ ...signTestAuthorization(rpcNetwork.chainId, 0n), authority }],
 					}),
 					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 					created: new Date(),
@@ -601,6 +706,284 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallNonce, 1n)
+		})
+
+		describe('EIP-7702 authorization nonce accounting', () => {
+			const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+			const authority = testAuthority
+			const sponsor = exampleTransaction.from
+			const delegate = 0x00000000000000000000000000000000000d1e9an
+			const signAuthorization = (chainId: bigint, nonce: bigint) => signTestAuthorization(chainId, nonce, delegate)
+			const withHighS = (authorization: ReturnType<typeof signAuthorization>) => ({ ...authorization, s: SECP256K1_ORDER - authorization.s, yParity: authorization.yParity === 'even' ? 'odd' as const : 'even' as const })
+			type StackedAuthorization = Parameters<typeof mockSignTransaction>[0] extends infer Transaction ? Transaction extends { readonly authorizationList: readonly (infer Authorization)[] } ? Authorization : never : never
+			// Authorizations as they reach the stack: website ones normalized (their authority recovered), or as given, like an imported stack's that keep metadata next to their signature.
+			const authorizationTransaction = async (from: bigint, nonce: bigint, authorizations: readonly ReturnType<typeof signAuthorization>[], transactionIdentifier: bigint) => stackedTransaction(from, nonce, await normalizeEip7702AuthorizationList(authorizations), transactionIdentifier)
+			const stackedTransaction = (from: bigint, nonce: bigint, authorizationList: readonly StackedAuthorization[], transactionIdentifier: bigint) => ({
+				signedTransaction: mockSignTransaction({ ...example7702Transaction, chainId: rpcNetwork.chainId, from, nonce, authorizationList }),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ type: '7702', authorizationList: [] }]},
+				transactionIdentifier,
+			} as const)
+			// One transaction per block, as the mocked eth_simulateV1 reply has one call per block.
+			const stackOf = (transactions: readonly Awaited<ReturnType<typeof authorizationTransaction>>[]) => transactions.map((transaction) => ({
+				stateOverrides: {},
+				transactions: [transaction],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const,
+				simulateWithZeroBaseFee: false,
+			}))
+			const authorityNonceAfter = async (transactions: readonly Awaited<ReturnType<typeof authorizationTransaction>>[]) => {
+				const simulationStateInput = stackOf(transactions)
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const fromState = await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(simulationState), authority)
+				const fromInput = await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), authority)
+				assert.equal(fromInput, fromState)
+				return fromState
+			}
+
+			test('nonce queries prepare once across multiple authorizing transactions and reuse an input context', async () => {
+				const input = stackOf(await Promise.all([0n, 1n, 2n].map(nonce => authorizationTransaction(sponsor, nonce, [signAuthorization(rpcNetwork.chainId, nonce)], 320n + nonce))))
+				const state = await createSimulationState(ethereum, undefined, input)
+				const prepare = spyOn(ethereum, 'prepareEthSimulateV1Input')
+				try {
+					assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(state), authority), 3n)
+					assert.equal(prepare.mock.calls.length, 1)
+					assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(input), authority), 3n)
+					assert.equal(prepare.mock.calls.length, 2)
+				} finally { prepare.mockRestore() }
+			})
+
+			test('oversized authorization quantities in stored simulation state do not break nonce accounting', async () => {
+				const signed = signAuthorization(rpcNetwork.chainId, 0n)
+				const valid = await authorizationTransaction(sponsor, 0n, [signed], 299n)
+				if (valid.signedTransaction.type !== '7702') throw new Error('Expected an authorization transaction')
+				const state = await createSimulationState(ethereum, undefined, stackOf([valid]))
+				if (state.success === false) throw new Error('simulation unexpectedly failed')
+				for (const authorization of [{ ...signed, chainId: 2n ** 256n }, { ...signed, nonce: 2n ** 256n }]) {
+					const imported = { ...valid, signedTransaction: { ...valid.signedTransaction, authorizationList: [authorization] } }
+					assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState({ ...state, simulationStateInput: stackOf([imported]) }), authority), 0n)
+				}
+			})
+
+			test('a valid sponsored authorization raises its authority nonce', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 200n)]), 1n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(0n, 0n)], 201n)]), 1n)
+			})
+
+			test('an authorization with a nonce other than the authority nonce raises nothing', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 3n)], 202n)]), 0n)
+			})
+
+			test('an authorization for another chain raises nothing', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(1n, 0n)], 203n)]), 0n)
+			})
+
+			test('a high-s authorization raises nothing even though its authority recovers', async () => {
+				const highS = withHighS(signAuthorization(rpcNetwork.chainId, 0n))
+				const [recovered] = await normalizeEip7702AuthorizationList([highS])
+				assert.equal(recovered?.authority, authority)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [highS], 204n)]), 0n)
+			})
+
+			test('an authorization reusing a nonce an earlier one consumed raises nothing', async () => {
+				const authorization = signAuthorization(rpcNetwork.chainId, 0n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [authorization, authorization], 205n)]), 1n)
+				assert.equal(await authorityNonceAfter([
+					await authorizationTransaction(sponsor, 0n, [authorization], 206n),
+					await authorizationTransaction(sponsor, 1n, [authorization], 207n),
+				]), 1n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [authorization, signAuthorization(rpcNetwork.chainId, 1n)], 208n)]), 2n)
+			})
+
+			test('a self-sponsored authorization needs the nonce after the sender raised it', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(authority, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 209n)]), 1n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(authority, 0n, [signAuthorization(rpcNetwork.chainId, 1n)], 210n)]), 2n)
+			})
+
+			test('an authority with contract code accepts no authorization, one with a delegation designator does', async () => {
+				try {
+					requestHandler.codeByAddress.set(authority, '0x6080604052')
+					assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 211n)]), 0n)
+					requestHandler.codeByAddress.set(authority, `0xef0100${ addressString(delegate).slice(2) }`)
+					assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 212n)]), 1n)
+				} finally {
+					requestHandler.codeByAddress.delete(authority)
+				}
+			})
+
+			test('authorization eligibility sees code overrides at each transaction prefix', async () => {
+				const transactions = [await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 310n), await authorizationTransaction(sponsor, 1n, [signAuthorization(rpcNetwork.chainId, 0n)], 311n)]
+				const input = stackOf(transactions).map((block, index) => ({ ...block, stateOverrides: { [addressString(authority)]: { code: index === 0 ? new Uint8Array([0x60, 0x00]) : new Uint8Array() } } }))
+				const state = await createSimulationState(ethereum, undefined, input)
+				if (!state.success) throw new Error('Simulation failed')
+				const queries: readonly { tag: bigint | 'latest' | 'pending', expected: bigint }[] = [{ tag: state.blockNumber + 1n, expected: 0n }, { tag: 'latest', expected: 1n }, { tag: 'pending', expected: 1n }]
+				for (const { tag, expected } of queries) {
+					assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(state), authority, tag), expected)
+					assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(input), authority, tag), expected)
+				}
+			})
+
+			test('nonce accounting propagates malformed prefix code views', async () => {
+				const input = stackOf([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 314n)])
+				const state = await createSimulationState(ethereum, undefined, input)
+				if (!state.success) throw new Error('Simulation failed')
+				requestHandler.malformedGetCodeReturn = true
+				try {
+					for (const read of [() => getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(state), authority), () => getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(input), authority)]) await assert.rejects(read, isAbiDataDecodeError)
+				} finally { requestHandler.malformedGetCodeReturn = false }
+			})
+
+			for (const before of [true, false]) test(`code changes ${ before ? 'before' : 'during' } the authorization transaction affect only later eligibility`, async () => {
+				const marker = new Uint8Array([0x60, 0x01])
+				const base = await authorizationTransaction(sponsor, 0n, !before ? [signAuthorization(rpcNetwork.chainId, 0n)] : [], 312n)
+				const changing = { ...base, signedTransaction: mockSignTransaction({ ...example7702Transaction, chainId: rpcNetwork.chainId, from: sponsor, nonce: 0n, authorizationList: base.signedTransaction.type === '7702' ? base.signedTransaction.authorizationList : [], input: marker }) }
+				requestHandler.codeChangesByInput.set(dataStringWith0xStart(marker), { address: authority, code: '0x6000' })
+				try {
+					const transactions = before ? [changing, await authorizationTransaction(sponsor, 1n, [signAuthorization(rpcNetwork.chainId, 0n)], 313n)] : [changing]
+					assert.equal(await authorityNonceAfter(transactions), before ? 0n : 1n)
+					if (before) {
+						const [first] = stackOf(transactions)
+						if (first === undefined) throw new Error('Missing prefix block')
+						assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput([{ ...first, transactions }]), authority), 0n)
+					}
+				} finally { requestHandler.codeChangesByInput.clear() }
+			})
+
+			test('a mock-signed authorization (r = s = 0) whose metadata names the account raises nothing', async () => {
+				const mockSigned = stackedTransaction(sponsor, 0n, [{ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority }], 213n)
+				const [authorization] = mockSigned.signedTransaction.type === '7702' ? mockSigned.signedTransaction.authorizationList : []
+				assert.deepEqual([authorization?.r, authorization?.s, authorization?.authority], [0n, 0n, authority])
+				assert.equal(await authorityNonceAfter([mockSigned]), 0n)
+			})
+
+			test('an imported authorization counts for the account its signature recovers, not the one its metadata names', async () => {
+				const otherSigner = signTestAuthorization(rpcNetwork.chainId, 0n, delegate, '0x000000000000000000000000000000000000000000000000000000000000cafe')
+				const otherSignerAddress = getNodeRecoveredEip7702Authority(otherSigner)
+				if (otherSignerAddress === undefined || otherSignerAddress === authority) throw new Error('expected a second signer')
+				const imported = stackedTransaction(sponsor, 0n, [{ ...otherSigner, authority }], 214n)
+				assert.equal(await authorityNonceAfter([imported]), 0n)
+				const simulationState = await createSimulationState(ethereum, undefined, stackOf([imported]))
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(simulationState), otherSignerAddress), 1n)
+			})
+		})
+
+		describe('EIP-7702 nonce fold', () => {
+			const nonceAfter = (authorization: Eip7702Authorization, initialNonce = 0n, getCode: (address: bigint) => Promise<Uint8Array | undefined> = async () => new Uint8Array()) => getAccountNonceAfterTransactions({ address: testAuthority, chainId: rpcNetwork.chainId, initialNonce, transactions: [{ sender: undefined, authorizationList: [authorization] }], getCode })
+			const delegate = 0x00000000000000000000000000000000000d1e9an
+
+			test('the nonce must be below 2**64 - 1', async () => {
+				assert.equal(await nonceAfter(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 2n, delegate), 2n ** 64n - 2n), 2n ** 64n - 1n)
+				assert.equal(await nonceAfter(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 1n, delegate), 2n ** 64n - 1n), 2n ** 64n - 1n)
+			})
+
+			test('the chain ID must be 0 or this chain', async () => {
+				assert.equal(await nonceAfter(signTestAuthorization(0n, 0n, delegate)), 1n)
+				assert.equal(await nonceAfter(signTestAuthorization(rpcNetwork.chainId, 0n, delegate)), 1n)
+				assert.equal(await nonceAfter(signTestAuthorization(rpcNetwork.chainId + 1n, 0n, delegate)), 0n)
+			})
+
+			test('s may be at most secp256k1n/2, and r and s must be nonzero', async () => {
+				// r = 1 is the x coordinate of a curve point, so these signatures recover some authority.
+				const authorization = { chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, r: 1n, yParity: 'even' as const }
+				assert.notEqual(await getNodeRecoveredEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER }), undefined)
+				assert.equal(await getNodeRecoveredEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER + 1n }), undefined)
+				assert.equal(getNodeRecoveredEip7702Authority({ ...authorization, s: 0n }), undefined)
+				assert.equal(getNodeRecoveredEip7702Authority({ ...authorization, r: 0n, s: 1n }), undefined)
+				assert.equal(getNodeRecoveredEip7702Authority({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority: testAuthority }), undefined)
+			})
+
+			test('node recovery agrees with signed authorization recovery for both parities and zero-valued fields', () => {
+				const parities = new Set<string>()
+				for (const chainId of [0n, rpcNetwork.chainId]) {
+					for (let nonce = 0n; nonce < 16n; nonce++) {
+						const signed = signTestAuthorization(chainId, nonce, 0n)
+						parities.add(signed.yParity)
+						assert.equal(getNodeRecoveredEip7702Authority(signed), testAuthority)
+					}
+				}
+				assert.equal(parities.size, 2)
+			})
+
+			test('the shared authorization hash matches the signing library at quantity boundaries', () => {
+				for (const chainId of [0n, rpcNetwork.chainId, 2n ** 256n - 1n]) {
+					for (const nonce of [0n, 2n ** 64n - 2n]) {
+						assert.equal(getEip7702AuthorizationSigningHash({ chainId, address: delegate, nonce }), dataStringWith0xStart(eip7702Authorization._getHash({ chainId, address: addressString(delegate), nonce })))
+					}
+				}
+			})
+
+			test('out-of-range imported authorization quantities are skipped before encoding', () => {
+				const signed = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				for (const chainId of [-1n, 2n ** 256n]) assert.equal(getNodeRecoveredEip7702Authority({ ...signed, chainId }), undefined)
+				for (const nonce of [-1n, 2n ** 64n - 1n, 2n ** 256n]) assert.equal(getNodeRecoveredEip7702Authority({ ...signed, nonce }), undefined)
+				for (const address of [-1n, 2n ** 160n]) assert.equal(getNodeRecoveredEip7702Authority({ ...signed, address }), undefined)
+			})
+
+
+			test('an in-range signature no public key recovers from is skipped, not thrown', () => {
+				const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+				const request = { chainId: rpcNetwork.chainId, address: addressString(delegate), nonce: 0n }
+				const toAuthorization = (r: bigint, s: bigint, yParity: 0 | 1) => ({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, r, s, yParity: yParity === 0 ? 'even' as const : 'odd' as const })
+				// r = 5 is no curve point's x coordinate.
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: 5n, s: 7n, yParity: 0 }))
+				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(5n, 7n, 0)), undefined)
+				// With R = G and s = e, recovery gives r^-1(eG - eG), the point at infinity. Flip parity for its low-s equivalent.
+				const messageHash = BigInt(dataStringWith0xStart(eip7702Authorization._getHash(request))) % SECP256K1_ORDER
+				const generatorX = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n
+				const s = messageHash <= SECP256K1_HALF_ORDER ? messageHash : SECP256K1_ORDER - messageHash
+				const lowSParity: 0 | 1 = messageHash <= SECP256K1_HALF_ORDER ? 0 : 1
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: generatorX, s, yParity: lowSParity }))
+				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(generatorX, s, lowSParity)), undefined)
+			})
+
+			test('only empty code or an exact delegation designator permits an authorization', async () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				const designator = new Uint8Array([0xef, 0x01, 0x00, ...bigintToUint8Array(delegate, 20)])
+				assert.equal(getDelegateFromCode(designator), delegate)
+				for (const code of [new Uint8Array(), designator]) {
+					assert.equal(await nonceAfter(authorization, 0n, async () => code), 1n)
+				}
+				for (const code of [new Uint8Array([0x60, 0x00]), designator.slice(0, 22), new Uint8Array([...designator, 0]), new Uint8Array([0xee, ...designator.slice(1)])]) {
+					assert.equal(getDelegateFromCode(code), undefined)
+					assert.equal(await nonceAfter(authorization, 0n, async () => code), 0n)
+				}
+			})
+
+			test('invalid authorizations never request authority state', async () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				const unexpectedRead = async () => { throw new Error('Unexpected authority state read') }
+				assert.equal(await nonceAfter({ ...authorization, chainId: rpcNetwork.chainId + 1n }, 0n, unexpectedRead), 0n)
+				assert.equal(await nonceAfter({ ...authorization, s: 0n }, 0n, unexpectedRead), 0n)
+				assert.equal(await nonceAfter({ ...authorization, nonce: 2n ** 256n }, 0n, unexpectedRead), 0n)
+				assert.equal(await getAccountNonceAfterTransactions({ address: testAuthority + 1n, chainId: rpcNetwork.chainId, initialNonce: 0n, transactions: [{ sender: undefined, authorizationList: [authorization] }], getCode: unexpectedRead }), 0n)
+			})
+
+			test('owns nonce advancement across senders, repeated tuples and transactions with one code read per transaction', async () => {
+				let reads = 0
+				const signed = (nonce: bigint) => signTestAuthorization(rpcNetwork.chainId, nonce, delegate)
+				assert.equal(await getAccountNonceAfterTransactions({
+					address: testAuthority, chainId: rpcNetwork.chainId, initialNonce: 0n,
+					transactions: [
+						{ sender: testAuthority, authorizationList: [signed(1n), signed(1n), signed(2n)] },
+						{ sender: undefined, authorizationList: [signed(3n)] },
+						{ sender: testAuthority, authorizationList: [signed(5n)] },
+					],
+					getCode: async address => { assert.equal(address, testAuthority); reads++; return new Uint8Array() },
+				}), 6n)
+				assert.equal(reads, 3)
+				const failure = new Error('Authority code unavailable')
+				await assert.rejects(nonceAfter(signed(0n), 0n, async () => { throw failure }), error => error === failure)
+			})
+
+			test('the authority must accept authorizations and have the authorization nonce', async () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				assert.equal(await nonceAfter(authorization, 0n, async () => new Uint8Array([0x60, 0x00])), 0n)
+				assert.equal(await nonceAfter(authorization, 0n, async () => undefined), 0n)
+				assert.equal(await nonceAfter(authorization, 1n), 1n)
+			})
 		})
 
 		test('recoverAddress should fail for mocked transaction', async () => {
@@ -1482,6 +1865,46 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.hasGetCodeOverride, true)
 		})
 
+		test('both code views return failure for context RPC errors and propagate unexpected preparation errors', async () => {
+			const input = createSimulationStateInput()
+			const state = await createSimulationState(ethereum, undefined, input)
+			try {
+				for (const read of [async () => await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(state), 0x1234n), async () => await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(input), 0x1234n)]) {
+					requestHandler.blockReadError = new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Block fetch failed' } })
+					assert.deepEqual(await read(), { statusCode: 'failure' })
+					requestHandler.blockReadError = new Error('Unexpected preparation failure')
+					await assert.rejects(read, requestHandler.blockReadError)
+				}
+			} finally { requestHandler.blockReadError = undefined }
+		})
+
+		test('prepared prefix selection preserves state overrides and rejects invalid or changed layouts', async () => {
+			const input = createSimulationStateInput()
+			const first = input[0]
+			if (first === undefined) throw new Error('Missing prefix fixture block')
+			const prepared = await ethereum.prepareEthSimulateV1Input([{ ...first, transactions: [] }, ...input], blockNumber, undefined)
+			const before = getPreparedSimulationPrefix(prepared, { transactionIndex: 0 })
+			assert.equal(before.prefix.length, 2)
+			assert.equal(before.prefix[1]?.calls.length, 0)
+			assert.deepEqual(before.prefix[1]?.stateOverrides, prepared.request.params[0].blockStateCalls[1]?.stateOverrides)
+			assert.deepEqual(getPreparedSimulationPrefix(undefined, { blockCount: 0 }).prefix, [])
+			assert.throws(() => getPreparedSimulationPrefix(prepared, { blockCount: -1 }), /out of bounds/u)
+			assert.throws(() => getPreparedSimulationPrefix(prepared, { transactionIndex: -1 }), /Invalid prepared transaction position/u)
+			assert.throws(() => getPreparedSimulationPrefix({ ...prepared, rpcBlocks: [] }, { transactionIndex: 0 }), /Inconsistent prepared simulation block layout/u)
+			const replaced = prepared.rpcBlocks.map(block => ({ ...block, transactions: block.transactions.map(transaction => ({ ...transaction })) }))
+			assert.throws(() => getPreparedSimulationPrefix({ ...prepared, rpcBlocks: replaced }, { transactionIndex: 0 }), /changed flat transaction order or identity/u)
+		})
+
+		test('code views do not query sender nonces recursively', async () => {
+			const input = createSimulationStateInput()
+			const state = await createSimulationState(ethereum, undefined, input)
+			if (!state.success) throw new Error('Simulation failed')
+			const reads = requestHandler.transactionCountReads
+			await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(input), 0x1234n)
+			await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(state), 0x1234n)
+			assert.equal(requestHandler.transactionCountReads, reads)
+		})
+
 		test('getSimulatedCodeFromInput propagates malformed code lookup output', async () => {
 			requestHandler.malformedGetCodeReturn = true
 			try {
@@ -2182,6 +2605,13 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
+				const prepared = await ethereum.prepareEthSimulateV1Input(splitSimulationStateInput, blockNumber, undefined)
+				const beforeSecond = getPreparedSimulationPrefix(prepared, { transactionIndex: 1 })
+				assert.equal(beforeSecond.prefix.length, 2)
+				assert.equal(beforeSecond.prefix[0]?.calls.length, 1)
+				assert.equal(beforeSecond.prefix[1]?.calls.length, 0)
+				assert.deepEqual(beforeSecond.previousBlockOverride, prepared.blockOverrides[1])
+
 				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
 				const secondBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 2n, true)
 				if (firstBlock === null || secondBlock === null) throw new Error('split execution block missing')
@@ -2556,4 +2986,96 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)
 				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
 			})
+
+	describe('blocks appended on top of a simulated signed message', () => {
+		const ecRecoverAddress = addressString(1n)
+		const signedMessage = {
+			website: { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined },
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			fakeSignedFor: exampleTransaction.from,
+			originalRequestParameters: { method: 'personal_sign', params: ['0x68656c6c6f', exampleTransaction.from] },
+			request: { method: 'personal_sign', params: ['0x68656c6c6f', exampleTransaction.from] },
+			simulationMode: true,
+			messageIdentifier: 1n,
+		} satisfies SignedMessageTransaction
+		const createSignedMessageSimulationStateInput = () => createSimulationStateInput().map((block) => ({ ...block, signedMessages: [signedMessage] }))
+		const callParams = { from: exampleTransaction.from, to: exampleTransaction.to, value: 0n, input: new Uint8Array(), maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+
+		// The appended block must carry the stack's ecrecover override itself, since eth_simulateV1 restores the ecrecover precompile at the start of every block.
+		const assertAppendedBlockKeepsStackEcRecoverOverride = () => {
+			const blockStateCalls = requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls
+			const stackEcRecoverOverride = blockStateCalls?.[0]?.stateOverrides?.[ecRecoverAddress]
+			assert.equal(blockStateCalls?.length, 2)
+			assert.equal(Object.values(stackEcRecoverOverride?.state ?? {}).includes(exampleTransaction.from), true)
+			assert.deepEqual(blockStateCalls?.at(-1)?.stateOverrides?.[ecRecoverAddress], stackEcRecoverOverride)
+		}
+
+		test('eth_call', async () => {
+			const callResult = await simulatedCallFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), callParams)
+			if ('error' in callResult) throw new Error(`simulated call unexpectedly failed: ${ callResult.message }`)
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		test('public simulatedCall includes stack signatures without caller options', async () => {
+			const state = await createSimulationState(ethereum, undefined, createSignedMessageSimulationStateInput())
+			if (state.success === false) throw new Error('simulation unexpectedly failed')
+			const result = await simulatedCall(ethereum, undefined, toResolvedSimulationState(state), callParams, 'latest')
+			if ('error' in result) throw new Error('simulated call unexpectedly failed')
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		test('eth_estimateGas', async () => {
+			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), callParams)
+			if ('error' in estimateGas) throw new Error(`gas estimation unexpectedly failed: ${ estimateGas.error.message }`)
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		test('website eth_simulateV1', async () => {
+			await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), createDappEthSimulateV1Request())
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		const ecRecoverRelocationAddress = addressString(0x123456n)
+
+		test('website eth_simulateV1 overriding the ecrecover relocation address keeps its own override without an error', async () => {
+			const websiteStateOverrides = { [ecRecoverRelocationAddress]: { balance: 5n } }
+			const request = createDappEthSimulateV1Request()
+			const [websiteBlock] = request.params[0].blockStateCalls
+			if (websiteBlock === undefined) throw new Error('missing website block')
+			const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), { ...request, params: [{ ...request.params[0], blockStateCalls: [{ ...websiteBlock, stateOverrides: websiteStateOverrides }] }, 'latest'] })
+
+			assert.equal(result.length, 1)
+			assert.deepEqual(requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides, websiteStateOverrides)
+		})
+
+		test('website eth_simulateV1 overriding ecrecover keeps the explicit code', async () => {
+			const stateOverrides = { [ecRecoverAddress]: { code: new Uint8Array([0x00]) } }
+			const request = createDappEthSimulateV1Request()
+			const [block] = request.params[0].blockStateCalls
+			if (block === undefined) throw new Error('missing website block')
+			await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), { ...request, params: [{ ...request.params[0], blockStateCalls: [{ ...block, stateOverrides }] }, 'latest'] })
+			assert.deepEqual(requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides, stateOverrides)
+		})
+
+		test('getSimulatedCode adds only its code-reader override on top of a signed message', async () => {
+			const simulationState = await createSimulationState(ethereum, undefined, createSignedMessageSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(simulationState), 0x1234n)
+
+			const lastBlockOverrides = requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides
+			// The shared code probe also resets its mock sender nonce. Neither override installs simulated signatures.
+			assert.deepEqual(lastBlockOverrides, {
+				[addressString(0x1ce438391307f908756fefe0fe220c0f0d51508an)]: { code: getCodeByteCode() },
+				[addressString(MOCK_ADDRESS)]: { nonce: 0n },
+			})
+		})
+
+		test('eth_getStorageAt of the ecrecover relocation address does not add the signed-message override', async () => {
+			const storageValue = await getSimulatedStorageAtFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), 0x123456n, 0n)
+
+			assert.equal(storageValue, 0n)
+			const lastBlockOverrides = requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides
+			assert.deepEqual(Object.keys(lastBlockOverrides ?? {}), [ecRecoverRelocationAddress])
+		})
+	})
 		})

@@ -1,6 +1,6 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { getRpcNetworkChange, getRpcChangeRoute, isSignerOnlyNetwork } from '../../app/ts/utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, getRpcChangeRoute, isSignerOnlyNetwork, resolveRpcNetworkAfterListChange } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 
 const network: RpcNetwork = { chainId: 1n, httpsRpc: 'https://rpc.example', name: 'Network', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -34,4 +34,39 @@ for (const simulationMode of [true, false]) test(`RPC routing uses one policy fo
 	assert.equal(getRpcChangeRoute(network, { ...network, chainId: 2n }, simulationMode), simulationMode ? 'local' : 'wallet')
 	const signerOnly: RpcNetwork = { chainId: 2n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 	assert.equal(getRpcChangeRoute(network, signerOnly, simulationMode), simulationMode ? 'local' : 'wallet')
+})
+
+
+test('RPC list selection prefers exact identity before endpoint metadata or the chain primary', () => {
+	const peer = { ...network, name: 'Peer', primary: true }
+	const exact = { ...network, primary: false, minimized: true }
+	assert.equal(resolveRpcNetworkAfterListChange(network, [network], [peer, exact]), exact)
+	assert.equal(resolveRpcNetworkAfterListChange(network, [network], [peer]), peer)
+})
+
+test('RPC list metadata edits prefer the replacement over an unchanged endpoint alias', () => {
+	const alias = { ...network, name: 'Existing alias' }
+	const edited = { ...network, name: 'Edited selection', currencyTicker: 'NEW' }
+	assert.equal(resolveRpcNetworkAfterListChange(network, [alias, network], [alias, edited]), edited)
+})
+
+test('RPC list selection uses the chain primary, then its first entry, and never another chain', () => {
+	const first = { ...network, name: 'First', httpsRpc: 'https://first.example', primary: false }
+	const primary = { ...network, name: 'Primary', httpsRpc: 'https://primary.example' }
+	const otherChain = { ...network, chainId: 2n }
+	assert.equal(resolveRpcNetworkAfterListChange(network, [network], [otherChain, first, primary]), primary)
+	assert.equal(resolveRpcNetworkAfterListChange(network, [network], [otherChain, first]), first)
+	assert.equal(resolveRpcNetworkAfterListChange(network, [network], [otherChain]), undefined)
+})
+
+test('RPC list edits preserve imported/custom selections absent from the previous list', () => {
+	const imported = { ...network, name: 'Imported', httpsRpc: 'https://imported.example' }
+	const alias = { ...imported, name: 'Same endpoint with different metadata' }
+	assert.equal(resolveRpcNetworkAfterListChange(imported, [network], [alias, network]), undefined)
+	assert.equal(resolveRpcNetworkAfterListChange(imported, [network], [network]), undefined)
+})
+
+test('RPC list edits never promote a signer-only selection to a configured endpoint', () => {
+	const signerOnly: RpcNetwork = { name: 'Signer-only', chainId: network.chainId, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+	assert.equal(resolveRpcNetworkAfterListChange(signerOnly, [network], [network]), undefined)
 })

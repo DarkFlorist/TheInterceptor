@@ -13,6 +13,7 @@ import { mockSignTransaction } from '../simulation/services/simulationTransactio
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
+import { createLiveProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
@@ -28,7 +29,7 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPopupVisualisationState, getPopupVisualisationStateWithRevision, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -408,37 +409,41 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
-	return await updatePopupVisualisationWithCallBack(async (prevState) => {
-		if (prevState.simulationState.kind === 'passthrough') return prevState
-		if (prevState.simulationState.value.success === false) return prevState
-		try {
-			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-				prevState.simulationState.value.simulatedBlocks, async (block) =>
-					promiseAllMapAbortSafe(block.simulatedTransactions,
-						async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, identifyAddressWith(ethereum, requestAbortController))
-					)
+type SimulationMetadataDependencies = {
+	readonly getMetadata?: typeof getMetadataForSimulation
+}
+
+export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined, dependencies: SimulationMetadataDependencies = {}) => {
+	const { visualisation: prevState, revision: capturedRevision } = await getPopupVisualisationStateWithRevision()
+	if (prevState.simulationState.kind === 'passthrough' || prevState.simulationState.value.success === false) return prevState
+	// Metadata can require remote reads; leave the storage lock available for local invalidation.
+	let metadata: Awaited<ReturnType<typeof getMetadataForSimulation>>
+	try {
+		const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+			prevState.simulationState.value.simulatedBlocks, async (block) =>
+				promiseAllMapAbortSafe(block.simulatedTransactions,
+					async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, identifyAddressWith(ethereum, requestAbortController))
 				)
 			)
-			const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-				prevState.simulationState.value.simulatedBlocks, async (block) => {
-					const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
-					return promiseAllMapAbortSafe(transactions, (transaction) =>
-						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, identifyAddressWith(ethereum, requestAbortController))
-					)
-				}
-			))
-			const events = (await eventsForEachBlockAndTransactionPromise).flat()
-			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
+		)
+		const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+			prevState.simulationState.value.simulatedBlocks, async (block) => {
+				const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
+				return promiseAllMapAbortSafe(transactions, (transaction) =>
+					parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, identifyAddressWith(ethereum, requestAbortController))
+				)
+			}
+		))
+		const events = (await eventsForEachBlockAndTransactionPromise).flat()
+		const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-			const metadata = await getMetadataForSimulation(prevState.simulationState.value, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
-			return { ...prevState, ...metadata }
-		} catch (error) {
-			if (isExpectedInfrastructureError(error)) return prevState
-			await reportUnexpectedError(error)
-			return prevState
-		}
-	})
+		metadata = await (dependencies.getMetadata ?? getMetadataForSimulation)(prevState.simulationState.value, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
+	} catch (error) {
+		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
+		return await getPopupVisualisationState()
+	}
+	// Any write since the read advances the revision, including progress and results stored under the same simulation ID.
+	return await updatePopupVisualisationWithCallBack(async (current, currentRevision) => currentRevision === capturedRevision ? { ...current, ...metadata } : undefined)
 }
 
 // Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
@@ -573,7 +578,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController, eventsForTransactionPromise)
+				return await runProtectorsForTransaction(transaction.transaction, { chainReads: createLiveProtectorChainReads(ethereum, requestAbortController, slicedSimulationState), connectedChainId: ethereum.getChainId(), identify: identifyAddressWith(ethereum, requestAbortController), eventsPromise: eventsForTransactionPromise })
 			})
 		}
 	)

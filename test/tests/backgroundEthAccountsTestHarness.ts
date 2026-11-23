@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { createSimulationServicesOwnerFromOperations, type SimulationServicesUpdate, type SimulationServicesUpdateObserver, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwnerForServices, type SimulationServicesUpdateObserver, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -241,14 +241,16 @@ export function createEthereumWithGetBlockCounter(
 		getCodeResult,
 		getStorageAtResult,
 		getBlockNumberResult,
+		rpcNetwork,
 	}: {
+		readonly rpcNetwork?: RpcEntry
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
 		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
+	const rpcEntry: RpcEntry = rpcNetwork ?? {
 		name: 'Test RPC',
 		chainId: 1n,
 		httpsRpc: 'http://127.0.0.1:8545',
@@ -269,7 +271,10 @@ export function createEthereumWithGetBlockCounter(
 			get(target, property, receiver) {
 				if (property === 'isBlockPolling') return () => blockPolling
 				if (property === 'setBlockPolling') return (enabled: boolean) => {
+					// Like the real client, a retired one refuses to poll again.
+					if (enabled && target.isRetired()) return false
 					blockPolling = enabled
+					return enabled
 				}
 				if (property === 'getBlock') {
 					return async () => {
@@ -300,11 +305,7 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesUpdate['reset'], observe: SimulationServicesUpdateObserver = async (services, outcome) => await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome)): SimulationServicesOwner {
-	let current = initial
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, observe: SimulationServicesUpdateObserver = async (services, outcome) => await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome)): SimulationServicesOwner {
 	// The clients supply their own liveness when the test constructs them; this owner only swaps which pair it hands out.
-	return createSimulationServicesOwnerFromOperations(() => current, (network) => {
-		current = reset === undefined ? current : reset(network)
-		return current
-	}, observe, async (error) => { await (await import('../../app/ts/utils/errors.js')).reportUnexpectedError(error, { code: 'simulation_services_refresh_failed' }) })
+	return createSimulationServicesOwnerForServices(initial.ethereum.getRpcEntry(), initial, (current, network) => reset === undefined ? current : reset(network), observe, async (error) => { await (await import('../../app/ts/utils/errors.js')).reportUnexpectedError(error, { code: 'simulation_services_refresh_failed' }) })
 }

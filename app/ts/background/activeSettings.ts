@@ -1,5 +1,5 @@
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
+import type { SimulationServicesOwner, SimulationNetworkReconciliation } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -7,7 +7,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { runSimulationSettingsTransition } from './simulationSettingsTransition.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './websiteConnectionEvents.js'
-import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate } from './accessManagement.js'
+import { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
@@ -16,7 +16,7 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { selectionNeedsRefresh } from '../utils/simulationSelection.js'
+import { selectionNeedsRefresh, selectionShowsStack } from '../utils/simulationSelection.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -49,7 +49,7 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
 	await clearSimulationStateFromConfig()
-	await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -71,50 +71,28 @@ type ActiveSettingsTransition = {
 	readonly signingPreference?: SigningAddressPreference
 }
 
-async function runActiveSettingsChange(
+export async function runActiveSettingsTransition(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	transition: ActiveSettingsTransition,
+	commit: () => Promise<boolean>,
+	options: { readonly signingPreference?: SigningAddressPreference, readonly promptForAccessesIfNeeded?: boolean, readonly refreshAlways?: boolean, readonly updateNetworkMetadata?: boolean } = {},
 ): Promise<void> {
-	const { change } = transition
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await runSimulationSettingsTransition(simulationServicesOwner, async (servicesUpdate) => {
-			if (transition.simulationSignerSelection !== undefined) {
-				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
-				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
-			}
-			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 			const previousSettings = await getSettings()
-
-			if (change.simulationMode) {
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			} else {
-				if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
-				const selectsSafe = change.signingAddressSelection === 'safe'
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-					...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			}
+			if (!await commit()) return
 
 			const updatedSettings = await getSettings()
-			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+			const { chainChanged: rpcChainChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+			let networkOutcome: SimulationNetworkReconciliation = 'unchanged'
 			try {
 				try {
 					// The preference belongs to the committed selection, even if later provider preparation fails.
-					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
-					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
-					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
-						servicesUpdate.reset(change.rpcNetwork)
-					}
+					if (options.signingPreference !== undefined) await rememberSigningAddressSelection(options.signingPreference)
+					// A replacement, or its failure, is published by the services update's observer after this transition releases its lock.
+					networkOutcome = servicesUpdate.ensureNetwork(updatedSettings.activeRpcNetwork, { updateMetadata: options.updateNetworkMetadata })
 					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
 				} finally {
 					// Publish committed settings even if installing their services fails.
@@ -130,18 +108,49 @@ async function runActiveSettingsChange(
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
-			// The same rule by which a refresh queued for the previous selection steps aside, so the change publishes whatever that refresh no longer may.
-			if (selectionNeedsRefresh(previousSettings, updatedSettings)) {
+			// selectionNeedsRefresh is the same rule by which a refresh queued for the previous selection steps aside, so the change publishes whatever that refresh no longer may. A reconciled endpoint or a settings import also refreshes any selection that shows a stack.
+			const reconciliationNeedsRefresh = selectionShowsStack(updatedSettings) && (options.refreshAlways === true || networkOutcome !== 'unchanged')
+			if (selectionNeedsRefresh(previousSettings, updatedSettings) || reconciliationNeedsRefresh) {
 				servicesUpdate.requestRefresh()
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})
 	} finally {
-		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
+		// Complete committed access updates after releasing the transition lock, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
+			startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, accessUpdate, options.promptForAccessesIfNeeded ?? true)
 		}
 	}
+}
+
+async function runActiveSettingsChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: ActiveSettingsTransition) {
+	const { change } = transition
+	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+		if (transition.simulationSignerSelection !== undefined) {
+			const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
+			await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
+		}
+		if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
+
+		if (change.simulationMode) {
+			await changeSimulationMode({
+				simulationMode: change.simulationMode,
+				...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
+				...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+			})
+		} else {
+			if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
+			const selectsSafe = change.signingAddressSelection === 'safe'
+			await changeSimulationMode({
+				simulationMode: change.simulationMode,
+				...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+				...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
+				...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+			})
+		}
+
+		return true
+	}, { signingPreference: transition.signingPreference, promptForAccessesIfNeeded: change.promptForAccessesIfNeeded })
 }
 
 export async function changeActiveAddressAndChain(

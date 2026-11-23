@@ -401,7 +401,7 @@ test('stores the names of a metadata refresh on its run when another field of th
 	// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the stored run changes.
 	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const ethereumDerivingStoredRunAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
 	})
 
 	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumDerivingStoredRunAgainDuringLookup, confirmationSimulator.tokenPriceService, undefined))

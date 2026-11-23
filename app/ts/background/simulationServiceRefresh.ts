@@ -2,7 +2,7 @@ import type { SimulationServicesUpdateObserver } from '../simulation/serviceLife
 import { selectionShowsStack } from '../utils/simulationSelection.js'
 import { getSettings } from './settings.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
 
 // One policy for every owner replacement and selection refresh, after the complete update has settled.
 export const refreshAfterSimulationServicesUpdate: SimulationServicesUpdateObserver = async (services, outcome) => {
@@ -12,5 +12,7 @@ export const refreshAfterSimulationServicesUpdate: SimulationServicesUpdateObser
 		await publishFailedPopupVisualisation({ isCurrent: services.ethereum.isCurrent })
 		return
 	}
-	if (selectionShowsStack(await getSettings())) await queuePopupSimulationRefresh({ ...services, invalidateOldState: outcome.replacement === 'replaced' })
+	const settings = await getSettings()
+	// Checked again after the settings read because starting a background refresh invalidates synchronously, which would retire the refresh of services installed meanwhile. Settings transitions do not wait for RPC work; the background refresh publishes its updating state before this returns.
+	if (services.ethereum.isCurrent() && selectionShowsStack(settings)) await startPopupSimulationRefreshInBackground(services)
 }

@@ -1,11 +1,12 @@
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
-import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
+import { sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
 import { bytesFromHex, bytesFromHexOrBytes, ensureHex, isHexString, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
 import { encodeAbiParameters } from './ethereumPrimitiveCore.js'
 import { normalizeSignatureYParity } from './ethereumSignature.js'
 import { isRecord } from './runtimeTypeGuards.js'
+import { recoverEthereumPublicKey } from './ethereumRecoveryBackend.js'
 
 type TypedDataField = {
 	readonly name: string
@@ -178,7 +179,7 @@ export const privateKeyToAccount = (privateKey: Hex) => {
 	}
 }
 
-export const recoverAddress = async ({ hash, signature }: {
+type RecoverAddressParameters = {
 	readonly hash: Hex | Uint8Array
 	readonly signature: Hex | {
 		readonly r: Hex | bigint
@@ -186,7 +187,11 @@ export const recoverAddress = async ({ hash, signature }: {
 		readonly yParity?: number
 		readonly v?: bigint | number
 	}
-}): Promise<Hex> => {
+}
+
+type AddressRecoveryResult = { readonly success: true, readonly address: Hex } | { readonly success: false, readonly error: Error }
+
+const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): AddressRecoveryResult => {
 	const digest = bytesFromHexOrBytes(hash)
 	const normalizedSignature = typeof signature === 'string'
 		? signatureToParts(signature)
@@ -195,8 +200,21 @@ export const recoverAddress = async ({ hash, signature }: {
 			s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
 			yParity: normalizeSignatureYParity(signature),
 		}
-	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
-	return ensureHex(addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)), 'recovered address')
+	const result = recoverEthereumPublicKey(digest, normalizedSignature)
+	if (!result.success) return result
+	return { success: true, address: ensureHex(addr.fromPublicKey(result.publicKey), 'recovered address') }
+}
+
+// Expected curve-recovery failure is data for callers modeling node-skipped signatures; malformed parameters and unexpected failures still throw.
+export const tryRecoverAddress = (parameters: RecoverAddressParameters): Hex | undefined => {
+	const result = recoverAddressResult(parameters)
+	return result.success ? result.address : undefined
+}
+
+export const recoverAddress = async (parameters: RecoverAddressParameters): Promise<Hex> => {
+	const result = recoverAddressResult(parameters)
+	if (!result.success) throw result.error
+	return result.address
 }
 
 const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: bigint, readonly yParity: number } => {

@@ -161,7 +161,7 @@ test('simulation input building and orchestration use shared stack and selection
 	assert.match(simulationInputBuildingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
 	assert.match(simulationUpdatingSource, /buildSimulationStateInput\(selection, /u)
 	assert.match(activeSettingsSource, /from '\.\.\/utils\/simulationSelection\.js'/u)
-	assert.match(activeSettingsSource, /if \(selectionNeedsRefresh\(previousSettings, updatedSettings\)\)/u)
+	assert.match(activeSettingsSource, /if \(selectionNeedsRefresh\(previousSettings, updatedSettings\) \|\| reconciliationNeedsRefresh\)/u)
 	assert.doesNotMatch(activeSettingsSource, /activeStackContextsEqual/u)
 	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
 	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
@@ -234,5 +234,6 @@ test('whether services are still installed is a capability of each client, not a
 	assert.doesNotMatch(serviceLifecycleSource, /new WeakMap|new WeakSet|new Map\(|installingOwners|recordInstalledServices|simulationServicesAreCurrent/u)
 	assert.match(ethereumClientServiceSource, /rpcEntry: RpcEntry, liveness: ClientLiveness\)/u)
 	assert.match(popupVisualisationUpdaterSource, /&& ethereum\.isCurrent\(\)/u)
-	assert.doesNotMatch(popupVisualisationUpdaterSource, /from '\.\.\/simulation\/serviceLifecycle\.js'/u)
+	// Only the services pair type may come from the lifecycle module; the updater asks each client, never the owner.
+	assert.doesNotMatch(popupVisualisationUpdaterSource, /^import (?!type )[^\n]*from '\.\.\/simulation\/serviceLifecycle\.js'/mu)
 })

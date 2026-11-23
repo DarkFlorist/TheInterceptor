@@ -627,6 +627,36 @@ describe('TransactionImportanceBlock insufficient balance errors', () => {
 	})
 })
 
+describe('TransactionImportanceBlock unknown token balances', () => {
+	const createTokenTransfer = (senderBalanceAfter: bigint | undefined) => createProxyPaymentTransaction({
+		to: recipientEntry,
+		value: 0n,
+		events: [createTransferEvent({ from: senderEntry, to: recipientEntry, amount: 3n * eth, token: erc20TokenEntry })],
+		tokenBalancesAfter: [{ token: erc20TokenEntry.address, tokenId: undefined, owner: senderEntry.address, balance: senderBalanceAfter }],
+	})
+
+	test('shows the transfer without a balance instead of a zero balance', async () => {
+		const dom = await renderImportanceBlock(createTokenTransfer(undefined), [senderEntry, recipientEntry, erc20TokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('3MOCK'), true)
+		assert.equal(text.includes('Before:'), false)
+		assert.equal(text.includes('After:'), false)
+
+		dom.restore()
+	})
+
+	test('shows the balance when it is known, even when it is zero', async () => {
+		const dom = await renderImportanceBlock(createTokenTransfer(0n), [senderEntry, recipientEntry, erc20TokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('Before:3MOCK'), true)
+		assert.equal(text.includes('After:0MOCK'), true)
+
+		dom.restore()
+	})
+})
+
 describe('TransactionImportanceBlock contract deployment', () => {
 	test('renders the created contract using its address book entry', async () => {
 		const transaction = createContractDeploymentTransaction()

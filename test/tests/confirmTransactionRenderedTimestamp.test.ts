@@ -142,6 +142,7 @@ function makeStoredSignatureRequest() {
 	const signer = { type: 'contact' as const, name: 'Signer', address: activeAddress, entrySource: 'User' as const, chainId: 1n }
 	return {
 		type: 'SignableMessage' as const,
+		instanceId: 'stored signature fixture',
 		popupOrTabId: { type: 'popup' as const, id: 1 },
 		originalRequestParameters,
 		simulationMode: false,
@@ -220,6 +221,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 		simulationMode: true,
 		activeAddress,
 		created,
+		instanceId: 'failed pending transaction',
 		transactionIdentifier,
 		transactionToSimulate,
 		website,
@@ -1276,7 +1278,7 @@ describe('ConfirmTransaction', () => {
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
-		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } = await import('../../app/ts/background/storageVariables.js')
+		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack, updatePendingTransactionOrMessageInstance } = await import('../../app/ts/background/storageVariables.js')
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const reviewed = makeSimulatedPendingTransaction(0n, revertedOutcome)
 		const refreshed = makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } })
@@ -1309,7 +1311,7 @@ describe('ConfirmTransaction', () => {
 		await windowRequested.promise
 
 		// A new block re-simulates the request while the approval still waits for its window.
-		await updatePendingTransactionOrMessage(reviewed.uniqueRequestIdentifier, async (pending) => ({ ...pending, popupVisualisation: refreshed.popupVisualisation }))
+		await updatePendingTransactionOrMessageInstance(reviewed, async (pending) => ({ ...pending, popupVisualisation: refreshed.popupVisualisation }))
 		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
 		windowReleased.resolve()
 		const { accept, resolution } = await acceptReachedBackground.promise

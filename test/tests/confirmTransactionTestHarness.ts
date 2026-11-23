@@ -57,6 +57,7 @@ export function createBrowserMock() {
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
 	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
 	let tabUpdateHandler: ((tabId: number) => Promise<void>) | undefined
+	let windowGetHandler: ((windowId: number) => Promise<void>) | undefined
 	let windowRemoveHandler: ((windowId: number) => Promise<void>) | undefined
 	let windowCreateHandler: (() => Promise<void>) | undefined
 	let runtimeSendMessageHandler: ((message: RuntimeMessage) => Promise<void>) | undefined
@@ -122,6 +123,7 @@ export function createBrowserMock() {
 		},
 		windows: {
 			async get(windowId: number) {
+				await windowGetHandler?.(windowId)
 				if (!liveWindowIds.has(windowId)) throw new Error(`No window with id: ${ windowId }`)
 				return { id: windowId }
 			},
@@ -155,9 +157,12 @@ export function createBrowserMock() {
 			async updateSessionRules() { return undefined },
 		},
 	}
-	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'location', { value: { origin: '' }, configurable: true, writable: true })
+	const installGlobals = () => {
+		Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
+		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+		Object.defineProperty(globalThis, 'location', { value: { origin: '' }, configurable: true, writable: true })
+	}
+	installGlobals()
 
 	return {
 		sentMessages,
@@ -175,10 +180,13 @@ export function createBrowserMock() {
 		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
 		setTabUpdateHandler(handler: typeof tabUpdateHandler) { tabUpdateHandler = handler },
+		setWindowGetHandler(handler: typeof windowGetHandler) { windowGetHandler = handler },
 		setWindowRemoveHandler(handler: typeof windowRemoveHandler) { windowRemoveHandler = handler },
 		setWindowCreateHandler(handler: typeof windowCreateHandler) { windowCreateHandler = handler },
 		setRuntimeSendMessageHandler(handler: typeof runtimeSendMessageHandler) { runtimeSendMessageHandler = handler },
 		reset() {
+			// Other test files install their own browser; restore this harness before seeding or observing its storage.
+			installGlobals()
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
 			browser.runtime.lastError = undefined
@@ -189,6 +197,7 @@ export function createBrowserMock() {
 			storageGetHandler = undefined
 			storageSetHandler = undefined
 			tabUpdateHandler = undefined
+			windowGetHandler = undefined
 			windowRemoveHandler = undefined
 			windowCreateHandler = undefined
 			runtimeSendMessageHandler = undefined
@@ -252,9 +261,13 @@ export async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
-		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		changeSimulationMode: settings.changeSimulationMode,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
+		popupReadyAndListening: popupMessageHandlers.popupReadyAndListening,
+		forceSetGasLimitForTransaction: popupMessageHandlers.forceSetGasLimitForTransaction,
+		removeTransactionOrSignedMessage: popupMessageHandlers.removeTransactionOrSignedMessage,
+		simulateGovernanceContractExecutionOnPass: popupMessageHandlers.simulateGovernanceContractExecutionOnPass,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
@@ -286,7 +299,14 @@ export async function loadModules() {
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
+		// Test setup: changes the stored pending request under this id, whatever its approval status.
+		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof storageVariables.updatePendingTransactionOrMessageInstance>[1]) => {
+			const stored = (await storageVariables.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
+				&& pending.uniqueRequestIdentifier.requestSocket.tabId === uniqueRequestIdentifier.requestSocket.tabId
+				&& pending.uniqueRequestIdentifier.requestSocket.connectionName === uniqueRequestIdentifier.requestSocket.connectionName)
+			if (stored === undefined) throw new Error('No stored pending request to update')
+			await storageVariables.updatePendingTransactionOrMessageInstance(stored, update)
+		},
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
@@ -662,6 +682,7 @@ export const pendingTransaction = {
 		simulationMode: true,
 		activeAddress,
 		created,
+		instanceId: 'harness pending transaction',
 		transactionIdentifier: 1n,
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },

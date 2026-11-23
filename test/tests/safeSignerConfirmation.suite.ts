@@ -371,7 +371,7 @@ test('does not overwrite a request forwarded while its Safe signer refresh is in
 	try {
 		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => ({
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (current) => ({
 			...current,
 			approvalStatus: { status: 'WaitingForSigner' as const },
 		}))
@@ -437,7 +437,7 @@ test('does not overwrite a newer Safe proposal while signer refresh is in flight
 	try {
 		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction' || current.safeFlow.kind !== 'proposal' || current.safeFlow.state !== 'created'
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction' || current.safeFlow.kind !== 'proposal' || current.safeFlow.state !== 'created'
 			? current
 			: {
 				...current,
@@ -506,7 +506,7 @@ test('does not overwrite an edited Safe proposal request while signer refresh is
 	try {
 		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction'
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction'
 			|| current.originalRequestParameters.method !== 'eth_sendTransaction'
 			? current
 			: {
@@ -662,14 +662,15 @@ test('refreshes the selected signer and uses services installed during the walle
 	const accountRequestEntered = createDeferredValue<void>()
 	const releaseAccountReply = createDeferredValue<void>()
 	let retiredClientRequests = 0
+	const retiredNetwork = { ...fakeRpcNetwork, httpsRpc: 'https://retired.example' }
 	const retiredEthereum = new modules.EthereumClientService({
-		rpcUrl: fakeRpcNetwork.httpsRpc,
+		rpcUrl: retiredNetwork.httpsRpc,
 		clearCache() { return undefined },
 		async jsonRpcRequest() {
 			retiredClientRequests++
 			throw new Error('Confirmation used services captured before the wallet refresh')
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
+	}, async () => undefined, async () => undefined, retiredNetwork, alwaysLive)
 	const owner = createTestSimulationServicesOwner({
 		ethereum: retiredEthereum,
 		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
@@ -731,7 +732,7 @@ test('refreshes the selected signer and uses services installed during the walle
 
 	const confirmation = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation())
 	await accountRequestEntered.promise
-	await owner.update(async ({ reset }) => reset(fakeRpcNetwork))
+	await owner.update(async ({ ensureNetwork }) => ensureNetwork(fakeRpcNetwork))
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply

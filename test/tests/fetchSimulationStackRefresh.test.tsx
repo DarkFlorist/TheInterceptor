@@ -178,7 +178,9 @@ const requestHandler = {
 }
 const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
-const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
+const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => {
+	throw new Error('Unexpected RPC replacement in the fixed-network simulation refresh fixture')
+})
 
 // Requests that reach the real background dispatcher. The live consumer's cached home-data requests neither simulate nor publish simulation state, so they stay unanswered here.
 const BACKGROUND_SIMULATION_REQUESTS = new Set(['popup_readyAndListening', 'popup_requestCompleteVisualizedSimulation', 'popup_requestSimulationMetadata', 'popup_refreshSimulation'])
@@ -262,6 +264,7 @@ async function setUpSimulationModeWithOpenConsumer() {
 
 describe('FetchSimulationStack simulation refreshes', () => {
 	test('opening next to a live simulation consumer simulates once and publishes once', async () => {
+		assert.equal(await simulationServicesOwner.update(async ({ ensureNetwork }) => ensureNetwork(rpcNetwork)), 'unchanged')
 		const harness = await setUpSimulationModeWithOpenConsumer()
 		try {
 			await harness.openFetchSimulationStack()

@@ -8,8 +8,9 @@ import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimula
 import { Future } from '../../app/ts/utils/future.js'
 import { buildSimulationInput, captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { createSimulationServicesOwnerFromOperations, type SimulationServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
-import { queuePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+import { createSimulationServicesOwnerForServices, type SimulationServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { runPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 // These races append an accepted transaction, so provide a successful reviewed result rather than the shared fixture's empty visualisation.
@@ -21,7 +22,7 @@ async function createAcceptForRefreshRace() {
 // Both entry points: a direct refresh captures its snapshot itself, the interactive queue supplies one captured before it runs.
 const olderRefreshEntryPoints = [
 	{ name: 'an older popup refresh', start: async (services: SimulationServices) => await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { skipIfUnchanged: true }) },
-	{ name: 'an older queued popup refresh', start: async (services: SimulationServices) => await queuePopupSimulationRefresh(services) },
+	{ name: 'an older queued popup refresh', start: async (services: SimulationServices) => await runPopupSimulationRefresh(services) },
 ]
 
 for (const entryPoint of olderRefreshEntryPoints) test(`${ entryPoint.name } held in its unchanged-input check does not replace the refresh for a newer stack`, async () => {
@@ -199,7 +200,7 @@ function createNetworkSwitchFixture({ refreshReplacements = true } = {}) {
 	const otherEndpointServices: SimulationServices = { ethereum: otherEndpointEthereum, tokenPriceService: new modules.TokenPriceService(otherEndpointEthereum, 60_000) }
 	let currentServices = firstEndpointServices
 	const otherEndpointInstalled = new Future<void>()
-	const simulationServicesOwner: SimulationServicesOwner = createSimulationServicesOwnerFromOperations(() => currentServices, () => {
+	const simulationServicesOwner: SimulationServicesOwner = createSimulationServicesOwnerForServices(fakeRpcNetwork, firstEndpointServices, () => {
 		currentServices = otherEndpointServices
 		otherEndpointInstalled.resolve(undefined)
 		return currentServices
@@ -254,6 +255,8 @@ async function switchToOtherEndpointWithTransaction(fixture: ReturnType<typeof c
 		const switching = changeActiveAddressAndChain(fixture.simulationServicesOwner, new Map(), { simulationMode: true, rpcNetwork: otherEndpointNetwork })
 		await steps.whileSwitching?.()
 		await switching
+		// The switch's refresh starts after the transition settles and runs in the background, while the consumer is still open.
+		await waitForBackgroundTasks()
 	} finally {
 		restoreSendMessage()
 	}
@@ -355,7 +358,7 @@ const selectionChangesWithoutFollowUp = [
 		name: 'another endpoint',
 		apply: async (fixture: ReturnType<typeof createNetworkSwitchFixture>) => {
 			await modules.browserStorageLocalSet({ activeRpcNetwork: otherEndpointNetwork })
-			await fixture.simulationServicesOwner.update(async ({ reset }) => reset(otherEndpointNetwork))
+			await fixture.simulationServicesOwner.update(async ({ ensureNetwork }) => ensureNetwork(otherEndpointNetwork))
 		},
 	},
 	{ name: 'a signer-only network', apply: async () => { await modules.browserStorageLocalSet({ activeRpcNetwork: signerOnlyNetwork }) } },
@@ -366,7 +369,7 @@ const selectionChangesWithoutFollowUp = [
 async function startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture: ReturnType<typeof createNetworkSwitchFixture>) {
 	await storeVisualisationForAnotherBlock()
 	fixture.holdNextFirstEndpointBlockNumber()
-	const refresh = queuePopupSimulationRefresh(fixture.firstEndpointServices)
+	const refresh = runPopupSimulationRefresh(fixture.firstEndpointServices)
 	await fixture.firstEndpointReadsBlockNumber
 	return { refresh }
 }
@@ -417,7 +420,8 @@ test('a queue entry for a previously selected endpoint does not cancel the refre
 	try {
 		const { refresh: queueEntry } = await startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture)
 		await modules.browserStorageLocalSet({ activeRpcNetwork: otherEndpointNetwork })
-		const otherEndpointServices = await fixture.simulationServicesOwner.update(async ({ reset }) => reset(otherEndpointNetwork))
+		await fixture.simulationServicesOwner.update(async ({ ensureNetwork }) => ensureNetwork(otherEndpointNetwork))
+		const otherEndpointServices = fixture.simulationServicesOwner.getCurrent()
 		fixture.holdNextOtherEndpointSimulation()
 		const otherEndpointRefresh = updatePopupVisualisationIfNeeded(otherEndpointServices.ethereum, otherEndpointServices.tokenPriceService)
 		await fixture.otherEndpointSimulates
@@ -498,7 +502,7 @@ test('a queue entry publishes a stack edit made after it was queued, even when t
 		return await originalSendMessage(message)
 	}
 	try {
-		const queueEntry = queuePopupSimulationRefresh({ ethereum, tokenPriceService })
+		const queueEntry = runPopupSimulationRefresh({ ethereum, tokenPriceService })
 		await entryProbesConsumer
 		await modules.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, new Map(), await createAcceptForRefreshRace())
 		assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
@@ -514,14 +518,18 @@ test('a queue entry publishes a stack edit made after it was queued, even when t
 	assert.deepEqual(stored.simulationState.value.simulationStateInput.map((block) => block.transactions.length), [1])
 })
 
-// Replacing the RPC list installs the chain's primary entry without changing the selected network, so services and settings name different endpoints from then on.
+// Replacing an RPC list that held the selected entry with one whose primary entry for the chain is another endpoint reconciles the selection to that entry, and the transition installs its services.
 async function replaceRpcListWithOtherEndpointAsPrimary(fixture: ReturnType<typeof createNetworkSwitchFixture>) {
 	// Imported once the harness has installed the extension globals that their imports require.
 	const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers.js')
-	await setNewRpcList(fixture.simulationServicesOwner, { method: 'popup_set_rpc_list', data: [{ ...otherEndpointNetwork, primary: true }] })
+	const { getRpcList, setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	if (!(await getRpcList()).some((entry) => entry.httpsRpc === fakeRpcNetwork.httpsRpc)) await setRpcList([fakeRpcNetwork])
+	await setNewRpcList(fixture.simulationServicesOwner, new Map(), { method: 'popup_set_rpc_list', data: [{ ...otherEndpointNetwork, primary: true }] })
 }
 
 async function assertOtherEndpointPublishedTransaction() {
+	// Settings transitions start their refresh in the background.
+	await waitForBackgroundTasks()
 	const stored = await getPopupVisualisationState()
 	assert.equal(stored.simulationUpdatingState, 'done')
 	assert.equal(stored.simulationResultState, 'done')
@@ -531,14 +539,14 @@ async function assertOtherEndpointPublishedTransaction() {
 	assert.deepEqual(getPublications().at(-1)?.data, { visualizedSimulatorState: modules.serialize(CompleteVisualizedSimulation, stored) })
 }
 
-test('a popup refresh with the services installed by replacing the RPC list simulates and publishes while the selected network stays unchanged', async () => {
+test('a popup refresh with the services installed by replacing the RPC list simulates and publishes on the reconciled network', async () => {
 	const fixture = createNetworkSwitchFixture()
 	await acceptTransactionOnFirstEndpoint(fixture)
 	const restoreSendMessage = openVisualisationConsumer()
 	try {
 		await replaceRpcListWithOtherEndpointAsPrimary(fixture)
 		const { getSettings } = await import('../../app/ts/background/settings.js')
-		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, fakeRpcNetwork.httpsRpc)
+		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, otherEndpointNetwork.httpsRpc)
 		// The reset queues the refresh for the services it installed.
 		await assertOtherEndpointPublishedTransaction()
 		const services = fixture.simulationServicesOwner.getCurrent()
@@ -551,7 +559,7 @@ test('a popup refresh with the services installed by replacing the RPC list simu
 	}
 })
 
-// Every way the background replaces the installed services: replacing the RPC list, which keeps the selected network, and selecting another endpoint.
+// Every way the background replaces the installed services: replacing the RPC list, which reconciles the selected entry, and selecting another endpoint.
 const serviceResets = [
 	{ name: 'replacing the RPC list', apply: replaceRpcListWithOtherEndpointAsPrimary },
 	{
@@ -673,7 +681,7 @@ for (const replaceServices of [false, true]) test(`a refresh invalidated before 
 			if (parsed.success && parsed.value.simulationResultState === 'invalid') {
 				switched = true
 				await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined })
-				if (replaceServices) await fixture.simulationServicesOwner.update(async ({ reset }) => { reset(otherEndpointNetwork) })
+				if (replaceServices) await fixture.simulationServicesOwner.update(async ({ ensureNetwork }) => { ensureNetwork(otherEndpointNetwork) })
 			}
 		}
 		return await originalSend(message)
@@ -717,9 +725,9 @@ test('a failed observer queued behind execution cannot publish after its service
 		await blocked
 		const { refreshAfterSimulationServicesUpdate } = await import('../../app/ts/background/simulationServiceRefresh.js')
 		failure = refreshAfterSimulationServicesUpdate(fixture.firstEndpointServices, { status: 'failed', error: new Error('Old update failed'), replacement: 'failed' })
-		await fixture.simulationServicesOwner.update(async ({ reset }) => {
+		await fixture.simulationServicesOwner.update(async ({ ensureNetwork }) => {
 			await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined, activeRpcNetwork: otherEndpointNetwork })
-			reset(otherEndpointNetwork)
+			ensureNetwork(otherEndpointNetwork)
 		})
 		release.resolve(undefined)
 		await executing
@@ -743,12 +751,14 @@ for (const replaceServices of [false, true]) test(`a committed transition still 
 	try {
 		await updatePopupVisualisationIfNeeded(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { invalidateOldState: true })
 		const simulationsBefore = fixture.getFirstEndpointSimulations()
-		await assert.rejects(fixture.simulationServicesOwner.update(async ({ reset, requestRefresh }) => {
+		await assert.rejects(fixture.simulationServicesOwner.update(async ({ ensureNetwork, requestRefresh }) => {
 			await modules.updateInterceptorTransactionStack((stack) => ({ operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }, ...stack.operations] }))
-			if (replaceServices) reset(otherEndpointNetwork)
+			if (replaceServices) ensureNetwork(otherEndpointNetwork)
 			else requestRefresh()
 			throw notificationError
 		}), (error) => error === notificationError)
+		// The observer starts the refresh in the background, so the update settles before that refresh does.
+		await waitForBackgroundTasks()
 		const stored = await getPopupVisualisationState()
 		assert.equal(stored.simulationUpdatingState, 'done')
 		assert.equal(stored.simulationResultState, 'done')
