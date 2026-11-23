@@ -2,7 +2,8 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getHostWithPort } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { getActiveAddressesForAllTabs } from './backgroundUtils.js'
-import { getSettings, getWebsiteAccess } from './settings.js'
+import { getSettings } from './settings.js'
+import { getWebsiteAccess } from './websiteAccessStorage.js'
 
 const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabs = new Set<number>()
