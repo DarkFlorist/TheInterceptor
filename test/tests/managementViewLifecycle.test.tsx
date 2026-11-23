@@ -156,6 +156,7 @@ test('every management panel releases its runtime message listeners when it is h
 			const label = panelLabels[page]
 			assert.ok(label, `Missing tab label for ${ page }`)
 			await selectTab(label)
+			assert.doesNotMatch(dom.document.body.textContent ?? '', /could not be displayed/u, `${ label } rendered the error fallback instead of its panel`)
 			await selectTab('Home')
 			assert.equal(runtimeListeners.size, 0, `${ label } left runtime message listeners registered after it was hidden`)
 		}

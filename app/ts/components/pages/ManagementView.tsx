@@ -109,10 +109,12 @@ function ManagementPanelRenderError({ page, error, retry }: { page: ManagementPa
 // A failed panel retries on navigation, including another route within its page or reselecting its tab. Healthy panels retain their state across same-page navigation.
 function ManagementPanelErrorBoundary({ route, children }: { route: ManagementRoute, children: ComponentChildren }) {
 	const [error, resetError] = useErrorBoundary()
+	// Preact types the caught error as any and has used both undefined and null for "no error", so either means the panel is healthy.
+	const panelFailed = error !== undefined && error !== null
 	useEffect(() => {
-		if (error !== undefined) resetError()
+		if (panelFailed) resetError()
 	}, [route])
-	if (error !== undefined) return <ManagementPanelRenderError page = { route.page } error = { error } retry = { resetError } />
+	if (panelFailed) return <ManagementPanelRenderError page = { route.page } error = { error } retry = { resetError } />
 	return <>{ children }</>
 }
 
