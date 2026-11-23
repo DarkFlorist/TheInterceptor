@@ -99,17 +99,6 @@ export async function getStartupStorageValueOrDefault<Key extends keyof StartupS
 
 const { independentActiveSimulationAddress, activeSigningSafeAddress, ...startupStoragePartialCodecs } = startupStorageCodecs
 
-// Rich-mode legacy migration derives per-account funding from these settings without owning, or repairing, their storage keys.
-export async function getStoredActiveSimulationAddressAndNetwork() {
-	const { independentActiveSimulationAddress: rawActiveSimulationAddress, activeRpcNetwork: rawActiveRpcNetwork } = await browser.storage.local.get(['independentActiveSimulationAddress', 'activeRpcNetwork'])
-	const activeSimulationAddress = EthereumAddress.safeParse(rawActiveSimulationAddress)
-	const activeRpcNetwork = RpcNetwork.safeParse(rawActiveRpcNetwork)
-	return {
-		activeSimulationAddress: activeSimulationAddress.success ? activeSimulationAddress.value : undefined,
-		activeRpcNetwork: activeRpcNetwork.success ? activeRpcNetwork.value : undefined,
-	}
-}
-
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
 const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress', codec: typeof EthereumAddressOrMissing) => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: codec })

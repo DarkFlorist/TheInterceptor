@@ -3,7 +3,8 @@ import type { RichAccountBalance, RichModeState } from '../types/richMode.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { richTokenLayout } from '../utils/richModeDerivation.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
-import { browserStorageLocalSafeParse, getStoredActiveSimulationAddressAndNetwork } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParse } from '../utils/storageUtils.js'
+import { getStoredActiveSimulationAddress } from './settings.js'
 import { getUserAddressBookEntries } from './addressBookStorage.js'
 import { emptyRichModeState, richModeStateStorageWrite } from './richModeSettings.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
@@ -13,8 +14,7 @@ type LegacyRichModeValues = Partial<Record<typeof legacyKeys[number], unknown>>
 
 // Every address that can be made rich without first being added somewhere: the fixed rich list, the active simulation address and the address book's active addresses. Legacy token amounts applied to whichever of them was rich, so each gets them, rich now or not.
 async function getLegacyFundingCandidateAddresses(fixedAddresses: readonly bigint[]) {
-	const { activeSimulationAddress } = await getStoredActiveSimulationAddressAndNetwork()
-	const activeAddress = activeSimulationAddress ?? DEFAULT_ACTIVE_ADDRESSES[0]?.address
+	const activeAddress = await getStoredActiveSimulationAddress() ?? DEFAULT_ACTIVE_ADDRESSES[0]?.address
 	const addressBookActiveAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useAsActiveAddress === true).map((entry) => entry.address)
 	return [...new Set([...fixedAddresses, ...(activeAddress === undefined ? [] : [activeAddress]), ...addressBookActiveAddresses])]
 }

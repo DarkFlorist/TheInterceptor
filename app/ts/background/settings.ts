@@ -1,6 +1,6 @@
 import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
-import type { EthereumAddress } from '../types/wire-types.js'
+import { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
@@ -14,6 +14,13 @@ import type { SigningAddressPreference, SigningAddressPreferences } from '../typ
 import { getRichModeState } from './richModeSettings.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
+
+// The stored active simulation address, read-only: undefined when it is missing or does not parse. Unlike getSettings it never applies or persists the startup default, so migrations can read it without repairing settings storage.
+export async function getStoredActiveSimulationAddress() {
+	const { independentActiveSimulationAddress } = await browser.storage.local.get('independentActiveSimulationAddress')
+	const parsed = EthereumAddress.safeParse(independentActiveSimulationAddress)
+	return parsed.success ? parsed.value : undefined
+}
 
 export const networkPriceSources = {
 	uniswapV2Like: [
