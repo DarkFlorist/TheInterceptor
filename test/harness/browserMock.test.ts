@@ -366,3 +366,40 @@ describe('installBrowserMock', () => {
 		}
 	})
 })
+
+test('webRequest listener calls use the shared record and preserve listener membership', () => {
+	const mock = createBrowserMock()
+	const event = mock.browser.webRequest.onBeforeRequest
+	const listener = () => undefined
+	event.addListener(listener)
+	event.addListener(listener)
+	assert.deepEqual(mock.calls.webRequestListenerAdds, [listener, listener])
+	assert.equal(event.hasListener(listener), true)
+	event.removeListener(listener)
+	event.removeListener(listener)
+	assert.deepEqual(mock.calls.webRequestListenerRemovals, [listener, listener])
+	assert.equal(event.hasListeners(), false)
+})
+
+test('the storage removal hook defers changes while calls are recorded at invocation', async () => {
+	const paused = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const mock = createBrowserMock({
+		storage: { local: { held: 1 }, session: { immediate: 2 } },
+		handlers: { beforeStorageRemove: async (area, keys) => {
+			if (area !== 'local' || !keys.includes('held')) return
+			paused.resolve()
+			await release.promise
+		} },
+	})
+	const pending = mock.browser.storage.local.remove('held')
+	await paused.promise
+	assert.deepEqual(mock.calls.storageRemovals, [{ area: 'local', keys: ['held'] }])
+	assert.deepEqual(await mock.browser.storage.local.get('held'), { held: 1 })
+	await mock.browser.storage.session.remove(['immediate'])
+	assert.deepEqual(mock.readStorage('session'), {})
+	release.resolve()
+	await pending
+	assert.deepEqual(mock.readStorage(), {})
+	assert.deepEqual(mock.calls.storageRemovals, [{ area: 'local', keys: ['held'] }, { area: 'session', keys: ['immediate'] }])
+})

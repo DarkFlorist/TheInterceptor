@@ -1,3 +1,4 @@
+import { shouldReplaceConfirmationSimulation } from '../confirmationSimulationIdentity.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -46,7 +47,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { advanceReviewRevision, forgetReviewRevision, getReviewRevision, type ReviewedTransactionConfirmation } from '../confirmationReviewRevisions.js'
+import { advanceReviewRevisionIfCurrent, forgetReviewRevision, getReviewRevision, type ReviewedTransactionConfirmation } from '../confirmationReviewRevisions.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -125,28 +126,6 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 		})
 	}
 	if (pendingStateChanged) await updateConfirmTransactionView(ethereum, tokenPriceService)
-}
-
-type TimestampedPopupVisualisation = {
-	statusCode: 'success' | 'failed'
-	data: {
-		simulationStartedTimestamp: Date
-		simulationState: {
-			simulationConductedTimestamp: Date
-		}
-	}
-}
-
-const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
-
-const shouldReplacePopupVisualisation = (
-	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
-	nextPopupVisualisation: TimestampedPopupVisualisation,
-) => {
-	const currentTimestamp = currentPopupVisualisation === undefined ? undefined : getSimulationStartedTimestamp(currentPopupVisualisation)
-	const nextTimestamp = getSimulationStartedTimestamp(nextPopupVisualisation)
-	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
-	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
@@ -307,7 +286,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		if (data.action === 'accept' && getReviewRevision(websiteTabConnections, uniqueRequestIdentifier) !== data.reviewedRevision) return false
 		const outcome = await resolveClaimedPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 		if (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) === undefined) forgetReviewRevision(websiteTabConnections, uniqueRequestIdentifier)
-		else if (data.action === 'accept' && outcome === false) advanceReviewRevision(websiteTabConnections, uniqueRequestIdentifier, data.reviewedRevision)
+		else if (data.action === 'accept' && outcome === false) advanceReviewRevisionIfCurrent(websiteTabConnections, uniqueRequestIdentifier, data.reviewedRevision)
 		return outcome
 	})
 }
@@ -895,7 +874,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				if (transaction.type !== 'Transaction') return transaction
 				if (popupVisualisation === undefined) return transaction
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
-					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
+					if ('popupVisualisation' in transaction && !shouldReplaceConfirmationSimulation(transaction.popupVisualisation, popupVisualisation)) return transaction
 				}
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
