@@ -33,13 +33,15 @@ export type MockEvent<Args extends readonly unknown[], Result = void> = {
 	dispatch: (...args: Args) => Result[]
 }
 
-export function createMockEvent<Args extends readonly unknown[], Result = void>(): MockEvent<Args, Result> {
+export function createMockEvent<Args extends readonly unknown[], Result = void>(calls?: { readonly adds: ((...args: Args) => Result)[], readonly removals: ((...args: Args) => Result)[] }): MockEvent<Args, Result> {
 	const listeners: ((...args: Args) => Result)[] = []
 	return {
 		addListener: (listener) => {
+			calls?.adds.push(listener)
 			if (!listeners.includes(listener)) listeners.push(listener)
 		},
 		removeListener: (listener) => {
+			calls?.removals.push(listener)
 			const index = listeners.indexOf(listener)
 			if (index !== -1) listeners.splice(index, 1)
 		},
@@ -59,7 +61,7 @@ export type MockStorageArea = {
 
 const isKeyList = (keys: string | readonly string[] | Readonly<StorageItems>): keys is readonly string[] => Array.isArray(keys)
 
-function createMockStorageArea(initialItems: Readonly<StorageItems>, notifyGlobalListeners: (changes: StorageChanges) => void) {
+function createMockStorageArea(initialItems: Readonly<StorageItems>, notifyGlobalListeners: (changes: StorageChanges) => void, beforeRemove: (keys: readonly string[]) => void | Promise<void>) {
 	const items = new Map<string, unknown>(Object.entries(structuredClone(initialItems)))
 	const onChanged = createMockEvent<[changes: StorageChanges]>()
 	const notify = (changes: StorageChanges) => {
@@ -98,7 +100,11 @@ function createMockStorageArea(initialItems: Readonly<StorageItems>, notifyGloba
 			}
 			notify(structuredClone(changes))
 		},
-		remove: async (keys) => { removeItems(typeof keys === 'string' ? [keys] : keys) },
+		remove: async (keys) => {
+			const keysToRemove = typeof keys === 'string' ? [keys] : [...keys]
+			await beforeRemove(keysToRemove)
+			removeItems(keysToRemove)
+		},
 		clear: async () => { removeItems([...items.keys()]) },
 		onChanged,
 	}
@@ -204,7 +210,12 @@ export type ActionCall =
 	| { readonly api: ActionApiName, readonly method: 'setBadgeText', readonly details: browser.action._SetBadgeTextDetails }
 	| { readonly api: ActionApiName, readonly method: 'setBadgeBackgroundColor', readonly details: browser.action._SetBadgeBackgroundColorDetails }
 
+type WebRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => unknown
+
 export type BrowserMockCalls = {
+	readonly webRequestListenerAdds: WebRequestListener[]
+	readonly webRequestListenerRemovals: WebRequestListener[]
+	readonly storageRemovals: { readonly area: StorageAreaName, readonly keys: readonly string[] }[]
 	readonly runtimeSendMessage: unknown[]
 	readonly tabsSendMessage: { readonly tabId: number, readonly message: unknown }[]
 	readonly tabsCreate: browser.tabs._CreateCreateProperties[]
@@ -220,6 +231,8 @@ export type BrowserMockCalls = {
 }
 
 export type BrowserMockHandlers = {
+	// Runs before recorded storage removals take effect; tests can defer an operation without replacing API methods.
+	beforeStorageRemove: (area: StorageAreaName, keys: readonly string[]) => void | Promise<void>
 	// Produces the reply for browser.runtime.sendMessage; the default resolves undefined, like a message that no listener answered.
 	runtimeMessage: (message: unknown) => unknown
 	// Produces the reply for browser.tabs.sendMessage; the default rejects like Chrome when the tab has no listening content script.
@@ -246,11 +259,15 @@ export function createBrowserMock(options: BrowserMockOptions = {}) {
 	const extensionId = options.extensionId ?? 'interceptor-test-extension'
 	const manifestVersion = options.manifestVersion ?? 3
 	const handlers: BrowserMockHandlers = {
+		beforeStorageRemove: () => undefined,
 		runtimeMessage: () => undefined,
 		tabMessage: () => { throw noReceiverError() },
 		...options.handlers,
 	}
 	const calls: BrowserMockCalls = {
+		webRequestListenerAdds: [],
+		webRequestListenerRemovals: [],
+		storageRemovals: [],
 		runtimeSendMessage: [],
 		tabsSendMessage: [],
 		tabsCreate: [],
@@ -267,8 +284,12 @@ export function createBrowserMock(options: BrowserMockOptions = {}) {
 	const connections: MockPortPair[] = []
 
 	const storageOnChanged = createMockEvent<[changes: StorageChanges, areaName: StorageAreaName]>()
-	const localStorage = createMockStorageArea(options.storage?.local ?? {}, (changes) => { storageOnChanged.dispatch(changes, 'local') })
-	const sessionStorage = createMockStorageArea(options.storage?.session ?? {}, (changes) => { storageOnChanged.dispatch(changes, 'session') })
+	const beforeStorageRemove = async (area: StorageAreaName, keys: readonly string[]) => {
+		calls.storageRemovals.push({ area, keys: [...keys] })
+		await handlers.beforeStorageRemove(area, keys)
+	}
+	const localStorage = createMockStorageArea(options.storage?.local ?? {}, (changes) => { storageOnChanged.dispatch(changes, 'local') }, async (keys) => await beforeStorageRemove('local', keys))
+	const sessionStorage = createMockStorageArea(options.storage?.session ?? {}, (changes) => { storageOnChanged.dispatch(changes, 'session') }, async (keys) => await beforeStorageRemove('session', keys))
 
 	const windows = new Map<number, MockWindow>((options.windows ?? [{ id: 1, focused: true }]).map((seed) => [seed.id, createWindow(seed)]))
 	const tabs = new Map<number, MockTab>((options.tabs ?? []).map((seed, index) => [seed.id, createTab(seed, index)]))
@@ -491,7 +512,7 @@ export function createBrowserMock(options: BrowserMockOptions = {}) {
 			onCommitted: createMockEvent<[details: browser.webNavigation._OnCommittedDetails]>(),
 		},
 		webRequest: {
-			onBeforeRequest: createMockEvent<[details: browser.webRequest._OnBeforeRequestDetails], unknown>(),
+			onBeforeRequest: createMockEvent<[details: browser.webRequest._OnBeforeRequestDetails], unknown>({ adds: calls.webRequestListenerAdds, removals: calls.webRequestListenerRemovals }),
 		},
 	}
 
