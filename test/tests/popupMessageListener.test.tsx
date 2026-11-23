@@ -136,7 +136,8 @@ describe('usePopupSettingsSnapshot', () => {
 
 			await act(() => { messaging.dispatch(settingsReplyMessage) })
 			assert.equal(readLatestSnapshot()?.value?.useTabsInsteadOfPopup, true)
-			assert.deepEqual(readLatestSnapshot()?.value?.rpcEntries.map((entry) => entry.httpsRpc), ['https://rpc.example'])
+			assert.equal(Object.hasOwn(readLatestSnapshot()?.value ?? {}, 'rpcEntries'), false)
+			assert.equal(readLatestSnapshot()?.value?.activeRpcNetwork.httpsRpc, 'https://rpc.example')
 
 			await act(() => { messaging.dispatch(settingsUpdatedMessage) })
 			assert.deepEqual(getMessageMethods(messaging.sentMessages), ['popup_requestSettings', 'popup_requestSettings'])
