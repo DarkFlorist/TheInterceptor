@@ -3,7 +3,7 @@
 // Usage:
 //   beforeEach(resetConfirmTransactionTestState)                       // a fresh browser mock, fresh fake Safe state and one stored pending transaction
 //   const website = connectWebsite()                                   // an approved website socket; website.postedMessages records what the background posts to it
-//   await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, website.websiteTabConnections, accept)
+//   await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, website.websiteTabConnections, accept)
 //   assert.equal(hasForwardedSignerRequest(website.postedMessages), true)
 //   const restoreStorageGet = interceptStorageGet(async (keys, readStoredItems) => ...)   // gate or fail browser.storage.local.get
 import * as funtypes from 'funtypes'
@@ -20,7 +20,7 @@ import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
-import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type TransactionConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRequest, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization, SimulatedPendingTransaction } from '../../app/ts/types/accessRequest.js'
@@ -353,6 +353,14 @@ async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		captureConfirmationReview: confirmationReviewRevisions.captureConfirmationReview,
+		resolveCurrentConfirmationForTest: (
+			ethereum: Parameters<typeof confirmTransaction.resolvePendingTransactionOrMessage>[0],
+			tokenPriceService: Parameters<typeof confirmTransaction.resolvePendingTransactionOrMessage>[1],
+			websiteTabConnections: WebsiteTabConnections,
+			confirmation: TransactionConfirmation,
+			refreshedSafeSignerSelection?: Parameters<typeof confirmTransaction.resolvePendingTransactionOrMessage>[4],
+		) => confirmTransaction.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmationReviewRevisions.captureConfirmationReview(websiteTabConnections, confirmation), refreshedSafeSignerSelection),
 		getReviewRevision: confirmationReviewRevisions.getReviewRevision,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,

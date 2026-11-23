@@ -1,3 +1,4 @@
+import { captureConfirmationReview } from '../../app/ts/background/confirmationReviewRevisions.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
@@ -347,7 +348,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
+			captureConfirmationReview(browserMock.websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } }),
 		)
 
 		const [postedMessage] = browserMock.postedMessages
