@@ -53,10 +53,15 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	return [getExactOriginMatchPattern(url)]
 }
 
+// The shapes of match pattern this module builds that the browser accepts: a local file path (file URLs take no host), or an http or https host, optionally an IPv6 literal, with a port and every path. A pattern the browser rejects fails the whole registration, which would leave every site without the provider, so anything else is dropped.
+const isAcceptedExcludeMatchPattern = (pattern: string) => pattern.startsWith('file:///') || /^https?:\/\/(?:\[[0-9a-f:.]+\]|[^/*:[\]]+)(?::\d+)?\/\*$/iu.test(pattern)
+
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	const patterns = new Set<string>()
 	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
+		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) {
+			if (isAcceptedExcludeMatchPattern(pattern)) patterns.add(pattern)
+		}
 	}
 	return [...patterns]
 }

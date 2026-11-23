@@ -334,6 +334,21 @@ describe('content script injection strategy', () => {
 		])
 	})
 
+	test('a stored network-host file entry never reaches the exclusion patterns, so registration still excludes other disabled sites', async () => {
+		const { getRegisteredContentScripts, storageState } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV3, getManifestV3ExcludeMatches } = await loadModules()
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'file://server/share/page.html' }, interceptorDisabled: true },
+			{ website: { websiteOrigin: 'https://disabled.example' }, interceptorDisabled: true },
+		]
+		await updateContentScriptInjectionStrategyManifestV3()
+		const registered = getRegisteredContentScripts()
+		assert.equal(registered.length, 2)
+		for (const script of registered) assert.deepEqual(script.excludeMatches, ['https://disabled.example:443/*'])
+		// Chrome rejects a file pattern with a host, which would fail the whole registration, so the builder drops it even when handed one directly.
+		assert.deepEqual(getManifestV3ExcludeMatches(['file://server/share/page.html', 'https://disabled.example']), ['https://disabled.example:443/*'])
+	})
+
 	test('keeps literal wildcard file identities from excluding other files in Chrome', async () => {
 		const { getRegisteredContentScripts, storageState } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV3, getManifestV3ExcludeMatches } = await loadModules()

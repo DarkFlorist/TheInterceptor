@@ -54,6 +54,7 @@ describe('live and stored website origins agree on which pages have an access ke
 		['https://user:secret@example.test/', 'https://example.test', true],
 		['file:///tmp/dapp.html?query', 'file:///tmp/dapp.html', true],
 		['blob:https://example.test/0b6c1d6e-5f1a-4c0e-9c4e-2f0a3f8d1e7b', 'https://example.test', true],
+		['file://server/share/page.html', 'file://server/share/page.html', false],
 		['about:blank', 'about:blank', false],
 		['about:srcdoc', 'about:srcdoc', false],
 		['data:text/html,<p>dapp</p>', 'data:text/html,<p>dapp</p>', false],

@@ -3,9 +3,9 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
-// The one rule for which pages website access can be keyed by, shared by live frame origins (getWebsiteOrigin) and stored origins (normalizeStoredWebsiteOrigin), so every key a page gets can also be stored. An http or https page is keyed by its scheme, host and port, which a blob: URL takes from its creator, and a file page by its path. Other URLs get no key: about:blank and about:srcdoc frames inherit an origin their URL does not name, and data: frames and browser pages have no origin of their own.
+// The one rule for which pages website access can be keyed by, shared by live frame origins (getWebsiteOrigin) and stored origins (normalizeStoredWebsiteOrigin), so every key a page gets can also be stored. An http or https page is keyed by its scheme, host and port, which a blob: URL takes from its creator, and a local file page by its path. Other URLs get no key: about:blank and about:srcdoc frames inherit an origin their URL does not name, data: frames and browser pages have no origin of their own, and a file on a network host (file://server/share/page.html) cannot be named by a content-script match pattern, which takes no host for file URLs, so the Interceptor could not be disabled on it as its record would say.
 function getWebsiteAccessKey(url: URL): string | undefined {
-	if (url.protocol === 'file:') return `file://${ url.host }${ url.pathname }`
+	if (url.protocol === 'file:') return url.host === '' ? `file://${ url.pathname }` : undefined
 	if (url.origin.startsWith('http://') || url.origin.startsWith('https://')) return url.origin
 	return undefined
 }
