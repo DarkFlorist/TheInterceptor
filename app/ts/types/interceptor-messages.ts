@@ -175,6 +175,7 @@ type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
+	funtypes.ReadonlyPartial({ signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')) }),
 	ForwardToWalletRequest,
 )
 
@@ -184,6 +185,7 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
 	}),
+	funtypes.ReadonlyPartial({ signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')) }),
 	funtypes.Union(
 		ForwardToWalletRequest,
 		funtypes.Intersect(
