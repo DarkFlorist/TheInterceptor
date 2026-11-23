@@ -1,3 +1,4 @@
+import { useRpcConnectionsList } from './components/hooks/useRpcConnectionsList.js'
 import type { RenameAddressCallBack } from './types/user-interface-types.js'
 import type { GetAddressBookDataReply } from './types/interceptor-messages.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
@@ -211,7 +212,7 @@ export function AddressBook() {
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
 	const activeChainId = useComputed(() => activeChain.value?.chainId ?? 1n)
 	const settingsSnapshot = usePopupSettingsSnapshot()
-	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
+	const rpcEntries = useRpcConnectionsList()
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	function sendQuery() {

@@ -1,3 +1,4 @@
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { useContext, useEffect, useRef } from 'preact/hooks'
 import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { type ComponentChildren, createContext, type JSX } from 'preact'
@@ -16,7 +17,6 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { usePopupMessage } from '../hooks/usePopupMessage.js'
-import { usePopupSettingsSnapshot } from '../hooks/usePopupSettingsSnapshot.js'
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
@@ -257,8 +257,7 @@ const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
-	const settingsSnapshot = usePopupSettingsSnapshot()
-	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
+	const rpcEntries = useRpcConnectionsList()
 	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
