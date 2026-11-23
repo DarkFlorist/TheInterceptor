@@ -168,6 +168,7 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
+	funtypes.ReadonlyPartial({ signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')) }),
 	ForwardToWalletRequest,
 )
 
@@ -176,6 +177,7 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
 	}),
+	funtypes.ReadonlyPartial({ signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')) }),
 	funtypes.Union(
 		ForwardToWalletRequest,
 		funtypes.Intersect(
@@ -245,7 +247,10 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
+					action: funtypes.Literal('accept'),
+				}),
+				funtypes.ReadonlyObject({
+					action: funtypes.Union(funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

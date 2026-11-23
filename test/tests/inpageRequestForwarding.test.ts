@@ -559,4 +559,39 @@ describe('inpage request forwarding, replies and error propagation', () => {
 			assert.equal(provider.chainId, undefined)
 		})
 	})
+	for (const signerReplyMode of ['notify', 'request']) {
+		test(`uses the forwarded reply mode for an unknown method: ${ signerReplyMode }`, async () => {
+			const method = 'future_forwarded_method'
+			let signerReplyRequestId: number | undefined
+			let signerCalls = 0
+			const { fakeWindow, sendBackgroundMessage, interceptorErrorPayloads } = createFakeWindow({
+				handleRequest: (request, send) => {
+					if (request.method === method) {
+						send({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method, signerReplyMode, params: [] })
+						return true
+					}
+					if (request.method !== 'signer_reply') return false
+					signerReplyRequestId = request.requestId
+					const reply = parseSignerReply(request)
+					send({ interceptorApproved: true, requestId: signerReplyMode === 'notify' ? reply.forwardRequest.requestId : request.requestId, type: 'result', method: signerReplyMode === 'notify' ? method : 'signer_reply', result: 'signer-result' })
+					return true
+				},
+				handleSignerRequest: (request) => {
+					if (request.method !== method) return undefined
+					signerCalls += 1
+					return 'signer-result'
+				},
+			})
+			await withFakeInpageWindow(fakeWindow, `explicit-signer-mode-${ signerReplyMode }`, async () => {
+				assert.equal(await getPageProvider(fakeWindow).request({ method }), 'signer-result')
+				if (signerReplyMode === 'notify') {
+					if (signerReplyRequestId === undefined) throw new Error('Missing signer reply notification')
+					sendBackgroundMessage({ interceptorApproved: true, requestId: signerReplyRequestId, type: 'forwardToSigner', method, signerReplyMode, params: [] })
+					await waitFor(() => interceptorErrorPayloads.some((message) => typeof message === 'string' && message.includes('Request did not exist anymore')))
+					assert.equal(signerCalls, 1)
+				}
+			})
+		})
+	}
+
 })

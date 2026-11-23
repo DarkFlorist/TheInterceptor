@@ -10,7 +10,8 @@
 // inpage.ts is a classic script that installs its provider when it runs, so every scenario imports a fresh copy through a unique `?tag` import suffix while the fake window is installed as globalThis.window.
 //
 // createFakeWindow plays both sides of the page: the dapp window (events, postMessage and an injected fake MetaMask signer) and the background script behind the bridge MessagePort. handleRequest sees every bridge request first and returns true when it answered or deliberately swallowed it; otherwise the default background replies in handleInpageRequest answer.
-import { canReadObjectProperties, type PropertiesOf } from '../harness/assertions.js'
+import { getForwardedSignerReplyMode } from '../../app/ts/background/forwardedRequestSettlement.js'
+import { isRecord, canReadObjectProperties, type PropertiesOf } from '../harness/assertions.js'
 import { replaceGlobal } from '../harness/globals.js'
 
 export type PageEvent = { readonly type: string, readonly data?: unknown, readonly detail?: unknown, readonly ports?: readonly MessagePort[], readonly origin?: string, readonly source?: unknown }
@@ -175,7 +176,10 @@ export function createFakeWindow({ onConnectedToSignerRequest, handleRequest, ha
 
 	const sendBackgroundMessage = (data: unknown) => {
 		if (bridgePort === undefined) throw new Error('bridge port is not connected')
-		bridgePort.postMessage(data)
+		const message = isRecord(data) && data.type === 'forwardToSigner' && typeof data.method === 'string' && !('signerReplyMode' in data)
+			? { ...data, signerReplyMode: getForwardedSignerReplyMode(data.method) }
+			: data
+		bridgePort.postMessage(message)
 	}
 
 	const handleInpageRequest = (data: unknown) => {
