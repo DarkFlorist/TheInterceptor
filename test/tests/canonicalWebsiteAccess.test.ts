@@ -42,8 +42,9 @@ describe('canonical website access', () => {
 	})
 
 	test('every website access field merges by its rule', () => {
-		const first: WebsiteAccess = { website: { websiteOrigin: 'https://example.test', title: 'First' }, access: true, interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled', addressAccess: [{ address: 1n, access: true }] }
-		const second: WebsiteAccess = { website: { websiteOrigin: 'https://example.test', icon: 'data:image/png;base64,Y2FjaGVk' }, access: false, interceptorDisabled: false, declarativeNetRequestBlockMode: 'block-all', addressAccess: [{ address: 1n, access: false }] }
+		// The restrictive value of every field is in the first record, so each rule's result differs from the second record's value.
+		const first: WebsiteAccess = { website: { websiteOrigin: 'https://example.test', title: 'First' }, access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'block-all', addressAccess: [{ address: 1n, access: false }] }
+		const second: WebsiteAccess = { website: { websiteOrigin: 'https://example.test', icon: 'data:image/png;base64,Y2FjaGVk' }, access: true, interceptorDisabled: false, declarativeNetRequestBlockMode: 'disabled', addressAccess: [{ address: 1n, access: true }] }
 		const [merged] = toCanonicalWebsiteAccess([first, second])
 		if (merged === undefined) throw new Error('Expected one merged record')
 		assert.deepEqual(merged.website, websiteAccessMergeRules.website(first.website, second.website))
@@ -51,8 +52,11 @@ describe('canonical website access', () => {
 		assert.equal(merged.access, websiteAccessMergeRules.access(first.access, second.access))
 		assert.equal(merged.interceptorDisabled, websiteAccessMergeRules.interceptorDisabled(first.interceptorDisabled, second.interceptorDisabled))
 		assert.equal(merged.declarativeNetRequestBlockMode, websiteAccessMergeRules.declarativeNetRequestBlockMode(first.declarativeNetRequestBlockMode, second.declarativeNetRequestBlockMode))
-		// Each rule differs from "later record wins" on these records, so applying a rule is observable.
+		// Every rule's result differs from "later record wins" on these records, so skipping any rule fails this test.
+		assert.notDeepEqual(merged.website, second.website)
+		assert.notDeepEqual(merged.addressAccess, second.addressAccess)
+		assert.notEqual(merged.access, second.access)
 		assert.notEqual(merged.interceptorDisabled, second.interceptorDisabled)
-		assert.notEqual(merged.website.title, second.website.title)
+		assert.notEqual(merged.declarativeNetRequestBlockMode, second.declarativeNetRequestBlockMode)
 	})
 })
