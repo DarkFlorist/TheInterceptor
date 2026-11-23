@@ -1,4 +1,4 @@
-import { type ReadonlySignal, type Signal, useComputed } from '@preact/signals'
+import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { ChangeRichSettings } from '../popupSettingsChange.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
@@ -76,15 +76,11 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 		return tokenKeys.size + 1
 	})
 
-	// The picker is created after the dialog, which only calls this from effects and actions, after both exist.
-	const resetViewState = () => {
-		picker.actions.reset()
-		mutations.clearFeedback()
-	}
-	const dialog = useRichBalanceDialog({ richFundingChainId, richAccounts, operationPending: mutations.operationPending, resetViewState })
-
+	// The composition owns the selected address, so the selected account's tokens and the picker over them exist before the dialog that resets them.
+	const selectedRichAddress = useSignal<bigint | undefined>(undefined)
+	const selectedRichAccount = useComputed(() => richAccounts.value.find((element) => element.addressBookEntry.address === selectedRichAddress.value))
 	const selectedRichProfile = useComputed(() => {
-		const address = dialog.selectedAccount.value?.addressBookEntry.address
+		const address = selectedRichAccount.value?.addressBookEntry.address
 		return richAccountBalances.value.find((profile) => profile.chainId === richFundingChainId.value && profile.address === address)
 	})
 	const enabledRichTokens = useComputed(() => (selectedRichProfile.value?.tokenBalances ?? []).flatMap((balance) => {
@@ -93,10 +89,17 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 	}))
 	const availableRichTokens = useComputed(() => richTokenOptions.value.filter((option) => !enabledRichTokens.value.some((enabled) => sameRichTokenIdentity(enabled, option))))
 	const picker = useRichTokenPicker({ availableTokens: availableRichTokens })
+	const dialog = useRichBalanceDialog({
+		richFundingChainId, richAccounts, operationPending: mutations.operationPending, selectedAddress: selectedRichAddress,
+		onReset: () => {
+			picker.actions.reset()
+			mutations.clearFeedback()
+		},
+	})
 	const addingRichTokens = useComputed(() => availableRichTokens.value.filter((option) => dialog.addingKeys.value.includes(getRichTokenIdentityKey(option))))
 	const failedAddedRichToken = useComputed(() => availableRichTokens.value.find((option) => getRichTokenIdentityKey(option) === dialog.failedAddedKey.value))
 
-	const selectedAddress = () => dialog.selectedAccount.value?.addressBookEntry.address
+	const selectedAddress = () => selectedRichAccount.value?.addressBookEntry.address
 	const enableMakeCurrentAddressRich = (enabled: boolean) => {
 		if (mutations.controlsDisabled.peek()) return
 		mutations.saveRichChange(enabled, 'CurrentAddress')

@@ -1,4 +1,4 @@
-import { type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { type ReadonlySignal, type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useRef } from 'preact/hooks'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 
@@ -7,15 +7,16 @@ type RichBalanceDialogInputs = {
 	richAccounts: ReadonlySignal<readonly EnrichedRichListElement[]>
 	// While a funding change runs, the dialog stays open on its account.
 	operationPending: ReadonlySignal<boolean>
-	// Resets the per-dialog state other hooks own (the picker and the funding feedback).
-	resetViewState: () => void
+	// The address of the account the dialog shows. The caller owns it, so state derived from the selected account can exist before this hook.
+	selectedAddress: Signal<bigint | undefined>
+	// Called whenever the dialog resets its view (closing, switching account, a chain change), so the caller can reset state other hooks own.
+	onReset: () => void
 }
 
 // The balance dialog's lifecycle: which account it shows, whether the token picker is open, the progress of a multi-token add, and the timer that clears the newly-added highlight. It closes itself when the funding chain changes or its account stops being rich.
-export function useRichBalanceDialog({ richFundingChainId, richAccounts, operationPending, resetViewState }: RichBalanceDialogInputs) {
+export function useRichBalanceDialog({ richFundingChainId, richAccounts, operationPending, selectedAddress, onReset }: RichBalanceDialogInputs) {
 	const showDialog = useSignal(false)
 	const showPicker = useSignal(false)
-	const selectedAddress = useSignal<bigint | undefined>(undefined)
 	const addingKeys = useSignal<readonly string[]>([])
 	const failedAddedKey = useSignal<string | undefined>(undefined)
 	const newlyAddedKeys = useSignal<readonly string[]>([])
@@ -25,7 +26,7 @@ export function useRichBalanceDialog({ richFundingChainId, richAccounts, operati
 		addingKeys.value = []
 		failedAddedKey.value = undefined
 		newlyAddedKeys.value = []
-		resetViewState()
+		onReset()
 	}
 
 	useSignalEffect(() => {
