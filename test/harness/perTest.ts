@@ -6,7 +6,7 @@
 //   const { installBrowserMockForTest, restoreAfterTest } = createPerTestRestorer()
 //   restoreAfterTest(replaceGlobal('fetch', async () => new Response()))    // any restore function, run after the current test
 import { afterEach } from 'bun:test'
-import { type BrowserMockOptions, installBrowserMock } from './browserMock.js'
+import { installBrowserMock } from './browserMock.js'
 
 export function createPerTestRestorer() {
 	const pendingRestores: (() => void)[] = []
@@ -17,12 +17,13 @@ export function createPerTestRestorer() {
 	const restoreAfterTest = (restore: () => void) => {
 		pendingRestores.push(restore)
 	}
-	const installBrowserMockForTest = (options: BrowserMockOptions = {}) => {
-		const browserMock = installBrowserMock(options)
-		restoreAfterTest(browserMock.restore)
-		return browserMock
+	const installForTest = <Arguments extends unknown[], Installed extends { readonly restore: () => void }>(install: (...args: Arguments) => Installed) => (...args: Arguments): Installed => {
+		const installed = install(...args)
+		restoreAfterTest(installed.restore)
+		return installed
 	}
-	return { installBrowserMockForTest, restoreAfterTest }
+	const installBrowserMockForTest = installForTest(installBrowserMock)
+	return { installForTest, installBrowserMockForTest, restoreAfterTest }
 }
 
 // For files that only replace the browser global: installing again inside one test stacks a new mock, and every mock the test installed is restored after it.
