@@ -7,7 +7,7 @@ const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller(
 
 describe('background signer account replies and account exposure', () => {
 	test('falls back to the wallet account when a stored signing Safe is no longer owned', async () => {
-		installBackgroundBrowserMockForTest()
+		installBackgroundBrowserMockForTest({ tabs: [{ id: 197 }] })
 		const {
 			changeSimulationMode,
 			getActiveAddress,
