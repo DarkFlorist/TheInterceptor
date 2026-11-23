@@ -237,3 +237,10 @@ test('whether services are still installed is a capability of each client, not a
 	// Only the services pair type may come from the lifecycle module; the updater asks each client, never the owner.
 	assert.doesNotMatch(popupVisualisationUpdaterSource, /^import (?!type )[^\n]*from '\.\.\/simulation\/serviceLifecycle\.js'/mu)
 })
+
+test('the simulation services sublayer does not depend on the service lifecycle that orchestrates it', async () => {
+	const servicesDirectory = new URL('../../app/ts/simulation/services/', import.meta.url).pathname
+	const sources = await Array.fromAsync(new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: servicesDirectory }))
+	assert.ok(sources.includes('clientLiveness.ts'))
+	for (const source of sources) assert.doesNotMatch(await Bun.file(`${ servicesDirectory }${ source }`).text(), /from '\.\.\/serviceLifecycle\.js'/u, source)
+})
