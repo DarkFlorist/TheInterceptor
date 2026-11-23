@@ -462,7 +462,13 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
+// Every removal path refreshes through this one call, so a caller's refresh dependencies reach the Safe execution branch too.
 export async function removeTransactionOrSignedMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, params: RemoveTransaction, refreshDependencies: PopupVisualisationPreparationDependencies = {}) {
+	await removeTransactionOrSignedMessageFromStacks(params)
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true }, refreshDependencies)
+}
+
+async function removeTransactionOrSignedMessageFromStacks(params: RemoveTransaction) {
 	if (params.data.type === 'Transaction') {
 		const currentStack = await getInterceptorTransactionStack()
 		const transactionIdentifier = params.data.transactionIdentifier
@@ -489,7 +495,6 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 					},
 				}
 			})
-			await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 			return
 		}
 	}
@@ -538,8 +543,6 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 			default: assertNever(params.data)
 		}
 	})
-
-	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true }, refreshDependencies)
 }
 
 type ConfirmTransactionMetadataDependencies = {
