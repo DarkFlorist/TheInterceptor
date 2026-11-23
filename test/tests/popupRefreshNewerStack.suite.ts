@@ -854,3 +854,53 @@ test('a stack edit held before its write while services are replaced hands its r
 		restoreSendMessage()
 	}
 })
+
+// A background edit publishes its updating state when prepared, then its queued execution is held at the consumer probe while the selection changes to external-wallet signing without a Safe, which shows no stack and queues no refresh of its own.
+for (const newerRefreshTakesOver of [false, true]) test(`a queued background edit left behind by external-wallet signing ${ newerRefreshTakesOver ? 'leaves newer work in place' : 'finishes as a terminal empty view' }`, async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreConsumer = openVisualisationConsumer()
+	const consumerOpenSend = browser.runtime.sendMessage
+	const probeHeld = new Future<void>()
+	const releaseProbe = new Future<void>()
+	let holdNextProbe = true
+	browser.runtime.sendMessage = async (message) => {
+		if (holdNextProbe && isRecord(message) && message.method === 'popup_isSimulationVisualizerOpen') {
+			holdNextProbe = false
+			probeHeld.resolve(undefined)
+			await releaseProbe
+		}
+		return await consumerOpenSend(message)
+	}
+	try {
+		const { changePreSimulationBlockTimeManipulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		await changePreSimulationBlockTimeManipulation(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 30n, deltaUnit: 'Seconds' } } })
+		const prepared = await getPopupVisualisationState()
+		assert.deepEqual([prepared.simulationUpdatingState, prepared.simulationResultState], ['updating', 'invalid'])
+		await probeHeld
+		await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined })
+		if (newerRefreshTakesOver) {
+			const { publishPendingPopupVisualisation } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+			await publishPendingPopupVisualisation(true)
+		}
+		const beforeRelease = await getPopupVisualisationState()
+		const publicationsBeforeRelease = getPublications().length
+		releaseProbe.resolve(undefined)
+		await waitForBackgroundTasks()
+		const stored = await getPopupVisualisationState()
+		if (newerRefreshTakesOver) {
+			assert.deepEqual(stored, beforeRelease, 'The edit finished an updating state that newer work owns')
+			assert.equal(getPublications().length, publicationsBeforeRelease)
+		} else {
+			assert.deepEqual([stored.simulationUpdatingState, stored.simulationResultState, stored.simulationState.kind], ['done', 'done', 'passthrough'])
+			assert.ok(stored.simulationId > prepared.simulationId)
+			assert.deepEqual(getPublications().at(-1)?.data, { visualizedSimulatorState: modules.serialize(CompleteVisualizedSimulation, stored) })
+		}
+		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated for a selection that shows none')
+	} finally {
+		releaseProbe.resolve(undefined)
+		browser.runtime.sendMessage = consumerOpenSend
+		restoreConsumer()
+		fixture.releaseAll()
+	}
+})

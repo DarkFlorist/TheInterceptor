@@ -115,7 +115,8 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 		const selection = await getSettings()
 		// Nothing awaits between this check and the invalidation or abort, so a refresh left behind by a selection change or service replacement never retires the current selection's refresh. Only a supplied snapshot is checked: without one, execution reads the selection itself.
 		if (!isCurrent() || !refreshStillApplies(ethereum, snapshot, selection)) {
-			await finishUpdatingStateForHiddenStack(generation, abortController, preparedUpdatingSimulationId)
+			// This refresh never started an execution, so it owns no abort controller; the module-level one was already aborted when preparation invalidated. Its generation and published id alone say whether it still owns the updating state.
+			await finishUpdatingStateForHiddenStack(generation, undefined, preparedUpdatingSimulationId)
 			return await getPopupVisualisationState()
 		}
 		let updatingSimulationId = preparedUpdatingSimulationId
@@ -170,13 +171,13 @@ async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, ge
 	return pending
 }
 
-// Finish only this workflow's still-owned updating state when the current selection hides the stack, because no refresh is queued for a selection that shows none. Empty passthrough needs no provider, so retiring its client does not revoke this cleanup; the id, generation, abort signal and publication lock protect newer work.
-async function finishUpdatingStateForHiddenStack(generation: number, controller: AbortController, updatingSimulationId: number | undefined) {
+// Finish only this workflow's still-owned updating state when the current selection hides the stack, because no refresh is queued for a selection that shows none. Empty passthrough needs no provider, so retiring its client does not revoke this cleanup; the id, generation, the abort signal of an execution this workflow started, and the publication lock protect newer work.
+async function finishUpdatingStateForHiddenStack(generation: number, executionController: AbortController | undefined, updatingSimulationId: number | undefined) {
 	if (updatingSimulationId === undefined) return
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const current = await getPopupVisualisationState()
 		const selection = await getSettings()
-		if (current.simulationId !== updatingSimulationId || generation !== publicationGeneration || controller.signal.aborted || selectionShowsStack(selection)) return
+		if (current.simulationId !== updatingSimulationId || generation !== publicationGeneration || executionController?.signal.aborted === true || selectionShowsStack(selection)) return
 		const terminal = await setPopupVisualisationState(buildPassthroughVisualizedState(current.simulationId + 1, 0))
 		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: terminal } })
 	})
