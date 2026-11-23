@@ -2,7 +2,7 @@
 //
 // Usage:
 //   const { fakeWindow, sendBackgroundMessage } = createFakeWindow({ handleRequest: (request) => request.method === 'eth_sendTransaction' })   // the test answers these itself through sendBackgroundMessage
-//   await withFakeInpageWindow(fakeWindow, 'unique-scenario-tag', async () => {
+//   await withFakeInpageWindow(fakeWindow, 'scenario-name', async () => {
 //   	const provider = getPageProvider(fakeWindow)     // the window.ethereum that inpage.ts installed
 //   	assert.equal(await provider.request({ method: 'eth_chainId' }), '0x1')
 //   })
@@ -250,12 +250,13 @@ export function createFakeWindow({ onConnectedToSignerRequest, handleRequest, ha
 	}
 }
 
-// Installs the fake window as globalThis.window and runs a fresh copy of inpage.ts, imported with the unique importTag query so earlier scenarios do not share its state.
-export async function withFakeInpageWindow<T>(fakeWindow: FakePageWindow, importTag: string, runTest: () => Promise<T>) {
+// The harness owns module freshness; scenario names stay readable and can be reused without sharing provider state.
+let inpageImportSequence = 0
+export async function withFakeInpageWindow<T>(fakeWindow: FakePageWindow, scenarioName: string, runTest: () => Promise<T>) {
 	const restoreWindow = replaceGlobal('window', fakeWindow)
 	try {
 		// The import announces the provider with new CustomEvent('eip6963:announceProvider'); the tests run only under Bun, whose CustomEvent is native, so no shim is needed.
-		await import(`../../app/inpage/ts/inpage.js?${ importTag }`)
+		await import(`../../app/inpage/ts/inpage.js?scenario=${ encodeURIComponent(scenarioName) }&instance=${ ++inpageImportSequence }`)
 		return await runTest()
 	} finally {
 		restoreWindow()
