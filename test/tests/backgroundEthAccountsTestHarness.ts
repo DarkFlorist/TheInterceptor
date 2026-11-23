@@ -45,67 +45,41 @@ export type BackgroundBrowserMockOptions = Omit<BrowserMockOptions, 'firstCreate
 	readonly deferFirstChainChangeRemoval?: boolean
 }
 
-type RequestBlockingCalls = {
-	readonly declarativeNetRequestUpdates: number
-	readonly webRequestListenerAdds: number
-	readonly webRequestListenerRemovals: number
-}
-
 export type BackgroundBrowserMock = BrowserMock & {
 	// The same array as calls.runtimeSendMessage, under the name older tests use.
 	readonly runtimeMessages: unknown[]
-	readonly requestBlockingCalls: RequestBlockingCalls
 	readonly readStoredValue: (key: string) => unknown
 	readonly waitForDeferredChainChangeRemoval: () => Promise<void>
 	readonly releaseDeferredChainChangeRemoval: () => void
 }
 
-// Installs test/harness/browserMock.ts with the extension id and location origin that the background tests expect, counts request-blocking work, and seeds defaultWebsiteTabs unless options.tabs lists the website tabs (a website port's tab must exist, or the background treats the website as closed). restore() puts back the previous browser, chrome and location globals.
+// Installs test/harness/browserMock.ts with the extension id and location origin that the background tests expect, configures optional chain-dialog storage deferral, and seeds defaultWebsiteTabs unless options.tabs lists the website tabs (a website port's tab must exist, or the background treats the website as closed). restore() puts back the previous browser, chrome and location globals.
 export function installBackgroundBrowserMock({ deferFirstChainChangeRemoval = false, ...options }: BackgroundBrowserMockOptions = {}): BackgroundBrowserMock {
+	const chainChangeRemovalStarted = Promise.withResolvers<void>()
+	const chainChangeRemovalRelease = Promise.withResolvers<void>()
+	let chainChangeRemovalDeferred = false
 	const browserMock = installSharedBrowserMock({
 		extensionId: 'test-extension',
 		tabs: defaultWebsiteTabs,
 		...options,
 		firstCreatedIds: reserveFreshDialogIds(),
+		handlers: {
+			...options.handlers,
+			beforeStorageRemove: async (area, keys) => {
+				if (area === 'local' && deferFirstChainChangeRemoval && !chainChangeRemovalDeferred && keys.includes('chainChangeConfirmationPromise')) {
+					chainChangeRemovalDeferred = true
+					chainChangeRemovalStarted.resolve()
+					await chainChangeRemovalRelease.promise
+				}
+				await options.handlers?.beforeStorageRemove?.(area, keys)
+			},
+		},
 	})
 	const restoreLocation = replaceGlobal('location', { origin: '' })
-
-	const webRequestListenerCalls = { adds: 0, removals: 0 }
-	const onBeforeRequest = browserMock.browser.webRequest.onBeforeRequest
-	const addWebRequestListener = onBeforeRequest.addListener
-	const removeWebRequestListener = onBeforeRequest.removeListener
-	onBeforeRequest.addListener = (listener) => {
-		webRequestListenerCalls.adds += 1
-		addWebRequestListener(listener)
-	}
-	onBeforeRequest.removeListener = (listener) => {
-		webRequestListenerCalls.removals += 1
-		removeWebRequestListener(listener)
-	}
-
-	const chainChangeRemovalStarted = Promise.withResolvers<void>()
-	const chainChangeRemovalRelease = Promise.withResolvers<void>()
-	let chainChangeRemovalDeferred = false
-	const localStorage = browserMock.browser.storage.local
-	const removeFromLocalStorage = localStorage.remove
-	localStorage.remove = async (keys) => {
-		const keysToRemove = typeof keys === 'string' ? [keys] : keys
-		if (deferFirstChainChangeRemoval && !chainChangeRemovalDeferred && keysToRemove.includes('chainChangeConfirmationPromise')) {
-			chainChangeRemovalDeferred = true
-			chainChangeRemovalStarted.resolve()
-			await chainChangeRemovalRelease.promise
-		}
-		await removeFromLocalStorage(keys)
-	}
 
 	return {
 		...browserMock,
 		runtimeMessages: browserMock.calls.runtimeSendMessage,
-		requestBlockingCalls: {
-			get declarativeNetRequestUpdates() { return browserMock.calls.declarativeNetRequestUpdates.length },
-			get webRequestListenerAdds() { return webRequestListenerCalls.adds },
-			get webRequestListenerRemovals() { return webRequestListenerCalls.removals },
-		},
 		readStoredValue: (key) => readStorageItem(browserMock, key),
 		waitForDeferredChainChangeRemoval: async () => await chainChangeRemovalStarted.promise,
 		releaseDeferredChainChangeRemoval: () => { chainChangeRemovalRelease.resolve() },
