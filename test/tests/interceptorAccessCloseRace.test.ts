@@ -153,6 +153,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/addressBookStorage.js'),
+		...await import('../../app/ts/background/addressBookCoordinator.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/windows/interceptorAccess.js'),
 	}

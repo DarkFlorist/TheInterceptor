@@ -123,7 +123,7 @@ const settingsModulePromise = Promise.all([import('../../app/ts/background/setti
 	setMetamaskCompatibilityMode: settingsModule.persistMetamaskCompatibilityMode,
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
-const storageVariablesModulePromise = Promise.all([import('../../app/ts/background/storageVariables.js'), import('../../app/ts/background/addressBookStorage.js')]).then(([storageVariablesModule, addressBookStorageModule]) => ({ ...storageVariablesModule, ...addressBookStorageModule }))
+const storageVariablesModulePromise = Promise.all([import('../../app/ts/background/storageVariables.js'), import('../../app/ts/background/addressBookStorage.js'), import('../../app/ts/background/addressBookCoordinator.js')]).then(([storageVariablesModule, addressBookStorageModule, addressBookCoordinatorModule]) => ({ ...storageVariablesModule, ...addressBookStorageModule, ...addressBookCoordinatorModule }))
 
 const settingsStorageModulePaths = {
 	settings: 'app/ts/background/settings.ts',
@@ -638,7 +638,7 @@ describe('settings import', () => {
 			updateRichAccountBalances,
 			updateRichTokens,
 		} = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await import('../../app/ts/background/addressBookStorage.js')
+		const { updateUserAddressBookEntries } = await import('../../app/ts/background/addressBookCoordinator.js')
 		const accountAddress = 0x1111111111111111111111111111111111111111n
 		const tokenAddress = 0x2222222222222222222222222222222222222222n
 		const richToken: RichToken = {

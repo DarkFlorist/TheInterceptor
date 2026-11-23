@@ -222,6 +222,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/addressBookStorage.js'),
+		...await import('../../app/ts/background/addressBookCoordinator.js'),
 	}
 	return {
 		...modules,

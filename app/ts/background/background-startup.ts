@@ -31,7 +31,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
-import { updateUserAddressBookEntries } from './addressBookStorage.js'
+import { updateUserAddressBookEntries } from './addressBookCoordinator.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateRichMode } from './richModeMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'

@@ -8,7 +8,8 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
 import { getPendingWatchAssetRequests, getTabState, updatePendingWatchAssetRequests } from '../storageVariables.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from '../addressBookStorage.js'
-import { updateAddressBookAndRefreshChangedFunding } from '../addressBookFundingEdits.js'
+import { updateAddressBookAndRefreshChangedFunding } from '../addressBookCoordinator.js'
+import { startPopupSimulationRefreshInBackground } from '../popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
@@ -256,7 +257,7 @@ export function watchAssetResolutionDependencies(websiteTabConnections: WebsiteT
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
 		// Adding an asset can replace a funded token entry of another type at the same address, so rich-mode funding is reconciled with the write and the simulation refreshed when it changed.
-		updateAddressBook: async (update) => await updateAddressBookAndRefreshChangedFunding(simulationServicesOwner, update),
+		updateAddressBook: async (update) => await updateAddressBookAndRefreshChangedFunding(async () => await startPopupSimulationRefreshInBackground({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true }), update),
 		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,

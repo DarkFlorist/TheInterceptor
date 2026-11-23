@@ -8,7 +8,8 @@ import { emptyRichModeState } from './richModeSettings.js'
 import { richTokenLayout } from '../utils/richModeDerivation.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
-import { getImportedAddressBookStorageWrites, getUserAddressBookEntries } from './addressBookStorage.js'
+import { getUserAddressBookEntries } from './addressBookStorage.js'
+import { getImportedAddressBookStorageWrites } from './addressBookCoordinator.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 function getImportedAddressBookEntries(addressBook: ExportedSettingsFeatures['addressBook'], previousEntries: AddressBookEntries) {
