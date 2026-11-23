@@ -1,5 +1,4 @@
 import { getNormalizedWebsiteAccessFromStorage, getWebsiteAccess } from './websiteAccessStorage.js'
-import { refreshContentScriptInjectionAfterAccessChange } from '../utils/contentScriptsUpdating.js'
 import { getParsedStorageValueOrDefault, getParsedStorageValueOrDefaultFromItems } from '../utils/storageDefaults.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -245,7 +244,8 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	}
 }
 
-export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+// Persists imported values; settingsImport owns refreshing the derived content-script registration.
+export async function persistImportedSettingsAndAddressBook(exportedSetings: ExportedSettings) {
 	const previousWebsiteAccess = await getWebsiteAccess()
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
@@ -287,8 +287,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
-	// Import owns this derived registration state, so direct callers and popup callers follow the same policy.
-	await refreshContentScriptInjectionAfterAccessChange(previousWebsiteAccess, await getWebsiteAccess())
+	return { previousWebsiteAccess, nextWebsiteAccess: await getWebsiteAccess() }
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
