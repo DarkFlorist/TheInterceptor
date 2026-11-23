@@ -1,3 +1,4 @@
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useCallback, useEffect } from 'preact/hooks'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -32,7 +33,6 @@ import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import type { RpcEntries } from '../../types/rpc.js'
 import { usePopupMessage } from '../hooks/usePopupMessage.js'
-import { usePopupSettingsSnapshot } from '../hooks/usePopupSettingsSnapshot.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -798,8 +798,7 @@ function useConfirmTransactionDialogData() {
 	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
 	const pendingTransactionAddedNotification = useSignal<boolean>(false)
 	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
-	const settingsSnapshot = usePopupSettingsSnapshot()
-	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
+	const rpcEntries = useRpcConnectionsList()
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)

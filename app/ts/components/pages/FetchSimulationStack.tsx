@@ -1,10 +1,10 @@
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { useCallback, useEffect } from 'preact/hooks'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { usePopupMessage } from '../hooks/usePopupMessage.js'
-import { usePopupSettingsSnapshot } from '../hooks/usePopupSettingsSnapshot.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
@@ -85,8 +85,7 @@ export function FetchSimulationStack() {
 
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
-	const settingsSnapshot = usePopupSettingsSnapshot()
-	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
+	const rpcEntries = useRpcConnectionsList()
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
 
