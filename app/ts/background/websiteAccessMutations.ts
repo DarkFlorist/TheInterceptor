@@ -4,26 +4,31 @@ import { findWebsiteAccessEntryForOrigin, legacyWebsiteRestrictions } from './we
 import type { Website, WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { modifyObject } from '../utils/typescript.js'
-import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
+import { getCanonicalOriginsOfLegacyWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 
 // Pure changes to website-access data live here. The handler-level workflow in applyWebsiteAccessUpdate.ts owns persistence, injection refresh, reloads and approval reconciliation.
 export type WebsiteAccessMutation = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
 
+// Disabling or re-enabling the Interceptor changes only the page's own origin. Disabling adds or updates its exact record and leaves legacy disables in place, so the other scheme they alias stays disabled. Re-enabling must clear a legacy disable that covers the page, since any disabled record covering a page disables it, but a legacy record covers more than this origin. A host-only record is therefore rebound: it is cleared and each other origin it covered, such as the other scheme of the host, gets an exact disabled record, so only the page the user re-enabled changes. The empty legacy file marker stands for every file page, which no set of exact records can name, so re-enabling one file page leaves it in place and that page stays disabled until the user re-enables file pages through a record the action fully covers.
 export const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => {
-	let foundExactEntry = false
-	const updatedWebsiteAccess = previousWebsiteAccess.map((entry) => {
-		if (entry.website.websiteOrigin === website.websiteOrigin) {
-			foundExactEntry = true
-			return { ...entry, interceptorDisabled }
+	const otherOriginsToKeepDisabled = new Set<string>()
+	const withPageUpdated = previousWebsiteAccess.map((entry) => {
+		if (entry.website.websiteOrigin === website.websiteOrigin) return { ...entry, interceptorDisabled }
+		if (interceptorDisabled || entry.interceptorDisabled !== true || !isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin)) return entry
+		const coveredOrigins = getCanonicalOriginsOfLegacyWebsiteOrigin(entry.website.websiteOrigin)
+		if (coveredOrigins === undefined) return entry
+		for (const origin of coveredOrigins) {
+			if (origin !== website.websiteOrigin) otherOriginsToKeepDisabled.add(origin)
 		}
-		// Only re-enabling clears scheme-ambiguous legacy disables; disabling must leave them in place so the other scheme they alias stays disabled.
-		if (!interceptorDisabled && entry.interceptorDisabled === true && isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin)) {
-			return { ...entry, interceptorDisabled: false }
-		}
-		return entry
+		return { ...entry, interceptorDisabled: false }
 	})
-	if (foundExactEntry) return updatedWebsiteAccess
-	return [...updatedWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
+	const withOtherOriginsDisabled = withPageUpdated.map((entry) => otherOriginsToKeepDisabled.has(entry.website.websiteOrigin) ? { ...entry, interceptorDisabled: true } : entry)
+	const existingOrigins = new Set(previousWebsiteAccess.map((entry) => entry.website.websiteOrigin))
+	const newRecords = [
+		...existingOrigins.has(website.websiteOrigin) ? [] : [{ website, addressAccess: [], interceptorDisabled }],
+		...[...otherOriginsToKeepDisabled].filter((origin) => !existingOrigins.has(origin)).map((websiteOrigin) => ({ website: { websiteOrigin, icon: undefined, title: undefined }, addressAccess: [], interceptorDisabled: true })),
+	]
+	return [...withOtherOriginsDisabled, ...newRecords]
 }
 
 export const withExternalRequestsBlockedOrAllowed = (website: Website, shouldBlock: boolean): WebsiteAccessMutation => (previousAccessList) => previousAccessList.map((access) => {

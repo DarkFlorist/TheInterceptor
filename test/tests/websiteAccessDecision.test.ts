@@ -180,6 +180,37 @@ describe('website access legacy rebinding', () => {
 		assert.equal(updated.find((entry) => entry.website.websiteOrigin === 'example.test:8443')?.interceptorDisabled, true)
 	})
 
+	test('re-enabling one file page leaves the legacy marker that disables every file page in place', () => {
+		const previousAccess = [{ website: { websiteOrigin: '' }, interceptorDisabled: true, addressAccess: undefined }]
+		const updated = withInterceptorDisabledForWebsite({ websiteOrigin: 'file:///tmp/first.html' }, false)(previousAccess)
+		assert.equal(updated[0]?.interceptorDisabled, true)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'file:///tmp/second.html'), true)
+		// No exact record can carve one page out of every file page, so the page the user re-enabled stays disabled too.
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'file:///tmp/first.html'), true)
+	})
+
+	test('re-enabling one scheme of a host-only disabled record keeps the other scheme disabled', () => {
+		const previousAccess = [{ website: { websiteOrigin: 'example.test', title: 'Legacy' }, interceptorDisabled: true, access: false, addressAccess: undefined }]
+		const updated = withInterceptorDisabledForWebsite({ websiteOrigin: 'https://example.test' }, false)(previousAccess)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), false)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'http://example.test'), true)
+		// The legacy record keeps its other settings, such as its denial.
+		assert.deepEqual(updated[0], { ...previousAccess[0], interceptorDisabled: false })
+		assert.deepEqual(updated.find((entry) => entry.website.websiteOrigin === 'http://example.test')?.interceptorDisabled, true)
+	})
+
+	test('re-enabling one scheme also disables the other scheme\'s existing exact record that the legacy record was disabling', () => {
+		const previousAccess = [
+			{ website: { websiteOrigin: 'example.test' }, interceptorDisabled: true, addressAccess: undefined },
+			{ website: { websiteOrigin: 'http://example.test' }, interceptorDisabled: false, addressAccess: undefined },
+		]
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(previousAccess, 'http://example.test'), true)
+		const updated = withInterceptorDisabledForWebsite({ websiteOrigin: 'https://example.test' }, false)(previousAccess)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'http://example.test'), true)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), false)
+		assert.equal(updated.length, 3)
+	})
+
 	test('disabling an exact origin keeps scheme-ambiguous legacy disabled records for the other scheme', () => {
 		const previousAccess = ['example.test', 'example.test:443', 'example.test:80'].map((websiteOrigin) => ({
 			website: { websiteOrigin }, interceptorDisabled: true,

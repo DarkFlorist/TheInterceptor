@@ -1,6 +1,6 @@
 import { checkAndThrowRuntimeLastError, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
-import { doesStoredWebsiteOriginApplyTo, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getCanonicalOriginsOfLegacyWebsiteOrigin, getWebsiteOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
 import type { ContentScriptRegistrationConfiguration } from './contentScriptInjectionConfiguration.js'
 
@@ -41,9 +41,9 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (normalizedOrigin === '') return ['file:///*']
 	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) {
 		// A legacy origin has no scheme, so keep each scheme whose origin the MV2 injection matches with it. A URL leaves out its scheme's default port, so for example a stored port 443 matches both an explicit-port http URL and a default-port https URL.
-		return ['http:', 'https:']
-			.map((scheme) => new URL(`${ scheme }//${ normalizedOrigin }/`))
-			.filter((url) => !hasMatchPatternWildcardHost(url) && isLegacyWebsiteOriginForCanonicalOrigin(normalizedOrigin, url.origin))
+		return (getCanonicalOriginsOfLegacyWebsiteOrigin(normalizedOrigin) ?? [])
+			.map((origin) => new URL(origin))
+			.filter((url) => !hasMatchPatternWildcardHost(url))
 			.map(getExactOriginMatchPattern)
 	}
 	const url = new URL(normalizedOrigin)

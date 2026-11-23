@@ -89,6 +89,19 @@ export function isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin: string, we
 	return url.port === '' && storedOrigin === `${ legacyHost }:${ defaultPort }`
 }
 
+// Every canonical origin a scheme-less legacy record stands for: its host under each scheme whose origin the record matches (isLegacyWebsiteOriginForCanonicalOrigin). The empty legacy file marker stands for every file page, which no list can name, so it gives undefined.
+export function getCanonicalOriginsOfLegacyWebsiteOrigin(legacyOrigin: string): readonly string[] | undefined {
+	if (legacyOrigin === '') return undefined
+	return ['http:', 'https:'].flatMap((scheme) => {
+		try {
+			const origin = new URL(`${ scheme }//${ legacyOrigin }/`).origin
+			return isLegacyWebsiteOriginForCanonicalOrigin(legacyOrigin, origin) ? [origin] : []
+		} catch {
+			return []
+		}
+	})
+}
+
 // Whether a stored website access record stands for a canonical origin: the origin's exact record, or a scheme-ambiguous legacy record for it. The access policy, request blocking and content-script injection all decide whether a record covers a page through this one rule, so they agree on what is the same site.
 export function doesStoredWebsiteOriginApplyTo(storedOrigin: string, websiteOrigin: string): boolean {
 	return storedOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin, websiteOrigin)

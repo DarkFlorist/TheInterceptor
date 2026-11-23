@@ -349,6 +349,15 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getManifestV3ExcludeMatches(['file://server/share/page.html', 'https://disabled.example']), ['https://disabled.example:443/*'])
 	})
 
+	test('after re-enabling one scheme of a host-only disabled record, Chrome still excludes only the other scheme', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		const { withInterceptorDisabledForWebsite } = await import('../../app/ts/background/websiteAccessMutations.js')
+		const updated = withInterceptorDisabledForWebsite({ websiteOrigin: 'https://example.test', icon: undefined, title: undefined }, false)([{ website: { websiteOrigin: 'example.test', icon: undefined, title: undefined }, interceptorDisabled: true, addressAccess: undefined }])
+		const disabledOrigins = updated.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
+		assert.deepEqual(getManifestV3ExcludeMatches(disabledOrigins), ['http://example.test:80/*'])
+	})
+
 	test('keeps literal wildcard file identities from excluding other files in Chrome', async () => {
 		const { getRegisteredContentScripts, storageState } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV3, getManifestV3ExcludeMatches } = await loadModules()
