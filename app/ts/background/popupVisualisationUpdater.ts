@@ -197,11 +197,18 @@ export type PopupVisualisationRefreshRequest = {
 	readonly execute: (invalidateOldState: boolean) => Promise<boolean>
 }
 
-// Captures the snapshot and, for background edits, publishes the updating state; the caller decides invalidation once and passes it to the queue, which hands it to execute.
-export async function preparePopupVisualisationRefresh(services: SimulationServices, invalidateOldState: boolean, publishUpdatingState = false): Promise<PopupVisualisationRefreshRequest | undefined> {
+export type PopupVisualisationPreparationDependencies = {
+	// Whether the owner still has this client installed. Tests that hand a handler a stand-in client with no owner say so explicitly.
+	readonly isClientCurrent?: (ethereum: EthereumClientService) => boolean
+}
+
+// Captures the snapshot and, for background edits, publishes the updating state; the caller decides invalidation once and passes it to the queue, which hands it to execute. A handler can reach this with services it captured before the owner replaced them; that request returns before invalidating anything, because the replacement queues its own refresh and execution would reject the replaced client, leaving any published progress unfinished.
+export async function preparePopupVisualisationRefresh(services: SimulationServices, invalidateOldState: boolean, publishUpdatingState = false, { isClientCurrent = (ethereum) => ethereum.isCurrent() }: PopupVisualisationPreparationDependencies = {}): Promise<PopupVisualisationRefreshRequest | undefined> {
+	if (!isClientCurrent(services.ethereum)) return undefined
 	const generation = publishUpdatingState ? invalidatePopupVisualisation() : publicationGeneration
 	const snapshot = await captureSimulationSnapshot()
-	if (generation !== publicationGeneration) return undefined
+	// The services can be replaced while the snapshot is read; checked again before publishing progress.
+	if (generation !== publicationGeneration || !isClientCurrent(services.ethereum)) return undefined
 	const preparedUpdatingSimulationId = publishUpdatingState ? (await publishUpdatingPopupVisualisation(invalidateOldState, generation))?.simulationId : undefined
 	if (generation !== publicationGeneration) return undefined
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)

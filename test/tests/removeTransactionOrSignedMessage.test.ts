@@ -138,6 +138,9 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 	}
 }
 
+// These handlers receive a stand-in client that no owner installed, so the refresh preparation is told it is current rather than asking the client.
+const standInClientRefresh = { isClientCurrent: () => true }
+
 describe('removeTransactionOrSignedMessage', () => {
 	test('keeps later raw transactions unchanged when removing an earlier same-sender transaction', async () => {
 		const modules = await loadModules()
@@ -152,7 +155,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -174,7 +177,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -196,7 +199,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -218,7 +221,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -241,7 +244,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)
@@ -261,7 +264,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)

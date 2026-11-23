@@ -5,7 +5,7 @@ import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { backgroundTaskSupervisor } from './backgroundTasks.js'
-import { preparePopupVisualisationRefresh, type PopupVisualisationRefreshTarget } from './popupVisualisationUpdater.js'
+import { preparePopupVisualisationRefresh, type PopupVisualisationPreparationDependencies, type PopupVisualisationRefreshTarget } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 
@@ -97,8 +97,8 @@ export async function runPopupSimulationRefresh({ invalidateOldState = false, ..
 }
 
 // Awaits only local invalidation and capture, then returns without an outcome; the refresh runs as a background task that reports its own failures. Callers that need the outcome use runPopupSimulationRefresh.
-export async function startPopupSimulationRefreshInBackground({ invalidateOldState = true, ...services }: PopupSimulationRefresh): Promise<void> {
-	const request = await preparePopupVisualisationRefresh(services, invalidateOldState, true)
+export async function startPopupSimulationRefreshInBackground({ invalidateOldState = true, ...services }: PopupSimulationRefresh, dependencies: PopupVisualisationPreparationDependencies = {}): Promise<void> {
+	const request = await preparePopupVisualisationRefresh(services, invalidateOldState, true, dependencies)
 	if (request === undefined) return
 	const queued = refreshQueue.toQueued(services, request)
 	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshQueue.refresh(queued, invalidateOldState))

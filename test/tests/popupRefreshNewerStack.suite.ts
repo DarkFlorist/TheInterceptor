@@ -771,3 +771,43 @@ for (const replaceServices of [false, true]) test(`a committed transition still 
 		fixture.releaseAll()
 	}
 })
+
+test('a stack edit that resumes after its services were replaced neither invalidates nor supersedes the replacement refresh', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreSendMessage = openVisualisationConsumer()
+	const editWritten = new Future<void>()
+	const resumeEdit = new Future<void>()
+	let holdNextEdit = true
+	// The edit is stored, then its handler waits before starting its refresh with the services it was handed.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (holdNextEdit && 'preSimulationBlockTimeManipulation' in items) {
+			holdNextEdit = false
+			editWritten.resolve(undefined)
+			await resumeEdit
+		}
+	})
+	try {
+		const { changePreSimulationBlockTimeManipulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { getPreSimulationBlockTimeManipulation } = await import('../../app/ts/background/settings.js')
+		const edit = changePreSimulationBlockTimeManipulation(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: await getPreSimulationBlockTimeManipulation() } })
+		await editWritten
+		const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+		await changeActiveAddressAndChain(fixture.simulationServicesOwner, new Map(), { simulationMode: true, rpcNetwork: otherEndpointNetwork })
+		await assertOtherEndpointPublishedTransaction()
+		const replacementResult = await getPopupVisualisationState()
+		const publicationsBefore = getPublications().length
+		resumeEdit.resolve(undefined)
+		await edit
+		await waitForBackgroundTasks()
+		assert.deepEqual(await getPopupVisualisationState(), replacementResult, 'The edit holding the replaced services changed the replacement result')
+		assert.equal(getPublications().length, publicationsBefore, 'The edit holding the replaced services published')
+		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated with the replaced services')
+	} finally {
+		resumeEdit.resolve(undefined)
+		browserMock.setStorageSetHandler(undefined)
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
+})

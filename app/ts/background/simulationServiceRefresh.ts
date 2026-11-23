@@ -12,7 +12,6 @@ export const refreshAfterSimulationServicesUpdate: SimulationServicesUpdateObser
 		await publishFailedPopupVisualisation({ isCurrent: services.ethereum.isCurrent })
 		return
 	}
-	const settings = await getSettings()
-	// Checked again after the settings read because starting a background refresh invalidates synchronously, which would retire the refresh of services installed meanwhile. Settings transitions do not wait for RPC work; the background refresh publishes its updating state before this returns.
-	if (services.ethereum.isCurrent() && selectionShowsStack(settings)) await startPopupSimulationRefreshInBackground(services)
+	// Settings transitions do not wait for RPC work; the background refresh publishes its updating state before this returns, and its preparation steps aside if the services were replaced meanwhile.
+	if (selectionShowsStack(await getSettings())) await startPopupSimulationRefreshInBackground(services)
 }
