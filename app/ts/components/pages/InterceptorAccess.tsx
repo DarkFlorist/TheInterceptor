@@ -1,3 +1,4 @@
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { Fragment } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
@@ -221,7 +222,7 @@ export function InterceptorAccess() {
 	const informationUpdatedTimestamp = useSignal<number>(0)
 	const timeTicker = useSignal<number>(0)
 	const settingsSnapshot = usePopupSettingsSnapshot()
-	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
+	const rpcEntries = useRpcConnectionsList()
 	const activeRpcChainId = useComputed(() => settingsSnapshot.value?.activeRpcNetwork.chainId)
 	const selectedPendingAccessRequest = useComputed(() => getSelectedPendingAccessRequest(
 		pendingAccessRequests.value,

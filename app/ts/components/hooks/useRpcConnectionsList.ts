@@ -6,7 +6,7 @@ import { shouldApplyInitialRpcEntries } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { usePopupMessage } from './usePopupMessage.js'
 
-// Returns the configured RPC connections: loaded from storage on mount and replaced by every popup_update_rpc_list broadcast. A broadcast that arrives before the storage read finishes wins over the older stored list. This is the list the RPC settings edit, so it follows popup_update_rpc_list, which every RPC list change sends. usePopupSettingsSnapshot's rpcEntries is the copy in the settings reply, which pages that only show the networks read.
+// Returns the configured RPC connections: loaded from storage on mount and replaced by every popup_update_rpc_list broadcast. A broadcast that arrives before the storage read finishes wins over the older stored list. All UI consumers share this update policy.
 export function useRpcConnectionsList(): ReadonlySignal<RpcEntries> {
 	const entries = useSignal<RpcEntries>([])
 	const rpcListUpdateVersion = useRef(0)

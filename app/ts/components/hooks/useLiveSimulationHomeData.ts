@@ -1,3 +1,4 @@
+import { useRpcConnectionsList } from './useRpcConnectionsList.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { useEffect, useRef } from 'preact/hooks'
 import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
@@ -5,7 +6,7 @@ import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/
 import { PASSTHROUGH_STATE, type BlockTimeManipulation, type CompleteVisualizedSimulation, type NamedTokenId, type ResolvedSimulationResults, type ResolvedSimulationState, type SimulationResultState, type SimulationUpdatingState, type TokenPriceEstimate, type VisualizedSimulationState, toResolvedSimulationResults } from '../../types/visualizer-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
-import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
+import type { RpcNetwork } from '../../types/rpc.js'
 import type { WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../../types/interceptor-reply-messages.js'
@@ -64,7 +65,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const tabState = useSignal<TabState | undefined>(undefined)
 	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
 	const currentTabId = useSignal<number | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const simulationUpdatingState = useSignal<SimulationUpdatingState | undefined>(undefined)
 	const simulationResultState = useSignal<SimulationResultState | undefined>(undefined)
 	const interceptorDisabled = useSignal<boolean>(false)
@@ -163,7 +164,6 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
 			displayedSigningAddress.value = data.activeSigningAddressInThisTab
 			currentTabId.value = data.tabId
-			rpcEntries.value = data.rpcEntries
 			interceptorDisabled.value = data.interceptorDisabled
 			tabState.value = data.tabState
 			tabIconDetails.value = data.tabState.tabIconDetails
@@ -183,7 +183,6 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
 			if (homeDataSource === 'fresh') isFreshHomeDataLoaded.value = true
-			rpcEntries.value = data.rpcEntries
 			currentTabId.value = data.tabId
 			displayedSigningAddress.value = data.activeSigningAddressInThisTab
 			activeAddresses.value = data.activeAddresses

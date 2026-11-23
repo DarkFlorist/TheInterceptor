@@ -1,3 +1,4 @@
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
@@ -85,7 +86,7 @@ export function FetchSimulationStack() {
 
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
 
@@ -101,10 +102,6 @@ export function FetchSimulationStack() {
 			if (parsed.method === 'popup_simulation_state_changed') {
 				updateSimulation()
 				updateMetaData()
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
 				return false
 			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
@@ -130,7 +127,6 @@ export function FetchSimulationStack() {
 		void sendPopupReadyAndListening('fetchSimulationStack')
 		updateSimulation()
 		updateMetaData()
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 
 	async function approve() {
