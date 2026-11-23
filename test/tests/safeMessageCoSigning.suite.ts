@@ -76,7 +76,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	const [refreshedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedCoSignRequest?.type === 'SignableMessage' ? refreshedCoSignRequest.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, alternateOwnerAddress)
 	assert.equal(refreshedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, website.websiteTabConnections, acceptConfirmation), true)
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, website.websiteTabConnections, acceptConfirmation), true)
 
 	const signerRequest = requireForwardedSignerRequest(website.postedMessages, 'Safe co-signer request')
 	assert.equal(signerRequest.method, 'eth_signTypedData_v4')
@@ -91,7 +91,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	))
 	const countSignerCodeReads = () => fakeSafeContract.requestedCodeAddresses.filter((address) => address === alternateOwnerAddress).length
 	const signerCodeReadsBeforeReply = countSignerCodeReads()
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, website.websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, website.websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
 	}), true)

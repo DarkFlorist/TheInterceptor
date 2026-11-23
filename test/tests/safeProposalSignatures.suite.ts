@@ -46,20 +46,20 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 		],
 	})
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, new Map(), {
 		method: 'popup_confirmDialog',
 		data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: firstIdentifier },
 	}), false)
 
 	const { postedMessages, websiteTabConnections } = connectWebsite({ socket: secondIdentifier.requestSocket })
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier },
 	}), false)
 	assert.equal(hasForwardedSignerRequest(postedMessages), false)
 	const [refreshedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedProposal?.type === 'Transaction' ? refreshedProposal.safeTransaction?.safeTx.message.nonce : undefined, 0n)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier },
 	}), true)
@@ -68,7 +68,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	assert.equal(readSafeTxNonce(typedData), 0n)
 
 	const signature = await safeTestOwnerAccount.signTypedData(typedData)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier: secondIdentifier },
 	}), true)
@@ -93,7 +93,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	})
 	const staleSignature = await signSafeTx(staleSafeTx)
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, new Map(), {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: staleSignature, uniqueRequestIdentifier: requestIdentifier },
 	}), false)
@@ -104,14 +104,14 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	assert.match(stalePending.approvalStatus.message, /next available nonce is 0/u)
 
 	const { postedMessages, websiteTabConnections } = connectWebsite({ socket: requestIdentifier.requestSocket })
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier },
 	}), false)
 	assert.equal(hasForwardedSignerRequest(postedMessages), false)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedPending?.type === 'Transaction' ? refreshedPending.safeTransaction?.safeTx.message.nonce : undefined, 0n)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier },
 	}), true)
@@ -135,7 +135,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	})
 
 	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: recipientAddress }])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
 	}), true)
@@ -182,7 +182,7 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 		pendingTransactionsAndMessages: [safePending],
 	})
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
 	}), true)
@@ -217,7 +217,7 @@ test('invalid Safe owner signatures retain the request as a signer error without
 		pendingTransactionsAndMessages: [createPendingSafeProposal(createSafeTransactionRequest(), { status: 'WaitingForSigner' })],
 	})
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, new Map(), {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: '0x1234', uniqueRequestIdentifier },
 	}), false)

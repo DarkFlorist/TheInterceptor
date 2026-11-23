@@ -1,3 +1,4 @@
+import type { TransactionConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
@@ -93,8 +94,8 @@ describe('pending request resolution claim', () => {
 		const accept = { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } } as const
 
 		await Promise.all([
-			modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
-			modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
+			modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
+			modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
 		])
 
 		const stack = await modules.getInterceptorTransactionStack()
@@ -110,11 +111,11 @@ describe('pending request resolution claim', () => {
 		const forwardedRequests = () => postedMessages.filter(isForwardedSignerRequest)
 
 		const results = await Promise.all([
-			modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
-			modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
+			modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
+			modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
 		])
 		assert.deepEqual(results, [true, false])
-		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept), false)
+		assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept), false)
 
 		assert.equal(forwardedRequests().length, 1)
 		const [stored] = await modules.getPendingTransactionsAndMessages()
@@ -128,8 +129,8 @@ describe('pending request resolution claim', () => {
 
 		// Two accepts of the nonce-1 proposal, like a double click: the first rebases it and asks for a new confirmation, the second must not approve the rebase.
 		const results = await Promise.all([
-			modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
-			modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
+			modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
+			modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept),
 		])
 
 		assert.deepEqual(results, [false, false])
@@ -167,13 +168,24 @@ describe('pending request resolution claim', () => {
 		assert.equal(stored?.type === 'Transaction' ? stored.safeTransaction?.safeTx.message.nonce : undefined, 0n)
 	})
 
+	test('an explicitly captured accept cannot approve a later review revision', async () => {
+		await storeSafeProposalNeedingNonceRebase()
+		const { websiteTabConnections } = connectWebsite()
+		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }
+		const reviewed = modules.captureConfirmationReview(websiteTabConnections, accept)
+		assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept), false)
+		assert.equal(modules.getReviewRevision(websiteTabConnections, uniqueRequestIdentifier), 1)
+		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, reviewed), false)
+		assert.equal(modules.getReviewRevision(websiteTabConnections, uniqueRequestIdentifier), 1)
+	})
+
 	test('forgets the review revision once a refreshed request is rejected', async () => {
 		await storeSafeProposalNeedingNonceRebase()
 		const { websiteTabConnections } = connectWebsite()
 
-		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }), false)
+		assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }), false)
 		assert.equal(modules.getReviewRevision(websiteTabConnections, uniqueRequestIdentifier), 1)
-		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier } })
+		await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier } })
 
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.equal(modules.getReviewRevision(websiteTabConnections, uniqueRequestIdentifier), 0)
@@ -189,7 +201,7 @@ describe('pending request resolution claim', () => {
 		}
 		const { postedMessages, websiteTabConnections } = connectWebsite()
 
-		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		}), false)

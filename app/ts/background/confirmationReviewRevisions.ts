@@ -1,3 +1,4 @@
+import type { TransactionConfirmation } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getUniqueRequestIdentifierString, type UniqueRequestIdentifier } from '../utils/requests.js'
 
@@ -24,4 +25,17 @@ export function advanceReviewRevision(websiteTabConnections: WebsiteTabConnectio
 
 export function forgetReviewRevision(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	getRevisions(websiteTabConnections).delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
+}
+
+type ConfirmationData = TransactionConfirmation['data']
+export type ReviewedTransactionConfirmation = {
+	readonly method: TransactionConfirmation['method']
+	readonly data: Exclude<ConfirmationData, { action: 'accept' }> | (Extract<ConfirmationData, { action: 'accept' }> & { readonly reviewedRevision: number })
+}
+
+// Capture the accept's review at the confirmation boundary, before asynchronous refresh or resolution work.
+export function captureConfirmationReview(websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation): ReviewedTransactionConfirmation {
+	const data = confirmation.data
+	if (data.action !== 'accept') return { method: confirmation.method, data }
+	return { method: confirmation.method, data: { ...data, reviewedRevision: getReviewRevision(websiteTabConnections, data.uniqueRequestIdentifier) } }
 }
