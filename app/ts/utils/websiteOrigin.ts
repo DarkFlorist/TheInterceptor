@@ -3,11 +3,17 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
+// The one rule for which pages website access can be keyed by, shared by live frame origins (getWebsiteOrigin) and stored origins (normalizeStoredWebsiteOrigin), so every key a page gets can also be stored. An http or https page is keyed by its scheme, host and port, which a blob: URL takes from its creator, and a file page by its path. Other URLs get no key: about:blank and about:srcdoc frames inherit an origin their URL does not name, and data: frames and browser pages have no origin of their own.
+function getWebsiteAccessKey(url: URL): string | undefined {
+	if (url.protocol === 'file:') return `file://${ url.host }${ url.pathname }`
+	if (url.origin.startsWith('http://') || url.origin.startsWith('https://')) return url.origin
+	return undefined
+}
+
+// A page without a website access key (see getWebsiteAccessKey) is identified by its full URL, which keeps such frames apart from each other and from every stored record. isStorableWebsiteOrigin is false for it, so the access policy refuses it instead of asking for consent that could never be stored.
 export const getWebsiteOrigin = (urlString: string): string => {
 	const url = new URL(urlString)
-	if (url.origin !== 'null') return url.origin
-	if (url.protocol === 'file:') return `file://${ url.host }${ url.pathname }`
-	return url.href
+	return getWebsiteAccessKey(url) ?? url.href
 }
 
 // `getHostWithPort` with the scheme of the URL in front, such as `https://example.com:8443`, so the host and port are normalized in one place. Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
@@ -16,16 +22,11 @@ export const getSchemeAndHostWithPort = (urlString: string): string => `${ new U
 // Both origins of a requesting frame, derived from its URL in one place: `websiteOrigin` is the canonical origin that website access settings are keyed by, and `requestOrigin` is the frame's scheme, host and port that sign-in messages are compared with.
 export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getWebsiteOrigin(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
 
-const isCanonicalWebsiteProtocol = (protocol: string) => {
-	return protocol === 'http:' || protocol === 'https:' || protocol === 'file:'
-}
-
 function normalizeCanonicalWebsiteOrigin(websiteOrigin: string): string | undefined {
 	try {
 		const url = new URL(websiteOrigin)
-		if (!isCanonicalWebsiteProtocol(url.protocol)) return undefined
 		if (url.username !== '' || url.password !== '') return undefined
-		return getWebsiteOrigin(websiteOrigin)
+		return getWebsiteAccessKey(url)
 	} catch {
 		return undefined
 	}
@@ -56,10 +57,14 @@ export function normalizeStoredWebsiteOrigin(websiteOrigin: string): string | un
 	return normalizeLegacyWebsiteOrigin(websiteOrigin)
 }
 
+// Whether a website access record can be stored under this origin, which is exactly when the access policy may ask for or grant access to it.
+export function isStorableWebsiteOrigin(websiteOrigin: string): boolean {
+	return normalizeStoredWebsiteOrigin(websiteOrigin) === websiteOrigin
+}
+
 export function isCanonicalWebsiteOrigin(websiteOrigin: string): boolean {
 	return normalizeCanonicalWebsiteOrigin(websiteOrigin) === websiteOrigin
 }
-
 // Interpret canonical and legacy stored identities once. Consumers choose hostname-only matching or port-sensitive matching without re-parsing or guessing a legacy scheme.
 export function getStoredWebsiteHost(storedOrigin: string): { readonly hostname: string, readonly hostWithPort: string } | undefined {
 	const normalized = normalizeStoredWebsiteOrigin(storedOrigin)

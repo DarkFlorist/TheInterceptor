@@ -1,6 +1,6 @@
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { doesStoredWebsiteOriginApplyTo, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, isLegacyWebsiteOriginForCanonicalOrigin, isStorableWebsiteOrigin } from '../utils/websiteOrigin.js'
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
@@ -43,7 +43,9 @@ export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAcce
 		&& doesStoredWebsiteOriginApplyTo(entry.website.websiteOrigin, websiteOrigin))
 }
 
+// A frame without a website access key, such as about:blank, about:srcdoc or a data: page, is refused outright: no record could be stored for it, so asking would reopen the consent dialog after every approval.
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
+	if (!isStorableWebsiteOrigin(websiteOrigin)) return 'noAccess'
 	const { exactAccess, legacyDenials } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
 	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	// Only an exact, scheme-bound record can grant access. Legacy approval remains pending until the user explicitly rebinds it.
@@ -54,6 +56,7 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
+	if (!isStorableWebsiteOrigin(websiteOrigin)) return 'noAccess'
 	const { exactAccess, legacyDenials } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
 	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	if (exactAccess?.access === false) return 'noAccess'

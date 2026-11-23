@@ -801,6 +801,35 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
 	})
 
+	test.each(['about:blank', 'about:srcdoc', 'data:text/html,<p>dapp</p>'])('refuses an account request from a %s frame instead of asking for consent that could not be stored', async (frameUrl) => {
+		installBrowserMock()
+		const { changeSimulationMode, getPendingAccessRequests, getWebsiteAccess, handleInterceptedRequest, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const { getFrameOrigins } = await import('../../app/ts/utils/websiteOrigin.js')
+		const { websiteOrigin } = getFrameOrigins(frameUrl)
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 0x4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4dn })
+		// Even a record stored under the old shared empty key, which file pages and these frames used to collide on, grants nothing.
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: '' }, access: true, addressAccess: undefined }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const reply = messages.find((message) => message.method === 'eth_requestAccounts' && message.requestId === 12)
+		assert.equal(reply?.error?.code, 4100)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+		assert.deepEqual((await getWebsiteAccess()).map((entry) => entry.website.websiteOrigin), [''])
+	})
+
 	test('replays account state for already-approved eth_requestAccounts on signer-only networks', async () => {
 		installBrowserMock()
 		const {

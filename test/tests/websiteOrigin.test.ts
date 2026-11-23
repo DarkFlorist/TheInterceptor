@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { storedWebsiteOriginCases } from './storedWebsiteOriginCases.js'
-import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getStoredWebsiteHost, getWebsiteOrigin } from '../../app/ts/utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getStoredWebsiteHost, getWebsiteOrigin, isCanonicalWebsiteOrigin, isStorableWebsiteOrigin } from '../../app/ts/utils/websiteOrigin.js'
 
 describe('website origin identity', () => {
 	test('keeps authorization origins scheme-scoped while normalizing hosts and ports', () => {
@@ -43,5 +43,26 @@ describe('stored website host interpretation', () => {
 	})
 	for (const stored of ['', 'file:///tmp/page.html', 'file://server/share/page.html', 'https://user:secret@example.test', 'not a host']) test(`does not derive a website host for ${ stored }`, () => {
 		assert.equal(getStoredWebsiteHost(stored), undefined)
+	})
+})
+
+describe('live and stored website origins agree on which pages have an access key', () => {
+	// [frame URL, its website origin, whether that origin is a storable access key]
+	const cases: readonly (readonly [string, string, boolean])[] = [
+		['https://example.test/path?query', 'https://example.test', true],
+		['http://example.test:8080/', 'http://example.test:8080', true],
+		['https://user:secret@example.test/', 'https://example.test', true],
+		['file:///tmp/dapp.html?query', 'file:///tmp/dapp.html', true],
+		['blob:https://example.test/0b6c1d6e-5f1a-4c0e-9c4e-2f0a3f8d1e7b', 'https://example.test', true],
+		['about:blank', 'about:blank', false],
+		['about:srcdoc', 'about:srcdoc', false],
+		['data:text/html,<p>dapp</p>', 'data:text/html,<p>dapp</p>', false],
+		['chrome://newtab/', 'chrome://newtab/', false],
+	]
+	test.each(cases)('%s', (frameUrl, websiteOrigin, storable) => {
+		assert.equal(getWebsiteOrigin(frameUrl), websiteOrigin)
+		assert.equal(isCanonicalWebsiteOrigin(websiteOrigin), storable)
+		// Storage keeps exactly the origins the access policy can grant, so an approval is never silently dropped.
+		assert.equal(isStorableWebsiteOrigin(websiteOrigin), storable)
 	})
 })
