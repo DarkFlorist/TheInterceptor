@@ -46,7 +46,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { advanceReviewRevision, forgetReviewRevision, getReviewRevision } from '../confirmationReviewRevisions.js'
+import { advanceReviewRevision, forgetReviewRevision, getReviewRevision, type ReviewedTransactionConfirmation } from '../confirmationReviewRevisions.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -299,15 +299,15 @@ async function claimSignerHandoff(uniqueRequestIdentifier: UniqueRequestIdentifi
 // Claims a request for resolution. A second confirmation of the same request waits for the first, then re-reads storage and finds it resolved or already with the signer, so the terminal side effects (stack append, signer forward, page reply) run once. Claims are scoped to the connection registry, which the background owns once.
 const claimPendingRequestResolution = createScopedKeyedSerialExecutor<WebsiteTabConnections, string>()
 
-// reviewedRevision only matters for an accept. Its default is the revision when this call starts, which is right for a caller that resolves as soon as the confirmation arrives; a caller that awaits other work first must capture getReviewRevision before that, as confirmDialog does.
-export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, reviewedRevision = getReviewRevision(websiteTabConnections, confirmation.data.uniqueRequestIdentifier)) {
+// Accept actions require the review captured at arrival; resolution never substitutes the current revision.
+export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: ReviewedTransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	const { uniqueRequestIdentifier } = confirmation.data
 	return await claimPendingRequestResolution(websiteTabConnections, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
-		const isAccept = confirmation.data.action === 'accept'
-		if (isAccept && getReviewRevision(websiteTabConnections, uniqueRequestIdentifier) !== reviewedRevision) return false
+		const data = confirmation.data
+		if (data.action === 'accept' && getReviewRevision(websiteTabConnections, uniqueRequestIdentifier) !== data.reviewedRevision) return false
 		const outcome = await resolveClaimedPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 		if (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) === undefined) forgetReviewRevision(websiteTabConnections, uniqueRequestIdentifier)
-		else if (isAccept && outcome === false) advanceReviewRevision(websiteTabConnections, uniqueRequestIdentifier, reviewedRevision)
+		else if (data.action === 'accept' && outcome === false) advanceReviewRevision(websiteTabConnections, uniqueRequestIdentifier, data.reviewedRevision)
 		return outcome
 	})
 }

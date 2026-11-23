@@ -106,7 +106,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	assert.equal(pendingProposal?.approvalStatus.status, 'SignerError')
 	assert.equal(pendingProposal?.approvalStatus.status === 'SignerError' ? pendingProposal.approvalStatus.code : undefined, -32010)
 	assert.equal(pendingProposal?.type === 'Transaction' ? pendingProposal.safeTransaction?.safeSignerAddress : undefined, recipientAddress)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(
+	assert.equal(await modules.resolveCurrentConfirmationForTest(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
@@ -121,7 +121,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	assert.equal(recoveredProposal?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(recoveredProposal?.type === 'Transaction' ? recoveredProposal.safeTransaction?.safeSignerAddress : undefined, safeTestOwnerAddress)
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation), true)
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation), true)
 	assert.equal(hasForwardedSignerRequest(postedMessages), true)
 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })

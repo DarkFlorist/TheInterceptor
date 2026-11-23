@@ -106,7 +106,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 
 	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: activeAddress }])
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation), false)
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation), false)
 	assert.equal(hasForwardedSignerRequest(postedMessages), false)
 	const [changedOwnersProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(changedOwnersProposal?.approvalStatus.status, 'SignerError')
@@ -118,7 +118,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation), true)
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, acceptConfirmation), true)
 
 	const signerRequest = requireForwardedSignerRequest(postedMessages, 'Safe signer request')
 	assert.equal(signerRequest.method, 'eth_signTypedData_v4')

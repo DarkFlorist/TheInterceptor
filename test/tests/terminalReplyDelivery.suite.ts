@@ -43,7 +43,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		browserMock.calls.runtimeSendMessage.length = 0
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [waitingForUserTransaction] })
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
+		const delivered = await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		})
@@ -70,7 +70,7 @@ test('reject and result replies remain durable after their pending request is re
 
 	for (const terminalReply of terminalReplyCases()) {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
-		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
+		assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], terminalReply.name)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1, terminalReply.name)
 
@@ -96,7 +96,7 @@ test('terminal replies are persisted before removing the pending rejection or re
 		})
 
 		try {
-			const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), terminalReply.confirmation)
+			const resolution = modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, new Map(), terminalReply.confirmation)
 			await persistenceStarted.promise
 			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, terminalReply.name)
 			allowPersistence.resolve()

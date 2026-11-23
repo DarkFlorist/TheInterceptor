@@ -109,7 +109,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	if (pendingFailure.transactionToSimulate.success) throw new Error('Expected Safe preparation failure')
 	assert.match(pendingFailure.transactionToSimulate.error.message, /current Gnosis Safe nonce 1 is beyond this stack's final nonce 0/u)
 	assert.equal(hasForwardedSignerRequest(postedMessages), false)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	}), false)
