@@ -1,3 +1,4 @@
+import { getForwardedSignerReplyMode } from './forwardedRequestSettlement.js'
 import { type InterceptedRequestForward, InterceptorMessageToInpage, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -33,6 +34,7 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 			interceptorApproved: true,
 			requestId: message.uniqueRequestIdentifier.requestId,
 			...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
+			...(message.type === 'forwardToSigner' ? { signerReplyMode: getForwardedSignerReplyMode(message.method) } : {}),
 		})
 	}
 	return false

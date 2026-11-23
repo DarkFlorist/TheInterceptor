@@ -261,18 +261,6 @@ type InternalBackgroundRequestMethod = 'connected_to_signer' | 'safe_apps_reques
 // Internal notifications: the background answers them with doNotReply or with a placeholder result that the inpage never reads. signer_reply is not listed because only the bridge's sendSignerReply sends it.
 type InternalBackgroundNotificationMethod = 'eth_accounts_reply' | 'signer_chainChanged' | 'wallet_switchEthereumChain_reply'
 
-// The background's signerReply handler settles these forwarded requests itself (confirmation flow or watch-asset queue) and returns doNotReply. For every other forwarded method it answers the signer_reply request, with the signer's reply or error, or with an error when the reply arrives over a replaced connection. The bridge's sendSignerReply uses this list to send signer_reply as a notification or as a request. This classic script cannot import background modules, so this mirrors FORWARDED_METHODS_SETTLED_BY_BACKGROUND in app/ts/background/forwardedRequestSettlement.ts, and test/tests/forwardedMethodsSettledByBackground.test.ts keeps the two lists equal.
-const FORWARDED_METHODS_SETTLED_BY_BACKGROUND: ReadonlySet<string> = new Set([
-	'personal_sign',
-	'eth_signTypedData',
-	'eth_signTypedData_v1',
-	'eth_signTypedData_v2',
-	'eth_signTypedData_v3',
-	'eth_signTypedData_v4',
-	'eth_sendRawTransaction',
-	'eth_sendTransaction',
-	'wallet_watchAsset',
-])
 
 type InterceptedRequestBase = {
 	readonly walletSwitchRequestId?: string,
@@ -297,7 +285,8 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	}
 }
 
-type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
+type SignerReplyMode = 'notify' | 'request'
+	type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true, readonly signerReplyMode: SignerReplyMode }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
@@ -323,6 +312,7 @@ type InterceptorApprovedMessageCandidate = {
 	readonly params?: unknown
 	readonly subscription?: unknown
 	readonly replyWithSignersReply?: unknown
+		readonly signerReplyMode?: unknown
 	readonly result?: unknown
 	readonly error?: unknown
 }
@@ -406,10 +396,14 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		...(typeof subscription === 'string' ? { subscription } : {}),
 		...(typeof data.walletSwitchRequestId === 'string' ? { walletSwitchRequestId: data.walletSwitchRequestId } : {}),
 	}
-	if (type === 'forwardToSigner') return {
-		...base,
-		type: 'forwardToSigner',
-		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+	if (type === 'forwardToSigner') {
+		if (data.signerReplyMode !== 'notify' && data.signerReplyMode !== 'request') return undefined
+		return {
+			...base,
+			type: 'forwardToSigner',
+			signerReplyMode: data.signerReplyMode,
+			...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+		}
 	}
 	const hasResult = 'result' in data
 	const maybeError = data.error
@@ -764,7 +758,7 @@ function normalizeSignerErrorForBackground(error: unknown) {
 type SignerErrorForBackground = ReturnType<typeof normalizeSignerErrorForBackground>
 
 // The signer's outcome for a request that the background forwarded to it, sent back to the background as signer_reply.
-type SignerReplyToBackground<ForwardRequest extends { readonly method: string }> =
+type SignerReplyToBackground<ForwardRequest extends { readonly method: string, readonly signerReplyMode: SignerReplyMode }> =
 	| { readonly success: true, readonly forwardRequest: ForwardRequest, readonly reply: unknown, readonly signerProviderGeneration: number }
 	| { readonly success: false, readonly forwardRequest: ForwardRequest, readonly error: SignerErrorForBackground, readonly signerProviderGeneration: number }
 
@@ -889,10 +883,10 @@ function createBackgroundBridge(isUsingInterceptorWithoutSigner: () => boolean) 
 		postInternalNotification(notification)
 	}
 
-	// The only way to send signer_reply, so a forwarded method that needs an answer can never go out as a notification. The background settles FORWARDED_METHODS_SETTLED_BY_BACKGROUND itself and never answers their signer_reply, so those are notifications; every other method is a request whose answer the caller uses to settle the page request.
-	const sendSignerReply = async <ForwardRequest extends { readonly method: string }>(signerReply: SignerReplyToBackground<ForwardRequest>): Promise<SignerReplyDelivery> => {
+	// The forwarding message carries the background-owned reply mode; the provider never derives settlement policy from a method name.
+	const sendSignerReply = async <ForwardRequest extends { readonly method: string, readonly signerReplyMode: SignerReplyMode }>(signerReply: SignerReplyToBackground<ForwardRequest>): Promise<SignerReplyDelivery> => {
 		const message = { method: 'signer_reply', params: [signerReply] }
-		if (FORWARDED_METHODS_SETTLED_BY_BACKGROUND.has(signerReply.forwardRequest.method)) {
+		if (signerReply.forwardRequest.signerReplyMode === 'notify') {
 			postInternalNotification(message)
 			return { settledByBackground: true }
 		}
@@ -1594,12 +1588,14 @@ function createSignerRequests(bridge: BackgroundBridge, selection: SignerSelecti
 		const forwardRequest: {
 			type: 'forwardToSigner'
 			replyWithSignersReply: true
+			signerReplyMode: 'notify'
 			method: string
 			requestId: number
 			params: unknown
 		} = {
 			type: 'forwardToSigner',
 			replyWithSignersReply: true,
+			signerReplyMode: 'notify',
 			method: 'wallet_watchAsset',
 			requestId: parameters.uniqueRequestIdentifier.requestId,
 			params: parameters,
