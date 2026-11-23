@@ -731,7 +731,7 @@ describe('inpage signer bridge with a Coinbase providerMap', () => {
 			providerMap: new Map([['CoinbaseWallet', mappedSigner]]),
 		}
 
-		await withFakeInpageWindow(fakeWindow, `provider-map-events-${ Date.now() }-${ Math.random() }`, async () => {
+		await withFakeInpageWindow(fakeWindow, 'provider-map-events', async () => {
 			await waitFor(() => mappedOnKinds.length + rootOnKinds.length >= 4)
 			assert.equal(mappedOnKinds.length >= 4, true)
 			assert.equal(rootOnKinds.length, 0)
