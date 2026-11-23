@@ -1403,8 +1403,8 @@ describe('popup icon sync', () => {
 				profiles.value = [{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 7_000_000n }] }]
 			}
 			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
-			const { enabled: _enabled, ...richToken } = option
-			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Unavailable' } }
+			// Like the rich setting command, a change saved while the simulation is unavailable replies as a failure with the shared message.
+			return { method: 'popup_modifyRichToken', result: { success: false, error: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' } }
 		})
 		try {
 			await act(() => {
@@ -1419,8 +1419,8 @@ describe('popup icon sync', () => {
 			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'USDC rich amount')
 			if (input === undefined) throw new Error('Expected token balance editor')
 			await commitAmountEdit(input, '7')
-			assert.equal(profiles.value[0]?.tokenBalances[0]?.amount, 7_000_000n)
-			assert.equal(dom.document.body.textContent.includes('The token funding was saved, but the latest simulation is unavailable.'), true)
+			assert.equal(profiles.value[0]?.tokenBalances[0]?.amount, 7_000_000n, 'the saved amount is reloaded even though the reply is a failure')
+			assert.equal(dom.document.body.textContent.includes('The rich setting was saved, but the latest simulation is unavailable.'), true)
 		} finally {
 			render(undefined, dom.document.body)
 			dom.restore()

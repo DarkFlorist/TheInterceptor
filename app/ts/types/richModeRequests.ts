@@ -28,9 +28,9 @@ export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
 	),
 }).asReadonly()
 
-// A successful reply means the change is saved. 'Refreshed' means a completed refresh covered it; 'Superseded' means a newer queued refresh replaced this one before it ran and that refresh will update the simulation; 'Unavailable' means the refresh failed and the balances shown may be stale.
+// A successful reply means the change is saved and the simulation is not known to be unavailable. 'Refreshed' means the simulation reflects it; 'Superseded' means a newer queued refresh replaced this one before it ran and that refresh will update the simulation. A change saved while the simulation is unavailable replies as a failure with the shared saved-but-unavailable message, exactly like the rich setting command.
 export type RichTokenSimulationRefresh = funtypes.Static<typeof RichTokenSimulationRefresh>
-export const RichTokenSimulationRefresh = funtypes.Union(funtypes.Literal('Refreshed'), funtypes.Literal('Superseded'), funtypes.Literal('Unavailable'))
+export const RichTokenSimulationRefresh = funtypes.Union(funtypes.Literal('Refreshed'), funtypes.Literal('Superseded'))
 
 export const ModifyRichTokenReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyRichToken'),

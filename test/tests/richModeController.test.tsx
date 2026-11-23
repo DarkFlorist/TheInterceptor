@@ -217,3 +217,32 @@ test('failed native-amount and token changes reach the UI through the same non-t
 		else Object.defineProperty(globalThis, 'browser', originalBrowser)
 	}
 })
+
+test('a funding change saved while the simulation is unavailable reaches the UI identically from both rich commands', async () => {
+	const { SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE, toModifyRichTokenReply, toRichSettingsChangeReply } = await import('../../app/ts/background/richFundingReplies.js')
+	const savedWithUnavailableSimulation = { ok: true as const, richToken: undefined, simulationRefresh: 'Unavailable' as const }
+	const savedWithCurrentSimulation = { ok: true as const, richToken: undefined, simulationRefresh: 'Refreshed' as const }
+	const originalBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	let outcome: typeof savedWithUnavailableSimulation | typeof savedWithCurrentSimulation = savedWithUnavailableSimulation
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: {
+		sendMessage: async (message: unknown) => {
+			const request = PopupMessage.parse(message)
+			if (request.method === 'popup_modifyMakeMeRich') return toRichSettingsChangeReply(outcome)
+			if (request.method === 'popup_modifyRichToken') return toModifyRichTokenReply(outcome)
+			return undefined
+		},
+	} } })
+	const nativeChange = async () => await requestRichSettingsChange({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', chainId: 1n, nativeAmount: 2n, address: 1n } })
+	const tokenChange = async () => await requestRichSettingsChange({ method: 'popup_modifyRichToken', data: { action: 'SetAmount', chainId: 1n, address: 1n, tokenAddress: 2n, tokenId: undefined, amount: 2n } })
+	try {
+		const expected = { ok: false, error: SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE }
+		assert.deepEqual(await nativeChange(), expected)
+		assert.deepEqual(await tokenChange(), expected)
+		outcome = savedWithCurrentSimulation
+		assert.equal((await nativeChange()).ok, true)
+		assert.equal((await tokenChange()).ok, true)
+	} finally {
+		if (originalBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', originalBrowser)
+	}
+})

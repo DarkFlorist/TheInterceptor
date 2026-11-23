@@ -8,7 +8,7 @@ import type { ModifyMakeMeRich, PopupSettingsRequestWithSharedReply } from '../t
 export type CoordinatedPopupSettingsRequest = Exclude<PopupSettingsRequestWithSharedReply, ModifyMakeMeRich>
 export type RichSettingsRequest = ModifyMakeMeRich | ModifyRichTokenRequest
 
-// The one failure contract of the rich-funding commands: expected failures (a rejected change, a missing reply, a refused admission) come back as ok: false and never throw. simulationRefresh is reported by token changes; the rich setting command reports an unavailable simulation as ok: false instead, so it leaves it undefined.
+// The one result of both rich-funding commands, which reply the same way: expected failures (a rejected change, a change saved while the simulation is unavailable, a missing reply, a refused admission) come back as ok: false and never throw. simulationRefresh says whether a token change's simulation is current or superseded; the rich setting reply carries no refresh detail, so it is undefined there.
 export type RichSettingsChangeResult =
 	| { readonly ok: true, readonly richToken: RichToken | undefined, readonly simulationRefresh: RichTokenSimulationRefresh | undefined }
 	| { readonly ok: false, readonly error: string }

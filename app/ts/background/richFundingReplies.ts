@@ -1,14 +1,19 @@
 import { createRichTokenFailureReply } from '../types/richModeRequests.js'
-import type { RichTokenSimulationRefresh } from '../types/interceptor-reply-messages.js'
 import type { RichFundingResult, RichToken } from '../types/richMode.js'
 import { getErrorMessage, reportUnexpectedError } from '../utils/errors.js'
 import type { PopupSimulationRefreshOutcome } from './popupSimulationRefreshQueue.js'
 
-// A rich-funding mutation as the popup sees it: rejected, or saved together with whether the simulation now reflects it.
-export type RichFundingOutcome = { readonly ok: true, readonly richToken: RichToken | undefined, readonly simulationRefresh: RichTokenSimulationRefresh } | { readonly ok: false, readonly error: string }
+// Whether a saved funding change's simulation reflects it: refreshed, superseded by a newer refresh, or unavailable.
+export type RichFundingSimulationRefresh = 'Refreshed' | 'Superseded' | 'Unavailable'
+
+// A rich-funding mutation as the background sees it: rejected, or saved together with whether the simulation now reflects it.
+export type RichFundingOutcome = { readonly ok: true, readonly richToken: RichToken | undefined, readonly simulationRefresh: RichFundingSimulationRefresh } | { readonly ok: false, readonly error: string }
+
+// The message both rich-funding commands reply with when the change was saved but the latest simulation is unavailable; main's rich setting command established it.
+export const SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE = 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.'
 
 // The funding change is already committed when this runs, so a refresh failure is reported and returned as an outcome instead of being thrown past the popup reply.
-export async function refreshSimulationAfterRichFundingChange(refresh: () => Promise<PopupSimulationRefreshOutcome>): Promise<RichTokenSimulationRefresh> {
+export async function refreshSimulationAfterRichFundingChange(refresh: () => Promise<PopupSimulationRefreshOutcome>): Promise<RichFundingSimulationRefresh> {
 	try {
 		const outcome = await refresh()
 		// The queue settles a superseded request before its replacement runs, so the replacement's result is unknown here and is not reported as a completed refresh.
@@ -37,13 +42,21 @@ export async function completeRichFundingMutation(result: RichFundingResult, sim
 	return { ok: true, richToken: result.richToken, simulationRefresh }
 }
 
-// The two popup replies for a rich-funding outcome; this is the only place outcomes become replies.
-export const toModifyRichTokenReply = (outcome: RichFundingOutcome) => outcome.ok
-	? { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: outcome.richToken, simulationRefresh: outcome.simulationRefresh } }
-	: createRichTokenFailureReply(outcome.error)
+// The one reply contract of both rich-funding commands: saved with a current or superseded simulation is a success; rejected, or saved while the simulation is unavailable, is a failure with a message. This is the only place outcomes become replies.
+export const toRichFundingReply = (outcome: RichFundingOutcome) => {
+	if (!outcome.ok) return { ok: false as const, error: outcome.error }
+	if (outcome.simulationRefresh === 'Unavailable') return { ok: false as const, error: SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE }
+	return { ok: true as const, richToken: outcome.richToken, simulationRefresh: outcome.simulationRefresh }
+}
+
+export const toModifyRichTokenReply = (outcome: RichFundingOutcome) => {
+	const reply = toRichFundingReply(outcome)
+	return reply.ok
+		? { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: reply.richToken, simulationRefresh: reply.simulationRefresh } }
+		: createRichTokenFailureReply(reply.error)
+}
 
 export const toRichSettingsChangeReply = (outcome: RichFundingOutcome) => {
-	if (!outcome.ok) return { type: 'PopupSettingsChangeReply' as const, ok: false as const, message: outcome.error }
-	if (outcome.simulationRefresh === 'Unavailable') return { type: 'PopupSettingsChangeReply' as const, ok: false as const, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
-	return { type: 'PopupSettingsChangeReply' as const, ok: true as const }
+	const reply = toRichFundingReply(outcome)
+	return reply.ok ? { type: 'PopupSettingsChangeReply' as const, ok: true as const } : { type: 'PopupSettingsChangeReply' as const, ok: false as const, message: reply.error }
 }

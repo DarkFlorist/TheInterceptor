@@ -8,7 +8,6 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import type { ChangeRichSettings } from '../popupSettingsChange.js'
 import type { RichFundingFeedback } from '../subcomponents/RichModeShared.js'
 
-const SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE = 'The token funding was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.'
 const SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE = 'The token funding was saved. A newer simulation refresh is in progress; its result will update the simulation.'
 
 export type RichModeMutationInputs = {
@@ -70,10 +69,6 @@ export function useRichModeMutations({ isSettingsChangePending, changeRichSettin
 			case 'Refreshed': return
 			case 'Superseded': {
 				notice.value = SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE
-				return
-			}
-			case 'Unavailable': {
-				setError(SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE, undefined)
 				return
 			}
 			default: return assertNever(simulationRefresh)

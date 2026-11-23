@@ -729,7 +729,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(refreshCount, 1)
 		assert.deepEqual(changed, { ok: true, richToken: undefined, simulationRefresh: 'Unavailable' })
 		assert.equal(toRichSettingsChangeReply(changed).ok, false)
-		assert.deepEqual(toModifyRichTokenReply(changed), { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined, simulationRefresh: 'Unavailable' } })
+		assert.deepEqual(toModifyRichTokenReply(changed), { method: 'popup_modifyRichToken', result: { success: false, error: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' } })
 
 		// Retrying the identical setting after the failed refresh changes no funding, but must refresh again instead of claiming the simulation reflects it.
 		const retried = await setNative(5n)
