@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { usePopupSettingsChanges } from '../../app/ts/components/hooks/usePopupSettingsChanges.js'
-import { requestPopupSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
+import { requestRichSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
 import { signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -20,7 +20,7 @@ test('rich controller observes the funding snapshot arriving and changing withou
 			activeAddress: signal(account), richFundingChainId: chain, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 			makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH',
 			richAccountBalances: signal<readonly RichAccountBalance[]>([1n, 2n].map((chainId) => ({ chainId, address: account.address, nativeAmount: chainId * 10n, tokenBalances: [] }))),
-			richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([]), changeRichSettings: requestPopupSettingsChange,
+			richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([]), changeRichSettings: requestRichSettingsChange,
 		}
 	function Harness() {
 		controller = useRichModeTokens(inputs)
@@ -69,7 +69,7 @@ test('a multi-token batch keeps its original funding chain when the home snapsho
 			activeAddress: signal(account), richFundingChainId: chain, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 			makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH',
 			richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [] }]),
-			richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal(options), changeRichSettings: requestPopupSettingsChange,
+			richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal(options), changeRichSettings: requestRichSettingsChange,
 		}
 	function Harness() {
 		controller = useRichModeTokens(inputs)
@@ -166,6 +166,51 @@ for (const action of ['native', 'token-amount', 'add', 'remove'] as const) for (
 	} finally {
 		finishReply(undefined)
 		finishReload()
+		render(undefined, dom.document.body)
+		dom.restore()
+		if (originalBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', originalBrowser)
+	}
+})
+
+test('failed native-amount and token changes reach the UI through the same non-throwing result', async () => {
+	const dom = installDomMock()
+	const originalBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: {
+		onMessage: { addListener: () => undefined, removeListener: () => undefined },
+		sendMessage: async (message: unknown) => {
+			const request = PopupMessage.parse(message)
+			if (request.method === 'popup_modifyMakeMeRich') return { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount rejected' }
+			if (request.method === 'popup_modifyRichToken') return { method: 'popup_modifyRichToken', result: { success: false, error: 'Token amount rejected' } }
+			return undefined
+		},
+	} } })
+	const account: AddressBookEntry = { type: 'contact', address: 1n, name: 'Funded account', entrySource: 'User' }
+	const option: RichTokenOption = { chainId: 1n, tokenAddress: 2n, tokenType: 'ERC20', tokenId: undefined, name: 'Token', symbol: 'TKN', decimals: 0n, amount: 10n, balanceSlot: 9n, erc1155StorageOrder: undefined, enabled: true }
+	let controller: RichModeTokenController | undefined
+	const inputs: Parameters<typeof useRichModeTokens>[0] = {
+		activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+		makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH',
+		richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 10n }] }]),
+		richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]), changeRichSettings: requestRichSettingsChange,
+	}
+	function Harness() {
+		controller = useRichModeTokens(inputs)
+		return undefined
+	}
+	try {
+		assert.deepEqual(await requestRichSettingsChange({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', chainId: 1n, nativeAmount: 2n, address: account.address } }), { ok: false, error: 'Native amount rejected' })
+		assert.deepEqual(await requestRichSettingsChange({ method: 'popup_modifyRichToken', data: { action: 'SetAmount', chainId: 1n, address: account.address, tokenAddress: option.tokenAddress, tokenId: undefined, amount: 2n } }), { ok: false, error: 'Token amount rejected' })
+
+		await act(() => { render(h(Harness, {}), dom.document.body) })
+		await act(() => { controller?.accounts.actions.openBalances(account.address) })
+		await act(async () => { await controller?.editor.actions.saveNativeAmount(2n) })
+		assert.equal(controller?.feedback.value.richTokenError, 'Native amount rejected')
+		assert.equal(controller?.feedback.value.richTokenErrorTarget, 'native')
+		await act(async () => { await controller?.editor.actions.saveRichTokenAmount(option, 2n) })
+		assert.equal(controller?.feedback.value.richTokenError, 'Token amount rejected')
+		assert.equal(controller?.feedback.value.richTokenErrorTarget, '2:erc20')
+	} finally {
 		render(undefined, dom.document.body)
 		dom.restore()
 		if (originalBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')

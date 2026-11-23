@@ -41,14 +41,10 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 	const reloadRichState = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
 	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
 		void waitForRichChange(async () => {
-			try {
-				await changeRichSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: enabled, address } })
-			} catch (error) {
-				// Reload persisted balances when a saved setting cannot be visualized.
-				await reloadRichState()
-				throw error
-			}
+			const result = await changeRichSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: enabled, address } })
+			// Reload persisted balances after failures too, because a saved setting may not have been visualized.
 			await reloadRichState()
+			if (!result.ok) throw new Error(result.error)
 		})
 	}
 	const selectRichTokensButtonRef = useRef<HTMLButtonElement>(null)
@@ -118,8 +114,9 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 		selectedRichAddress.value = undefined
 		resetRichDialogViewState()
 	})
-	const reportSimulationRefreshOutcome = (simulationRefresh: RichTokenSimulationRefresh) => {
+	const reportSimulationRefreshOutcome = (simulationRefresh: RichTokenSimulationRefresh | undefined) => {
 		switch (simulationRefresh) {
+			case undefined:
 			case 'Refreshed': return
 			case 'Superseded': {
 				richTokenNotice.value = SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE
@@ -176,15 +173,15 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 			richTokenErrorTarget.value = tokenKey
 			return false
 		}
-		if (reply.result.success === false) {
-			richTokenError.value = reply.result.error
+		if (!reply.ok) {
+			richTokenError.value = reply.error
 			richTokenErrorTarget.value = tokenKey
 			return false
 		}
 
 		if (enabled) recentRichTokenKeys.value = [tokenKey, ...recentRichTokenKeys.value.filter((key) => key !== tokenKey)].slice(0, 5)
 		richTokenSaveConfirmedAddress.value = address
-		reportSimulationRefreshOutcome(reply.result.simulationRefresh)
+		reportSimulationRefreshOutcome(reply.simulationRefresh)
 		return true
 	}
 
@@ -223,7 +220,7 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 			richTokenSaveConfirmedAddress.value = address
 			return
 		}
-		richTokenError.value ??= reply === undefined ? 'The background service did not confirm the native balance.' : reply.message
+		richTokenError.value ??= reply === undefined ? 'The background service did not confirm the native balance.' : reply.error
 		richTokenErrorTarget.value = 'native'
 	}
 
@@ -256,13 +253,13 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 			richTokenErrorTarget.value = tokenKey
 			return
 		}
-		if (reply.result.success === false) {
-			richTokenError.value = reply.result.error
+		if (!reply.ok) {
+			richTokenError.value = reply.error
 			richTokenErrorTarget.value = tokenKey
 			return
 		}
 		richTokenSaveConfirmedAddress.value = address
-		reportSimulationRefreshOutcome(reply.result.simulationRefresh)
+		reportSimulationRefreshOutcome(reply.simulationRefresh)
 	}
 
 	const setRichTokenAmount = async (option: RichTokenOption, input: HTMLInputElement) => {

@@ -3,7 +3,7 @@ import { RichModeAccountManager } from '../../app/ts/components/pages/RichMode.j
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { RichToken, type RichAccountBalance, type RichTokenOption } from '../../app/ts/types/richMode.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { requestPopupSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
+import { requestRichSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { act } from 'preact/test-utils'
@@ -1176,7 +1176,7 @@ describe('popup icon sync', () => {
 					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(previousAmount), richTokenOptions: signal([]),
-					changeRichSettings: requestPopupSettingsChange,
+					changeRichSettings: requestRichSettingsChange,
 				}), dom.document.body)
 			})
 			const expandButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
@@ -1232,7 +1232,7 @@ describe('popup icon sync', () => {
 				makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 				richAccountBalances: profiles,
 				richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option, daiOption]),
-				changeRichSettings: requestPopupSettingsChange,
+				changeRichSettings: requestRichSettingsChange,
 			}), dom.document.body)
 		})
 		await openBalanceEditor(dom, account.name)
@@ -1378,7 +1378,7 @@ describe('popup icon sync', () => {
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5n }] }]),
 					richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
-					changeRichSettings: requestPopupSettingsChange,
+					changeRichSettings: requestRichSettingsChange,
 				}), dom.document.body)
 			})
 			await openBalanceEditor(dom, account.name)
@@ -1412,7 +1412,7 @@ describe('popup icon sync', () => {
 					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
-					changeRichSettings: requestPopupSettingsChange,
+					changeRichSettings: requestRichSettingsChange,
 				}), dom.document.body)
 			})
 			await openBalanceEditor(dom, account.name)
@@ -1446,7 +1446,7 @@ describe('popup icon sync', () => {
 					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
-					changeRichSettings: requestPopupSettingsChange,
+					changeRichSettings: requestRichSettingsChange,
 				}), dom.document.body)
 			})
 			await openBalanceEditor(dom, account.name)

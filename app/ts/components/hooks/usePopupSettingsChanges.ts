@@ -7,7 +7,7 @@ import type { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
-import { type CoordinatedPopupSettingsRequest, type ChangeRichSettings, requestPopupSettingsChange } from '../popupSettingsChange.js'
+import { type CoordinatedPopupSettingsRequest, type ChangeRichSettings, requestPopupSettingsChange, requestRichSettingsChange } from '../popupSettingsChange.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
 
 const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, string>> = {
@@ -66,7 +66,16 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 	async function setSimulationMode(enabled: boolean) {
 		await changePopupSettings({ method: 'popup_enableSimulationMode', data: enabled })
 	}
-	const changeRichSettings: ChangeRichSettings = changePopupSettings
+	const changeRichSettings: ChangeRichSettings = async (message) => {
+		if (!isSettingsLoaded.value) return { ok: false, error: 'Settings are still loading. Please try again.' }
+		if (isSettingsChangePending.value) return { ok: false, error: 'A settings change is already in progress. Please wait for it to finish.' }
+		pendingSettingsChange.value = true
+		try {
+			return await requestRichSettingsChange(message)
+		} finally {
+			pendingSettingsChange.value = false
+		}
+	}
 
 	useEffect(() => {
 		let latestSettingsGeneration = 0
