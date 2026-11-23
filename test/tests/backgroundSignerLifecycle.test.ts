@@ -197,6 +197,7 @@ describe('background signer lifecycle and chain switching', () => {
 			requestId: 8,
 			type: 'forwardToSigner',
 			replyWithSignersReply: true,
+			signerReplyMode: 'request',
 			method: 'wallet_getCapabilities',
 			params: [accountString, ['0x2105']],
 		})

@@ -21,7 +21,7 @@ import { updateFetchSimulationStackRequestWithPendingRequest } from '../windows/
 import { refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, updateInterceptorAccessViewWithPendingRequests } from '../windows/interceptorAccess.js'
 import { craftPersonalSignPopupMessage } from '../windows/personalSign.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from '../windows/watchAsset.js'
-import { getReviewRevision } from '../confirmationReviewRevisions.js'
+import { captureConfirmationReview } from '../confirmationReviewRevisions.js'
 
 type SafeSignerAccountRefresh = Awaited<ReturnType<typeof refreshSignerAccountsForTab>>
 
@@ -34,7 +34,7 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 
 export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	// Before any await: the signer account refresh below can finish after another accept of the same request asked the user to review it again.
-	const reviewedRevision = getReviewRevision(websiteTabConnections, confirmation.data.uniqueRequestIdentifier)
+	const reviewedConfirmation = captureConfirmationReview(websiteTabConnections, confirmation)
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -52,7 +52,7 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 		: undefined
 	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection, reviewedRevision)
+	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, reviewedConfirmation, refreshedSafeSignerSelection)
 }
 
 const createPopupReadyReply = <ConfirmTransactionBootstrap>(popupOrTabId: PopupOrTabId, confirmTransactionBootstrap: ConfirmTransactionBootstrap) => ({
