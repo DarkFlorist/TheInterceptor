@@ -1,6 +1,6 @@
 import type { SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getSupportedSendTransactionType } from '../../utils/signerTransactionEnvelope.js'
-import { TransactionFeeFields } from '../simulationExplaining/SimulationSummary.js'
+import { TransactionFeeFields } from './TransactionFeeFields.js'
 
 // The wallet signs this request, whereas the execution simulation deliberately excludes the external executor's gas costs.
 export function WalletTransactionDetails({ request }: { request: SendTransactionParams }) {

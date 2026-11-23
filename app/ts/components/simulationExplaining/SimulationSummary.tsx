@@ -1,4 +1,3 @@
-import type { SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { type Erc1155TokenBalanceChange, type Erc721and1155OperatorChange, summarizeLogs, type SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { type Erc721TokenApprovalChange, type SimulatedAndVisualizedTransaction, type ResolvedSimulationResults, type SimulationAndVisualisationResults, type ERC20TokenApprovalChange, type Erc20TokenBalanceChange, type TransactionWithAddressBookEntries, type NamedTokenId, type MaybeSimulatedTransaction, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
@@ -7,7 +6,7 @@ import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPri
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { addressString, bytes32String, nanoString } from '../../utils/bigint.js'
+import { addressString, bytes32String } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
@@ -31,6 +30,7 @@ import { getGasFeePaidByTransactionSender, isGnosisSafeExecution, type Transacti
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
+import { TransactionFeeFields } from '../subcomponents/TransactionFeeFields.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
 import { assertNever } from '../../utils/typescript.js'
 import type { SignerNonce } from '../../utils/signerFacingTransactionRequest.js'
@@ -989,27 +989,6 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 			onClick = { forceSetGasLimit }
 		/>
 	</>
-}
-
-// The fee fields the wallet is asked to sign, for every supported transaction type.
-export function TransactionFeeFields({ transaction }: { transaction: Pick<SendTransactionParams['params'][0], 'gasPrice' | 'maxFeePerGas' | 'maxPriorityFeePerGas'> & { readonly type: TransactionWithAddressBookEntries['type'] } }) {
-	const feeText = (amount: SendTransactionParams['params'][0]['maxFeePerGas']) => typeof amount === 'bigint' ? `${ nanoString(amount) } nanoeth/gas` : 'Selected by your wallet'
-	switch (transaction.type) {
-		case 'legacy':
-		case '2930': return <>
-			<dt>Gas Price</dt>
-			<dd>{ feeText(transaction.gasPrice) }</dd>
-		</>
-		case '1559':
-		case '4844':
-		case '7702': return <>
-			<dt>Max Fee Per Gas</dt>
-			<dd>{ feeText(transaction.maxFeePerGas) }</dd>
-			<dt>Max Priority Fee Per Gas</dt>
-			<dd>{ feeText(transaction.maxPriorityFeePerGas) }</dd>
-		</>
-		default: return assertNever(transaction.type)
-	}
 }
 
 export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, signerNonce }: RawTransactionDetailsCardParams) {
