@@ -108,6 +108,7 @@ describe('background provider method routing', () => {
 			requestId: 3,
 			type: 'forwardToSigner',
 			replyWithSignersReply: true,
+			signerReplyMode: 'request',
 			method: 'wallet_getCapabilities',
 			params: [accountString, ['0x2105']],
 		})
@@ -229,6 +230,7 @@ describe('background provider method routing', () => {
 			requestId: 1,
 			type: 'forwardToSigner',
 			replyWithSignersReply: true,
+			signerReplyMode: 'request',
 			method: 'eth_getStorageAt',
 			params: ['0xe592427a0aece92de3edee1f18e0157c05861564', '0x0', 'latest'],
 		})
