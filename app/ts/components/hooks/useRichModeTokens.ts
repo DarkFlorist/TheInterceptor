@@ -41,10 +41,14 @@ export function useRichModeTokens({ isSettingsChangePending, changeRichSettings,
 	const reloadRichState = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
 	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
 		void waitForRichChange(async () => {
-			const result = await changeRichSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: enabled, address } })
-			// Reload persisted balances after failures too, because a saved setting may not have been visualized.
-			await reloadRichState()
-			if (!result.ok) throw new Error(result.error)
+			try {
+				const result = await changeRichSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: enabled, address } })
+				// The async state shows a rejected change as its error.
+				if (!result.ok) throw new Error(result.error)
+			} finally {
+				// Reload persisted balances after failures too, because a saved setting may not have been visualized.
+				await reloadRichState()
+			}
 		})
 	}
 	const selectRichTokensButtonRef = useRef<HTMLButtonElement>(null)

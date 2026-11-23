@@ -259,7 +259,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		isActiveAddressChangePending: new Signal(false),
 		isSettingsChangePending: new Signal(false),
 		setSimulationMode: async () => undefined,
-		changeRichSettings: async () => undefined,
+		changeRichSettings: async () => ({ ok: true, richToken: undefined, simulationRefresh: undefined }),
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		richFundingChainId: new Signal(rpcNetwork.chainId),
@@ -493,12 +493,11 @@ describe('Home popup clear empty state', () => {
 		const previousInputElement = globalThis.HTMLInputElement
 		Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, writable: true, value: globalThis.Element })
 		const browserMock = installBrowserMock()
-		let rejectChange: ((error: Error) => void) | undefined
-		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		let finishChange: ((result: { ok: false, error: string }) => void) | undefined
+		const change = new Promise<{ ok: false, error: string }>((resolve) => { finishChange = resolve })
 		const params = createHomeParams({ changeRichSettings: async (request) => {
 			assert.deepEqual(request, { method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: true, address: 'CurrentAddress' } })
-			await change
-			return undefined
+			return await change
 		} })
 		try {
 			await act(() => { render(h(Home, params), dom.document.body) })
@@ -512,8 +511,8 @@ describe('Home popup clear empty state', () => {
 			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), true)
 			assert.equal(String(checkbox.getAttribute?.('disabled')), 'true')
 			await act(async () => {
-				if (rejectChange === undefined) throw new Error('Expected pending change')
-				rejectChange(new Error('Balances could not be refreshed'))
+				if (finishChange === undefined) throw new Error('Expected pending change')
+				finishChange({ ok: false, error: 'Balances could not be refreshed' })
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 			assert.equal(dom.document.body.textContent?.includes('Balances could not be refreshed'), true)
