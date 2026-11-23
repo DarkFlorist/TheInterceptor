@@ -112,7 +112,8 @@ const exportPayload = {
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
 // A client still installed, so the refresh after import reaches the provider and stops at its expected failure.
 const expectedInfrastructureEthereum = {
-	isCurrent: alwaysLive,
+	isCurrent: alwaysLive.isCurrent,
+	getInstalledServices: alwaysLive.installedServices,
 	getBlock: async () => { throw NEW_BLOCK_ABORT },
 }
 

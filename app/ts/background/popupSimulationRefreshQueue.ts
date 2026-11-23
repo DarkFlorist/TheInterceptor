@@ -89,17 +89,31 @@ export function createPopupSimulationRefresher<Target>() {
 
 const refreshQueue = createPopupSimulationRefresher<PopupVisualisationRefreshTarget>()
 
+// A refresh prepared with services the owner has since replaced still owes the stack it was asked for: the replacement's own refresh may have read the stack before this caller's edit landed. It hands that refresh to the services installed now, without invalidating and skipping an unchanged result, so it cannot retire or republish what the replacement already published. Each hand-off targets services that were current when it was made; only another replacement during its preparation hands off again, and a refresh superseded by newer invalidation on current services ends here.
+async function handOffToInstalledServices(services: SimulationServices, { isClientCurrent = (ethereum) => ethereum.isCurrent() }: PopupVisualisationPreparationDependencies = {}): Promise<void> {
+	if (isClientCurrent(services.ethereum)) return
+	const installed = services.ethereum.getInstalledServices()
+	if (installed === undefined || installed.ethereum === services.ethereum) return
+	const request = await preparePopupVisualisationRefresh(installed, false)
+	if (request === undefined) return await handOffToInstalledServices(installed)
+	const queued = refreshQueue.toQueued(installed, request)
+	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshQueue.refresh(queued, false))
+}
+
 // Awaits the refresh and returns its outcome; failures reject to the caller. Use startPopupSimulationRefreshInBackground when the caller must not wait for RPC work.
 export async function runPopupSimulationRefresh({ invalidateOldState = false, ...services }: PopupSimulationRefresh): Promise<PopupSimulationRefreshOutcome> {
 	const request = await preparePopupVisualisationRefresh(services, invalidateOldState)
-	if (request === undefined) return { status: 'superseded' }
+	if (request === undefined) {
+		await handOffToInstalledServices(services)
+		return { status: 'superseded' }
+	}
 	return await refreshQueue.refresh(refreshQueue.toQueued(services, request), invalidateOldState)
 }
 
 // Awaits only local invalidation and capture, then returns without an outcome; the refresh runs as a background task that reports its own failures. Callers that need the outcome use runPopupSimulationRefresh.
 export async function startPopupSimulationRefreshInBackground({ invalidateOldState = true, ...services }: PopupSimulationRefresh, dependencies: PopupVisualisationPreparationDependencies = {}): Promise<void> {
 	const request = await preparePopupVisualisationRefresh(services, invalidateOldState, true, dependencies)
-	if (request === undefined) return
+	if (request === undefined) return await handOffToInstalledServices(services, dependencies)
 	const queued = refreshQueue.toQueued(services, request)
 	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshQueue.refresh(queued, invalidateOldState))
 }

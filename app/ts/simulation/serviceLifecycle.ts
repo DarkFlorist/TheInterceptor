@@ -99,8 +99,9 @@ export function createSimulationServicesOwner(
 ) {
 	// Advanced by every install. Each client compares the generation it was installed at, so installing a replacement makes every earlier client report itself replaced.
 	let installedGeneration = 0
-	const livenessAt = (generation: number): ClientLiveness => () => generation === installedGeneration
-	return createSimulationServicesOwnerForServices(
+	// Clients read the owner only when asked, after it exists.
+	const livenessAt = (generation: number): ClientLiveness => ({ isCurrent: () => generation === installedGeneration, installedServices: () => owner.getCurrent() })
+	const owner = createSimulationServicesOwnerForServices(
 		rpcNetwork,
 		createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, livenessAt(installedGeneration), 60000, rpcRequestLifecycleCallbacks),
 		(current, nextRpc) => {
@@ -113,6 +114,7 @@ export function createSimulationServicesOwner(
 		observeUpdate,
 		reportObserverError,
 	)
+	return owner
 }
 
 // The owner records the installed selection explicitly, so injected services need not spoof client metadata to participate in reconciliation. Replacement is synchronous. Each update tracks its own installed pair and refresh intent; application workflows own their ordering, and an unfinished callback cannot lock out another replacement.

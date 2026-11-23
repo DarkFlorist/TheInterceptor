@@ -194,7 +194,10 @@ export class EthereumClientService {
 	public readonly getRpcEntry = () => this.rpcEntry
 
 	// Whether this client's owner still has it installed; a refresh holding a replaced client steps aside. Retirement (isRetired) only stops polling and is set before a replacement is built, so a client whose replacement failed is retired yet still installed.
-	public readonly isCurrent = () => this.liveness()
+	public readonly isCurrent = () => this.liveness.isCurrent()
+
+	// The services its owner has installed now, for handing off work that found this client replaced.
+	public readonly getInstalledServices = () => this.liveness.installedServices()
 
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback

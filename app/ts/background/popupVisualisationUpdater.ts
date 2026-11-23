@@ -202,7 +202,7 @@ export type PopupVisualisationPreparationDependencies = {
 	readonly isClientCurrent?: (ethereum: EthereumClientService) => boolean
 }
 
-// Captures the snapshot and, for background edits, publishes the updating state; the caller decides invalidation once and passes it to the queue, which hands it to execute. A handler can reach this with services it captured before the owner replaced them; that request returns before invalidating anything, because the replacement queues its own refresh and execution would reject the replaced client, leaving any published progress unfinished.
+// Captures the snapshot and, for background edits, publishes the updating state; the caller decides invalidation once and passes it to the queue, which hands it to execute. A handler can reach this with services it captured before the owner replaced them; that request returns before invalidating anything, because execution would reject the replaced client and leave any published progress unfinished. The queue then hands the refresh to the installed services (popupSimulationRefreshQueue.ts).
 export async function preparePopupVisualisationRefresh(services: SimulationServices, invalidateOldState: boolean, publishUpdatingState = false, { isClientCurrent = (ethereum) => ethereum.isCurrent() }: PopupVisualisationPreparationDependencies = {}): Promise<PopupVisualisationRefreshRequest | undefined> {
 	if (!isClientCurrent(services.ethereum)) return undefined
 	const generation = publishUpdatingState ? invalidatePopupVisualisation() : publicationGeneration

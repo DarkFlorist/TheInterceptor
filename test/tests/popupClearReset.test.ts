@@ -265,7 +265,8 @@ function buildStalePopupVisualisationState(
 function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 	let blockPolling = false
 	return {
-		isCurrent: alwaysLive,
+		isCurrent: alwaysLive.isCurrent,
+		getInstalledServices: alwaysLive.installedServices,
 		isBlockPolling() {
 			return blockPolling
 		},

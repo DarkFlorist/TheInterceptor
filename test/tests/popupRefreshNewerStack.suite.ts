@@ -174,7 +174,7 @@ function createNetworkSwitchFixture({ refreshReplacements = true } = {}) {
 			}
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork, () => currentServices === firstEndpointServices)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, { isCurrent: () => currentServices === firstEndpointServices, installedServices: () => currentServices })
 	const firstEndpointServices: SimulationServices = { ethereum: firstEndpointEthereum, tokenPriceService: new modules.TokenPriceService(firstEndpointEthereum, 60_000) }
 	const otherEndpointSimulates = new Future<void>()
 	const releaseOtherEndpointSimulation = new Future<void>()
@@ -196,7 +196,7 @@ function createNetworkSwitchFixture({ refreshReplacements = true } = {}) {
 			}
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, otherEndpointNetwork, () => currentServices === otherEndpointServices)
+	}, async () => undefined, async () => undefined, otherEndpointNetwork, { isCurrent: () => currentServices === otherEndpointServices, installedServices: () => currentServices })
 	const otherEndpointServices: SimulationServices = { ethereum: otherEndpointEthereum, tokenPriceService: new modules.TokenPriceService(otherEndpointEthereum, 60_000) }
 	let currentServices = firstEndpointServices
 	const otherEndpointInstalled = new Future<void>()
@@ -803,6 +803,49 @@ test('a stack edit that resumes after its services were replaced neither invalid
 		await waitForBackgroundTasks()
 		assert.deepEqual(await getPopupVisualisationState(), replacementResult, 'The edit holding the replaced services changed the replacement result')
 		assert.equal(getPublications().length, publicationsBefore, 'The edit holding the replaced services published')
+		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated with the replaced services')
+	} finally {
+		resumeEdit.resolve(undefined)
+		browserMock.setStorageSetHandler(undefined)
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
+})
+
+test('a stack edit held before its write while services are replaced hands its refresh to the replacement services', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreSendMessage = openVisualisationConsumer()
+	const editStarted = new Future<void>()
+	const resumeEdit = new Future<void>()
+	let holdNextEdit = true
+	// The handler waits before storing its edit, so the replacement's refresh reads the stack without it.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (holdNextEdit && 'preSimulationBlockTimeManipulation' in items) {
+			holdNextEdit = false
+			editStarted.resolve(undefined)
+			await resumeEdit
+		}
+		writeStoredItems()
+	})
+	const editedDelay = { type: 'AddToTimestamp' as const, deltaToAdd: 777n, deltaUnit: 'Seconds' as const }
+	try {
+		const { changePreSimulationBlockTimeManipulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const edit = changePreSimulationBlockTimeManipulation(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: editedDelay } })
+		await editStarted
+		const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+		await changeActiveAddressAndChain(fixture.simulationServicesOwner, new Map(), { simulationMode: true, rpcNetwork: otherEndpointNetwork })
+		await assertOtherEndpointPublishedTransaction()
+		const replacementResult = await getPopupVisualisationState()
+		if (replacementResult.simulationState.kind !== 'simulated') throw new Error('Expected a simulated visualisation')
+		assert.notDeepEqual(replacementResult.simulationState.value.simulationStateInput[0]?.blockTimeManipulation, editedDelay, 'The replacement refresh must have read the stack before the edit')
+		resumeEdit.resolve(undefined)
+		await edit
+		await assertOtherEndpointPublishedTransaction()
+		const handedOff = await getPopupVisualisationState()
+		if (handedOff.simulationState.kind !== 'simulated') throw new Error('Expected a simulated visualisation')
+		assert.ok(handedOff.simulationId > replacementResult.simulationId, 'The edited stack was not simulated again')
+		assert.deepEqual(handedOff.simulationState.value.simulationStateInput[0]?.blockTimeManipulation, editedDelay)
 		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated with the replaced services')
 	} finally {
 		resumeEdit.resolve(undefined)
