@@ -314,3 +314,11 @@ for (const page of ['websites', 'simulation-stack'] as const) test(`a failed ${ 
 		restore()
 	}
 })
+
+test('a management panel counts as failed only when the boundary holds an error, whichever empty value Preact uses', async () => {
+	const { isPanelRenderFailure } = await import('../../app/ts/components/pages/ManagementView.js')
+	assert.equal(isPanelRenderFailure(undefined), false)
+	assert.equal(isPanelRenderFailure(null), false)
+	assert.equal(isPanelRenderFailure(new Error('panel failed')), true)
+	assert.equal(isPanelRenderFailure('panel failed'), true)
+})
