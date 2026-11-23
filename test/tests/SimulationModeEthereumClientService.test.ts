@@ -14,7 +14,7 @@ import { decodeFunctionDataStrict, encodeFunctionCall, } from '../../app/ts/util
 import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from '../../app/ts/simulation/storageReader.js'
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 
-import { createSimulationModeTestContext, blockNumber, rpcNetwork, testBytes32, SHA256_PRECOMPILE_ADDRESS } from './simulationModeEthereumClientServiceTestHelpers.js'
+import { createSimulationModeTestContext, blockNumber, rpcNetwork, testBytes32, SHA256_PRECOMPILE_ADDRESS, exampleTransaction, example7702Transaction, createSimulationStateInput, createTwoBlockSimulationStateInput } from './simulationModeEthereumClientServiceTestHelpers.js'
 
 
 const { requestHandler, ethereum, reset } = createSimulationModeTestContext()
@@ -24,74 +24,6 @@ const getBlockFromInput = async (simulationStateInput: Parameters<typeof toResol
 const getBlockByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockHash: bigint, includeTransactions = false) => await getSimulatedBlockByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockHash, includeTransactions)
 
 describe('SimulationModeEthereumClientService', () => {
-	const exampleTransaction = {
-		type: '1559',
-		from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-		nonce: 0n,
-		maxFeePerGas: 1n,
-		maxPriorityFeePerGas: 1n,
-		gas: 21000n,
-		to: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn,
-		value: 10n,
-		input: new Uint8Array(0),
-		chainId: 1n,
-	} as const
-	const example7702Transaction = {
-		...exampleTransaction,
-		type: '7702',
-		authorizationList: [],
-	} as const
-
-	const createSimulationStateInput = () => [{
-		stateOverrides: {},
-		transactions: [{
-			signedTransaction: mockSignTransaction({
-				...exampleTransaction,
-				nonce: 0n,
-			}),
-			website: { websiteOrigin: 'test', icon: undefined, title: undefined },
-			created: new Date(),
-			originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
-			transactionIdentifier: 100n,
-		}],
-		signedMessages: [],
-		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
-		simulateWithZeroBaseFee: false,
-	}] as const
-	const createTwoBlockSimulationStateInput = () => [
-		{
-			stateOverrides: {},
-			transactions: [{
-				signedTransaction: mockSignTransaction({
-					...exampleTransaction,
-					nonce: 0n,
-				}),
-				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
-				created: new Date(),
-				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
-				transactionIdentifier: 101n,
-			}],
-			signedMessages: [],
-			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
-			simulateWithZeroBaseFee: false,
-		},
-		{
-			stateOverrides: {},
-			transactions: [{
-				signedTransaction: mockSignTransaction({
-					...exampleTransaction,
-					nonce: 1n,
-				}),
-				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
-				created: new Date(),
-				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
-				transactionIdentifier: 102n,
-			}],
-			signedMessages: [],
-			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
-			simulateWithZeroBaseFee: false,
-		},
-	] as const
 
 	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {
 		const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
