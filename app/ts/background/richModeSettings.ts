@@ -5,7 +5,7 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { MAX_RICH_TOKEN_AMOUNT, normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { profilesForAddresses, reconcileRichModeStateWithAddressBook, richTokensForPresentation, richTokenLayout } from '../utils/richModeDerivation.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
-import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
+import { isStoredValueChanged, runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 // The owner of rich-mode funding state. Funding mutations run under the settings storage lock; address-book writes reach it through getRichModeWritesForAddressBook so funding and address-book writes land in one storage set.
 export const emptyRichModeState: RichModeState = { makeCurrentAddressRich: false, fixedAddressRichList: [], defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value, tokenLayouts: [], accountBalances: [] }
@@ -48,11 +48,10 @@ export async function getRichModeWritesForAddressBook(entries: AddressBookEntrie
 function createRichModeTransaction(initial: RichModeState) {
 	let state = initial
 	let changed = false
-	const initialSerialized = JSON.stringify(RichModeState.serialize(initial))
 	const replace = (next: RichModeState) => {
 		state = next
-		// Compare canonical schema values, so cloned but unchanged profiles/layouts do not trigger storage writes or simulation refreshes.
-		changed = JSON.stringify(RichModeState.serialize(next)) !== initialSerialized
+		// Cloned but unchanged profiles or layouts do not trigger storage writes or simulation refreshes.
+		changed = isStoredValueChanged(RichModeState, initial, next)
 	}
 	const transaction = {
 		getState: () => state,

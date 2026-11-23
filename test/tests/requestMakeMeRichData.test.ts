@@ -542,6 +542,22 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.deepEqual(cached.richTokenOptions.map((option) => [option.symbol, option.enabled]), [['USDC', true], ['DAI', false]])
 	})
 
+	test('the address book is written when its value changes, whatever array the updater returns', async () => {
+		const writtenKeys: string[][] = []
+		installBrowserMock({ onStorageSet: (items) => { writtenKeys.push(Object.keys(items)) } })
+		const { updateUserAddressBookEntries } = await loadModules()
+		const contact = { type: 'contact' as const, name: 'Contact', address: richAccountAddress, entrySource: 'User' as const, useAsActiveAddress: false }
+		await updateUserAddressBookEntries(() => [contact])
+		writtenKeys.length = 0
+
+		await updateUserAddressBookEntries((entries) => entries)
+		await updateUserAddressBookEntries((entries) => entries.map((entry) => ({ ...entry })))
+		assert.deepEqual(writtenKeys, [], 'a structurally equal address book is not written, even as a new array')
+
+		await updateUserAddressBookEntries((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed contact' })))
+		assert.deepEqual(writtenKeys, [['userAddressBookEntriesV3']], 'a changed copy is written')
+	})
+
 	test('address-book writes that do not change funding leave rich-mode state untouched', async () => {
 		const writtenKeys: string[][] = []
 		installBrowserMock({ onStorageSet: (items) => { writtenKeys.push(Object.keys(items)) } })

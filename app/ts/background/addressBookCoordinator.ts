@@ -1,16 +1,17 @@
-import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntries as AddressBookEntriesCodec, doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
 import { richFundingSaved, type RichFundingResult, type RichModeState } from '../types/richMode.js'
 import { getUserAddressBookEntries, readStoredUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
 import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { getRichModeWritesForAddressBook } from './richModeSettings.js'
-import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
+import { isStoredValueChanged, runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 // Coordinates the address-book and rich-mode owners: every address-book write lands together with the funding reconciled against it, in one settings storage set. This is the only module that calls the address-book write builder.
 
-// The address-book writes for entries plus the funding writes that keep rich mode consistent with them. Must run inside a settings storage transaction. Entries identical to previous write no address book but still reconcile funding.
+// The address-book writes for entries plus the funding writes that keep rich mode consistent with them. Must run inside a settings storage transaction. Entries equal in value to previous (by the same serialized comparison rich-mode state uses) write no address book but still reconcile funding; without previous they are always written.
 async function getCoordinatedAddressBookWrites(previous: AddressBookEntries | undefined, entries: AddressBookEntries, importedRichModeState?: RichModeState) {
 	const funding = await getRichModeWritesForAddressBook(entries, importedRichModeState)
-	return { writes: [...entries === previous ? [] : [userAddressBookEntriesStorageWrite(entries)], ...funding.writes], fundingChanged: funding.fundingChanged }
+	const addressBookChanged = previous === undefined || isStoredValueChanged(AddressBookEntriesCodec, previous, entries)
+	return { writes: [...addressBookChanged ? [userAddressBookEntriesStorageWrite(entries)] : [], ...funding.writes], fundingChanged: funding.fundingChanged }
 }
 
 export async function updateUserAddressBookEntries(update: (entries: AddressBookEntries) => AddressBookEntries): Promise<RichFundingResult> {

@@ -4,6 +4,9 @@ import { browserStorageLocalSet, type LocalStorageItems } from '../utils/storage
 // The items one storage owner writes for its own keys, built by that owner's …StorageWrite function so each key, value transform and sanitization stays with its owner.
 export type StorageWrite = LocalStorageItems
 
+// The one definition of "changed" for a value a transaction may write: its canonical serialized form differs, so a cloned but equal value is unchanged.
+export const isStoredValueChanged = <Value,>(codec: { readonly serialize: (value: Value) => unknown }, previous: Value, next: Value) => JSON.stringify(codec.serialize(previous)) !== JSON.stringify(codec.serialize(next))
+
 type StorageTransactionPlan<Result> = { readonly writes: readonly StorageWrite[], readonly result: Result }
 
 // The one lock of every read-modify-write of website access, signing address preferences and the address book, including the settings import that replaces all three; with a single lock there is no acquisition order between them to get wrong.

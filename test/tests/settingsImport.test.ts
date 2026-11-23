@@ -1016,7 +1016,7 @@ describe('settings import', () => {
 		const { getWebsiteAccess, getSigningAddressPreferences, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
-		const addressBookWrite = updateUserAddressBookEntries((entries) => [...entries])
+		const addressBookWrite = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'Lock holder', address: 0x9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9cn, entrySource: 'User', useAsActiveAddress: false }])
 		await addressBookWriteGate.started
 
 		const websiteAccessUpdate = updateWebsiteAccess(() => [{ website: { websiteOrigin: 'queued.example', icon: undefined, title: 'Queued' }, access: true }])
