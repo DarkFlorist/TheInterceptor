@@ -867,6 +867,68 @@ describe('settings import', () => {
 		assert.deepEqual([...fixtureVersions].sort(), [...acceptedVersions].sort())
 	})
 
+	test('the version table classifies every export version into its complete feature record', async () => {
+		const summarize = (exportedSettings: ExportedSettings) => {
+			const features = classifyExportedSettings(exportedSettings)
+			return {
+				kind: features.kind,
+				addressBook: features.addressBook.format,
+				openedPage: features.openedPage !== undefined,
+				rpcNetwork: features.rpcNetwork !== undefined,
+				metamaskCompatibilityMode: features.metamaskCompatibilityMode !== undefined,
+				safeAppsCompatibilityMode: features.safeAppsCompatibilityMode !== undefined,
+				richFunding: features.richFunding !== undefined,
+				independentAddresses: features.independentAddresses !== undefined,
+			}
+		}
+		const expected = (kind: string, addressBook: string, flags: string) => ({
+			kind, addressBook,
+			openedPage: flags.includes('page'), rpcNetwork: flags.includes('rpc'), metamaskCompatibilityMode: flags.includes('metamask'),
+			safeAppsCompatibilityMode: flags.includes('safeApps'), richFunding: flags.includes('rich'), independentAddresses: flags.includes('independent'),
+		})
+		const legacyFormat = 'active-addresses-and-contacts'
+		const expectedByVersion: Record<string, ReturnType<typeof expected>> = {
+			'1.0': expected('legacy', legacyFormat, ''),
+			'1.1': expected('legacy', legacyFormat, 'rpc'),
+			'1.2': expected('legacy', legacyFormat, 'rpc metamask'),
+			'1.3': expected('legacy', legacyFormat, 'page rpc metamask'),
+			'1.4': expected('legacy', 'entries', 'page rpc metamask'),
+			'1.5/independent-addresses': expected('independent-addresses', 'entries', 'page rpc metamask independent'),
+			'1.5/legacy-rich': expected('legacy-rich', 'entries', 'page rpc metamask rich'),
+			'1.6': expected('independent-addresses', 'entries', 'page rpc metamask safeApps independent'),
+			'1.7': expected('current', 'entries', 'page rpc metamask safeApps rich independent'),
+		}
+		const fixtures = await buildImportOfEveryVersion()
+		const seen = fixtures.map(({ exportedSettings }) => {
+			const summary = summarize(exportedSettings)
+			const key = exportedSettings.version === '1.5' ? `1.5/${ summary.kind }` : exportedSettings.version
+			assert.deepEqual(summary, expectedByVersion[key], `features of ${ key }`)
+			return key
+		})
+		assert.deepEqual([...seen].sort(), Object.keys(expectedByVersion).sort())
+	})
+
+	test('the import writes exactly the version-dependent settings its feature record reports', async () => {
+		const { importSettingsAndAddressBook, defaultRpcs } = await settingsModulePromise
+		for (const { exportedSettings } of await buildImportOfEveryVersion()) {
+			const features = classifyExportedSettings(exportedSettings)
+			browserMock.reset()
+			await importSettingsAndAddressBook(exportedSettings)
+			const written = Object.assign({}, ...browserMock.takeSetCalls())
+			const label = `${ exportedSettings.version } (${ features.kind })`
+			assert.equal(Object.hasOwn(written, 'openedPageV2'), features.openedPage !== undefined, label)
+			assert.equal(Object.hasOwn(written, 'metamaskCompatibilityMode'), features.metamaskCompatibilityMode !== undefined, label)
+			assert.equal(written.safeAppsCompatibilityMode, features.safeAppsCompatibilityMode ?? false, label)
+			assert.deepEqual((await (await settingsModulePromise).getSettings()).activeRpcNetwork, features.rpcNetwork ?? defaultRpcs[0], label)
+		}
+	})
+
+	test('the import decides no feature from version literals of its own', () => {
+		const importSource = fs.readFileSync(settingsStorageModulePaths.settingsImport, 'utf8')
+		assert.doesNotMatch(importSource, /\.version\b/u)
+		assert.doesNotMatch(importSource, /'1\.\d'/u)
+	})
+
 	test('every export version writes all of its storage changes in a single storage set', async () => {
 		const { importSettingsAndAddressBook } = await settingsModulePromise
 		for (const { exportedSettings, assertImportedValues } of await buildImportOfEveryVersion()) {
