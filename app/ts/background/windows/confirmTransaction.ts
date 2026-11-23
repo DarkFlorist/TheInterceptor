@@ -746,8 +746,8 @@ function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMes
 	// Explicit send-anyway consent includes the saved gas edit even while its resimulation is pending; all other envelope fields remain bound to the reviewed result.
 	const editedGas = forceSend ? getUnsimulatedGasLimitEdit(pending) : undefined
 	const reviewedTransaction = editedGas === undefined ? simulatedTransaction : { ...simulatedTransaction, gas: editedGas }
-	// The popup displays this same signer nonce, and notes a different simulated one. Safe flows returned above, so this is a plain transaction.
-	const signerNonce = getSignerNonce(pending, false)
+	// The popup displays this same signer nonce, and notes a different simulated one.
+	const signerNonce = getSignerNonce(pending)
 	switch (signerNonce.kind) {
 		case 'simulated': throw new Error('Only transactions forwarded to the wallet have a signer-facing request')
 		case 'wallet-selected': return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')

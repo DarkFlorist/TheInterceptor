@@ -1,5 +1,5 @@
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
-import type { PendingTransactionOrSignableMessage, PendingTransactionSafeFlow } from '../types/accessRequest.js'
+import { type PendingTransactionOrSignableMessage, type PendingTransactionSafeFlow, isCreatedSafeProposalFlow } from '../types/accessRequest.js'
 import type { SafeMessageCoSignSnapshot, SafeTransactionRequestContext, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
 
@@ -28,13 +28,13 @@ export type SafePendingFlow = DirectSafeExecutionFlow | SafeMessageCoSignFlow | 
 export const createCreatedSafeProposalSafeFlow = (safeTransaction: SafeTransactionSigningRequest): CreatedSafeProposalSafeFlow => ({ kind: 'proposal', state: 'created', safeTransaction })
 
 // The Gnosis Safe transaction of a created Safe proposal, the one flow that has one.
-export const getCreatedSafeProposal = (safeFlow: PendingTransactionSafeFlow) => safeFlow.kind === 'proposal' && safeFlow.state === 'created' ? safeFlow.safeTransaction : undefined
+export const getCreatedSafeProposal = (safeFlow: PendingTransactionSafeFlow) => isCreatedSafeProposalFlow(safeFlow) ? safeFlow.safeTransaction : undefined
 
 // The signing-mode flows, which sign, propose or execute with the user's signer. A simulation-mode Safe execution is not one: it only runs through the Safe in the simulation. Neither is a Safe proposal that was not created, which has nothing to sign.
 export function getSafeTransactionPendingFlow(pending: PendingTransaction): DirectSafeExecutionFlow | SafeProposalFlow | undefined {
 	const safeFlow = pending.safeFlow
 	if (safeFlow.kind === 'directExecution') return { kind: 'directExecution', pending: { ...pending, safeFlow } }
-	if (safeFlow.kind === 'proposal' && safeFlow.state === 'created') return { kind: 'proposal', pending: { ...pending, safeFlow } }
+	if (isCreatedSafeProposalFlow(safeFlow)) return { kind: 'proposal', pending: { ...pending, safeFlow } }
 	return undefined
 }
 

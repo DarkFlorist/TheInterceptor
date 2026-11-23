@@ -510,7 +510,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 				</> }
 
 				{ directExecutionRequest === undefined ? <></> : <WalletTransactionDetails request = { directExecutionRequest }/> }
-				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } signerNonce = { getSignerNonce(currentPendingTransaction, safeFlow?.kind === 'proposal') } />
+				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } signerNonce = { getSignerNonce(currentPendingTransaction) } />
 
 				<SafeExecutionSimulationNotice transaction = { simTx }/>
 

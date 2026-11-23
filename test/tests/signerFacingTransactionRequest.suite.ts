@@ -10,7 +10,11 @@ import { nanoString } from '../../app/ts/utils/bigint.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { TransactionConfirmation, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
-import { activeAddress, addressString, browserMock, createAcceptConfirmation, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, simulator, unsignedTransaction, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { PopupPendingTransactionOrSignableMessage, type PendingTransactionSafeFlow } from '../../app/ts/types/accessRequest.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
+import { getSafePendingFlow } from '../../app/ts/safe/safePendingFlow.js'
+import { getSignerNonce } from '../../app/ts/utils/signerFacingTransactionRequest.js'
+import { activeAddress, addressString, browserMock, createSafeTx, getSafeTxHash, createAcceptConfirmation, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, simulator, unsignedTransaction, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const websiteOnlyRequestParameters = {
 	method: 'eth_sendTransaction' as const,
@@ -627,4 +631,29 @@ test('does not forward an accepted request to an MV2 reconnected port whose webs
 	assert.equal(reconnectRequests, 1)
 	assert.equal(reconnectedPortMessages.some(isForwardToSigner), false)
 	await assertRefusedForwardStaysRejectable(websiteTabConnections, reconnectedPortMessages)
+})
+
+test('the popup shows the nonce the background forwards for every Safe flow kind', () => {
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const websiteRequest = { method: 'eth_sendTransaction' as const, params: [{ from: activeAddress, to: recipientAddress, value: 0n, nonce: 7n }] as const }
+	const safeFlows: readonly PendingTransactionSafeFlow[] = [
+		{ kind: 'ordinary' },
+		{ kind: 'simulationModeSafeExecution' },
+		{ kind: 'directExecution', safeExecutionOriginalRequestParameters: websiteRequest },
+		{ kind: 'proposal', state: 'created', safeTransaction: { safeAddress: activeAddress, safeSignerAddress: recipientAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx } },
+		{ kind: 'proposal', state: 'formationFailed' },
+		{ kind: 'proposal', state: 'creationFailed' },
+		{ kind: 'unsupportedSafeRequest' },
+	]
+	for (const safeFlow of safeFlows) {
+		const stored = { ...withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false, originalRequestParameters: websiteRequest }), safeFlow }
+		// The popup reads the copy the background sends it, after the wire round trip.
+		const popupCopy = PopupPendingTransactionOrSignableMessage.parse(serialize(PopupPendingTransactionOrSignableMessage, modules.toPopupPendingTransactionOrSignableMessage(stored)))
+		if (popupCopy.type !== 'Transaction') throw new Error('Expected a transaction')
+		const description = `${ safeFlow.kind }${ 'state' in safeFlow ? ` ${ safeFlow.state }` : '' }`
+		assert.deepEqual(getSignerNonce(popupCopy), getSignerNonce(stored), description)
+		// The background routes a created proposal to the Safe flow, which sends typed data, and forwards every other signing-mode transaction with this nonce.
+		const sentAsSafeProposal = getSafePendingFlow(stored)?.kind === 'proposal'
+		assert.deepEqual(getSignerNonce(stored), sentAsSafeProposal ? { kind: 'simulated' } : { kind: 'website-requested', nonce: 7n }, description)
+	}
 })
