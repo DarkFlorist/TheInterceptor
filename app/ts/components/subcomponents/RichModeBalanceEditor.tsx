@@ -1,11 +1,39 @@
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import type { RichModeTokenController } from '../hooks/useRichModeTokens.js'
+import type { ReadonlySignal } from '@preact/signals'
+import type { RefObject } from 'preact'
+import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
 import { getDefaultRichTokenAmount, getRichTokenIdentityKey, getRichTokenLabel } from '../../utils/richTokens.js'
 import { TrashIcon } from './icons.js'
-import { RichAmountEditor, RichBalanceRow } from './RichModeShared.js'
+import { RichAmountEditor, RichBalanceRow, type RichFundingFeedback } from './RichModeShared.js'
+
+// What the balance editor shows and can do for the selected account; the page builds it from the rich-mode hooks.
+export type RichModeBalanceEditorModel = {
+	readonly data: ReadonlySignal<{
+		readonly addingRichTokens: readonly RichTokenOption[]
+		readonly availableRichTokens: readonly RichTokenOption[]
+		readonly enabledRichTokens: readonly RichTokenOption[]
+		readonly failedAddedRichToken: RichTokenOption | undefined
+		readonly newlyAddedRichTokenKeys: readonly string[]
+		readonly richBalanceAssetStatusLabel: string
+		readonly richNativeAmount: bigint
+		readonly profile: RichAccountBalance | undefined
+	}>
+	readonly selectRichTokensButtonRef: RefObject<HTMLButtonElement>
+	readonly actions: {
+		readonly clearRichTokenError: () => void
+		readonly removeFailedRichTokenSelection: () => void
+		readonly retryFailedRichTokenSelection: () => void
+		readonly saveNativeAmount: (amount: bigint) => Promise<void>
+		readonly saveRichTokenAmount: (option: RichTokenOption, amount: bigint) => Promise<void>
+		readonly setNativeAmount: (input: HTMLInputElement) => void
+		readonly setRichTokenAmount: (option: RichTokenOption, input: HTMLInputElement) => Promise<void>
+		readonly setRichTokenEnabled: (option: RichTokenOption, enabled: boolean) => Promise<boolean>
+		readonly showRichTokenSelection: () => void
+	}
+}
 
 // The balance view of the rich-account dialog: the native amount and the funded tokens of one account. Token selection stays enabled while a save is pending, so leaving an edited amount for it commits the amount and still opens the picker, whose controls wait for the save.
-export function RichModeBalanceEditor({ model, feedback, accountName, nativeCurrencyTicker }: { model: RichModeTokenController['editor'], feedback: RichModeTokenController['feedback'], accountName: string, nativeCurrencyTicker: string }) {
+export function RichModeBalanceEditor({ model, feedback, accountName, nativeCurrencyTicker }: { model: RichModeBalanceEditorModel, feedback: ReadonlySignal<RichFundingFeedback>, accountName: string, nativeCurrencyTicker: string }) {
 	const { addingRichTokens, availableRichTokens, enabledRichTokens, failedAddedRichToken, newlyAddedRichTokenKeys, richBalanceAssetStatusLabel, richNativeAmount, profile } = model.data.value
 	const { clearRichTokenError, removeFailedRichTokenSelection, retryFailedRichTokenSelection, saveNativeAmount, saveRichTokenAmount, setNativeAmount, setRichTokenAmount, setRichTokenEnabled, showRichTokenSelection } = model.actions
 	const { selectRichTokensButtonRef } = model

@@ -5,6 +5,16 @@ import type { RichTokenBalance, RichTokenOption } from '../../types/richMode.js'
 import { formatUnits } from '../../utils/ethereumUnits.js'
 import { sameRichTokenIdentity } from '../../utils/richTokens.js'
 
+// The funding progress and outcome every rich-mode view shows.
+export type RichFundingFeedback = {
+	readonly richTokenError: string | undefined
+	readonly richTokenErrorTarget: string | undefined
+	readonly richTokenPending: boolean
+	readonly richTokenPendingKey: string | undefined
+	readonly richTokenNotice: string | undefined
+	readonly richTokenPendingLabel: string | undefined
+}
+
 // A balance is shown as funded only while its token option has a stored layout (enabled); without one the simulation cannot fund it.
 export const findFundedRichTokenOption = (options: readonly RichTokenOption[], balance: RichTokenBalance) => options.find((option) => option.enabled && sameRichTokenIdentity(option, balance))
 

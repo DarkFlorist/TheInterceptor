@@ -1,5 +1,6 @@
-import type { RichModeTokenController } from '../hooks/useRichModeTokens.js'
-import { useSignal } from '@preact/signals'
+import { type ReadonlySignal, useSignal } from '@preact/signals'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AsyncActionContext } from '../../utils/preact-utilities.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -11,6 +12,29 @@ import { AsyncStatusIcon } from './AsyncAction.js'
 import { ErrorComponent } from './Error.js'
 import { ChevronIcon, SearchIcon } from './icons.js'
 import { findFundedRichTokenOption, formatRichAmountForDisplay } from './RichModeShared.js'
+
+// What the account list shows and can do; the page builds it from the rich-mode hooks.
+export type RichModeAccountListModel = {
+	readonly data: ReadonlySignal<{
+		readonly activeAddress: AddressBookEntry | undefined
+		readonly richFundingChainId: bigint | undefined
+		readonly controlsDisabled: boolean
+		readonly isInitialHomeDataLoaded: boolean
+		readonly makeCurrentAddressRich: boolean
+		readonly richAccountBalances: readonly RichAccountBalance[]
+		readonly richAccounts: readonly EnrichedRichListElement[]
+		readonly richAssetCount: number
+		readonly richChangeState: AsyncActionContext<void>['value']['value']
+		readonly richList: readonly EnrichedRichListElement[]
+		readonly richTokenOptions: readonly RichTokenOption[]
+		readonly visibleRichList: readonly EnrichedRichListElement[]
+	}>
+	readonly actions: {
+		readonly enableMakeCurrentAddressRich: (enabled: boolean) => void
+		readonly modifyRichList: (addressBookEntry: AddressBookEntry, makeRich: boolean) => void
+		readonly openBalances: (address: bigint) => void
+	}
+}
 
 function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
 	profile: RichAccountBalance | undefined
@@ -42,7 +66,7 @@ function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
 }
 
 // The card header, its collapsed current-account shortcut and the expandable list of accounts that can be made rich.
-export function RichModeAccountList({ model, nativeCurrencyTicker, renameAddressCallBack }: { model: RichModeTokenController['accounts'], nativeCurrencyTicker: string, renameAddressCallBack: RenameAddressCallBack }) {
+export function RichModeAccountList({ model, nativeCurrencyTicker, renameAddressCallBack }: { model: RichModeAccountListModel, nativeCurrencyTicker: string, renameAddressCallBack: RenameAddressCallBack }) {
 	const { activeAddress, richFundingChainId, controlsDisabled, isInitialHomeDataLoaded, makeCurrentAddressRich, richAccountBalances, richAccounts, richAssetCount, richChangeState, richList, richTokenOptions, visibleRichList } = model.data.value
 	const { enableMakeCurrentAddressRich, modifyRichList, openBalances } = model.actions
 	const showList = useSignal<boolean>(false)

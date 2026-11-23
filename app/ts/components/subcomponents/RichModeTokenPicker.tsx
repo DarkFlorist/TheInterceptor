@@ -1,8 +1,37 @@
-import type { RichModeTokenController } from '../hooks/useRichModeTokens.js'
+import type { ReadonlySignal } from '@preact/signals'
+import type { RichTokenFilter } from '../hooks/useRichTokenPicker.js'
+import type { RichTokenOption } from '../../types/richMode.js'
 import { addressString } from '../../utils/bigint.js'
 import { getRichTokenIdentityKey, getRichTokenLabel } from '../../utils/richTokens.js'
 import { InterceptorDialogFooter } from './InterceptorDialog.js'
-import { RichTokenIcon } from './RichModeShared.js'
+import { RichTokenIcon, type RichFundingFeedback } from './RichModeShared.js'
+
+// What the token picker shows and can do; the page builds it from the picker, dialog and funding hooks.
+export type RichTokenPickerModel = {
+	readonly data: ReadonlySignal<{
+		readonly activeRichTokenIndex: number
+		readonly availableRichTokens: readonly RichTokenOption[]
+		readonly failedAddedRichToken: RichTokenOption | undefined
+		readonly matchingAvailableRichTokens: readonly RichTokenOption[]
+		readonly recentRichTokenKeys: readonly string[]
+		readonly richTokenFilter: RichTokenFilter
+		readonly richTokenResultsScrollTop: number
+		readonly richTokenSearch: string
+		readonly selectedAvailableRichTokens: readonly RichTokenOption[]
+		readonly selectedRichTokenKeys: readonly string[]
+	}>
+	readonly actions: {
+		readonly handleRichTokenSearchKeyDown: (event: Pick<KeyboardEvent, 'key' | 'preventDefault'>) => void
+		readonly hideRichTokenSelection: () => void
+		readonly toggleRichTokenSelection: (option: RichTokenOption) => void
+		readonly addSelectedRichTokens: () => Promise<void>
+		readonly setSearch: (query: string) => void
+		readonly selectFilter: (filter: RichTokenFilter) => void
+		readonly clearSelection: () => void
+		readonly scrollResults: (top: number) => void
+		readonly highlightToken: (index: number) => void
+	}
+}
 
 function HighlightedRichTokenText({ query, text }: { query: string, text: string }) {
 	const normalizedQuery = query.trim().toLowerCase()
@@ -12,7 +41,7 @@ function HighlightedRichTokenText({ query, text }: { query: string, text: string
 }
 
 // The token-selection view of the rich-account dialog: search and pick address-book tokens to fund for one account.
-export function RichModeTokenPicker({ model, feedback, accountName }: { model: RichModeTokenController['picker'], feedback: RichModeTokenController['feedback'], accountName: string }) {
+export function RichModeTokenPicker({ model, feedback, accountName }: { model: RichTokenPickerModel, feedback: ReadonlySignal<RichFundingFeedback>, accountName: string }) {
 	const { activeRichTokenIndex, availableRichTokens, failedAddedRichToken, matchingAvailableRichTokens, recentRichTokenKeys, richTokenFilter, richTokenResultsScrollTop, richTokenSearch, selectedAvailableRichTokens, selectedRichTokenKeys } = model.data.value
 	const { handleRichTokenSearchKeyDown, hideRichTokenSelection, toggleRichTokenSelection, setSearch, selectFilter, clearSelection, scrollResults, highlightToken } = model.actions
 	const { richTokenPending, richTokenPendingKey, richTokenError } = feedback.value
@@ -99,7 +128,7 @@ export function RichModeTokenPicker({ model, feedback, accountName }: { model: R
 }
 
 // The footer actions of the token-selection view.
-export function RichModeTokenPickerFooter({ model, feedback }: { model: RichModeTokenController['picker'], feedback: RichModeTokenController['feedback'] }) {
+export function RichModeTokenPickerFooter({ model, feedback }: { model: RichTokenPickerModel, feedback: ReadonlySignal<RichFundingFeedback> }) {
 	const { addSelectedRichTokens, hideRichTokenSelection } = model.actions
 	const { selectedAvailableRichTokens } = model.data.value
 	const { richTokenPending } = feedback.value
