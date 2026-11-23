@@ -532,7 +532,7 @@ describe('inpage signer selection between injected, aggregated and EIP-6963 anno
 				},
 			}))
 
-			await withFakeInpageWindow(fakeWindow, `eip6963-replace-${ walletCase.name }-${ Date.now() }-${ Math.random() }`, async () => {
+			await withFakeInpageWindow(fakeWindow, `eip6963-replace-${ walletCase.name }`, async () => {
 				await waitFor(() => connectedSignerNames.includes('MetaMask'))
 				await waitFor(() => announcedSignerRequests.includes('eth_chainId'))
 			})
@@ -607,7 +607,7 @@ describe('inpage signer selection between injected, aggregated and EIP-6963 anno
 			}
 			Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: signer })
 
-			await withFakeInpageWindow(fakeWindow, `eip6963-protect-${ signerCase.name }-${ Date.now() }-${ Math.random() }`, async () => {
+			await withFakeInpageWindow(fakeWindow, `eip6963-protect-${ signerCase.name }`, async () => {
 				await waitFor(() => connectedSignerNames.includes(signerCase.name))
 				const announcedProvider = {
 					isMetaMask: true,
