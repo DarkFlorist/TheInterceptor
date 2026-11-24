@@ -27,6 +27,9 @@ const formatInsufficientBalanceMessage = (
 	`Insufficient ${ symbol } balance. Available: ${ bigintToDecimalString(available, decimals) } ${ symbol }. Attempting to send: ${ bigintToDecimalString(attempted, decimals) } ${ symbol }.`
 )
 
+// Recognises a message formatInsufficientBalanceMessage produced, which older versions stored as the transaction creation error's message instead of in insufficientBalanceMessage.
+export const isInsufficientBalanceMessage = (message: string) => /^Insufficient .+ balance\. Available: .+\. Attempting to send: .+\.$/su.test(message)
+
 const getDirectErc20Transfer = (transaction: TransactionForBalanceDiagnosis) => {
 	if (transaction.to === null) return undefined
 	const parsedTransaction = parseTransactionIfPossible(transaction)
