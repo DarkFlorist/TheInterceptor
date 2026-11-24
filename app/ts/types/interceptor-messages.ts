@@ -53,9 +53,11 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
+const SignerReplyMode = funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request'))
+
 export type WatchAssetSignerRequest = funtypes.Static<typeof WatchAssetSignerRequest>
 export const WatchAssetSignerRequest = funtypes.ReadonlyObject({
-	signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')),
+	signerReplyMode: SignerReplyMode,
 	parameters: funtypes.Unknown,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	signerIdentity: funtypes.ReadonlyObject({
@@ -169,7 +171,7 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
-	funtypes.ReadonlyPartial({ signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')) }),
+	funtypes.ReadonlyPartial({ signerReplyMode: SignerReplyMode }),
 	ForwardToWalletRequest,
 )
 
@@ -178,7 +180,7 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
 	}),
-	funtypes.ReadonlyPartial({ signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')) }),
+	funtypes.ReadonlyPartial({ signerReplyMode: SignerReplyMode }),
 	funtypes.Union(
 		ForwardToWalletRequest,
 		funtypes.Intersect(
@@ -188,12 +190,20 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	),
 )
 
-export type RPCReply = funtypes.Static<typeof RPCReply>
-export const RPCReply = funtypes.Union(
+// Background handlers construct these replies before replyToInterceptedRequest annotates the forwarding policy.
+const ForwardingRPCReply = funtypes.Union(ReplyWithSignersReplyForward, ForwardToWallet)
+const NonForwardingRPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
-	ReplyWithSignersReplyForward,
-	ForwardToWallet,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
+)
+
+export type RPCReply = funtypes.Static<typeof RPCReply>
+export const RPCReply = funtypes.Union(NonForwardingRPCReply, ForwardingRPCReply)
+
+// Every serialized forwarding reply carries the background-owned mode, regardless of which producer sends it.
+const RPCReplyToInpage = funtypes.Union(
+	NonForwardingRPCReply,
+	funtypes.Intersect(ForwardingRPCReply, funtypes.ReadonlyObject({ signerReplyMode: SignerReplyMode })),
 )
 
 export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
@@ -215,7 +225,7 @@ export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
 	funtypes.ReadonlyPartial({ bridgeRequestSettled: funtypes.Literal(true) }),
-	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
+	funtypes.Union(RPCReplyToInpage, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
