@@ -112,9 +112,9 @@ describe('manifest v2 content script registration', () => {
 	})
 
 	test('keeps exactly the sites where the Interceptor is disabled out of the registration, not their subdomains or other ports', async () => {
-		const { registrations } = installManifestV2BrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccess } = await loadModules()
-		await updateWebsiteAccess(() => [disabledSite('example.com'), disabledSite('localhost:3000'), disabledSite('example.org:80'), disabledSite('example.org:443'), disabledSite('https://secure.example'), disabledSite('')])
+		const { registrations, browserMock } = installManifestV2BrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await browserMock.browser.storage.local.set({ websiteAccess: [disabledSite('example.com'), disabledSite('localhost:3000'), disabledSite('example.org:80'), disabledSite('example.org:443'), disabledSite('https://secure.example'), disabledSite('')] })
 
 		await updateContentScriptInjectionStrategyManifestV2()
 
@@ -131,6 +131,25 @@ describe('manifest v2 content script registration', () => {
 			'https://secure.example/*',
 			'file:///*',
 		])
+	})
+
+	test('does not turn wildcard hosts from stored settings into registration globs', async () => {
+		const { registrations, browserMock } = installManifestV2BrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await browserMock.browser.storage.local.set({ websiteAccess: ['*', '*.example.test', 'https://*', 'https://%2A.example.test'].map(disabledSite) })
+		await updateContentScriptInjectionStrategyManifestV2()
+		assert.deepEqual(registrations[0]?.options.excludeGlobs, [])
+	})
+
+	test('a direct storage update refreshes disabled-site registration without an opt-in wrapper', async () => {
+		const { registrations, activeRegistrations } = installManifestV2BrowserMock()
+		const { updateWebsiteAccess } = await loadModules()
+		assert.equal(await updateWebsiteAccess(() => [disabledSite('direct-write.test')]), true)
+		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [['http://direct-write.test/*', 'https://direct-write.test/*']])
+		assert.equal(await updateWebsiteAccess((previous) => previous.map((entry) => ({ ...entry, access: true }))), false)
+		assert.equal(registrations.length, 1)
+		assert.equal(await updateWebsiteAccess(() => []), true)
+		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [[]])
 	})
 
 	test('re-registers with the new exclusions when the disabled sites change, and removes the previous registration only after that', async () => {
@@ -190,8 +209,7 @@ describe('manifest v2 content script registration', () => {
 
 		const firstUpdate = updateContentScriptInjectionStrategyManifestV2()
 		await waitFor(() => heldRegistrationCount() === 1)
-		await updateWebsiteAccess(() => [disabledSite('example.com')])
-		const secondUpdate = updateContentScriptInjectionStrategyManifestV2()
+		const secondUpdate = updateWebsiteAccess(() => [disabledSite('example.com')])
 		// The second update waits for the first instead of registering alongside it, so it cannot finish first and then be replaced by the older list.
 		await flushMicrotasks()
 		assert.equal(heldRegistrationCount(), 1)

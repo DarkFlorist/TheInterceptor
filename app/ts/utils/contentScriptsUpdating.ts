@@ -1,17 +1,8 @@
-import { getWebsiteAccess } from '../background/websiteAccessStorage.js'
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { getInterceptorDisabledSites, getWebsiteAccess } from '../background/websiteAccessStorage.js'
 import { reportUnexpectedError } from './errors.js'
 import { Semaphore } from './semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
-
-export function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
-	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
-	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
-}
-
 // A disabled site's origin as a URL, or 'file' for local files, or undefined for a stored origin that is not a plain http(s) or file origin.
 function parseDisabledSiteOrigin(origin: string): { readonly url: URL, readonly hasExplicitScheme: boolean } | 'file' | undefined {
 	if (origin === '') return 'file'
@@ -21,10 +12,12 @@ function parseDisabledSiteOrigin(origin: string): { readonly url: URL, readonly 
 		if (url.protocol === 'file:') return url.hostname === '' ? 'file' : undefined
 		if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
 		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return undefined
-		if (url.hostname === '') return undefined
+		// URL parsing allows wildcard hosts, but registration patterns must treat each stored host literally. Bracketed hosts have already passed the URL parser's IPv6 validation.
+		if (url.hostname === '' || (!url.hostname.startsWith('[') && !/^[a-z0-9._-]+$/i.test(url.hostname))) return undefined
 		return { url, hasExplicitScheme }
-	} catch {
-		return undefined
+	} catch (error: unknown) {
+		if (error instanceof TypeError) return undefined
+		throw error
 	}
 }
 
@@ -145,10 +138,4 @@ export const updateContentScriptInjectionStrategyManifestV2 = async () => await 
 export const updateContentScriptInjectionStrategy = async () => {
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
-}
-
-export async function refreshContentScriptInjectionAfterAccessChange(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
-	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
-	return disabledSitesChanged
 }
