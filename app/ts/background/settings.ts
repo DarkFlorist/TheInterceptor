@@ -1,4 +1,4 @@
-import { getWebsiteAccess, updateWebsiteAccess } from './websiteAccessStorage.js'
+import { getWebsiteAccessFromStorageItems, updateWebsiteAccess } from './websiteAccessStorage.js'
 import { getParsedStorageValueOrDefault, getParsedStorageValueOrDefaultFromItems } from '../utils/storageDefaults.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -13,7 +13,7 @@ import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
@@ -59,7 +59,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccessFromStorageItems(storedItems))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
@@ -234,9 +234,8 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	}
 }
 
-// Persists imported values; settingsImport owns refreshing the derived content-script registration.
+// Applies imported values through the canonical storage APIs; website-access updates own their registration refresh.
 export async function persistImportedSettingsAndAddressBook(exportedSetings: ExportedSettings) {
-	const previousWebsiteAccess = await getWebsiteAccess()
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
@@ -277,7 +276,6 @@ export async function persistImportedSettingsAndAddressBook(exportedSetings: Exp
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
-	return { previousWebsiteAccess, nextWebsiteAccess: await getWebsiteAccess() }
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
