@@ -59,7 +59,6 @@ async function loadModules() {
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/websiteAccessStorage.js'),
 		...await import('../../app/ts/background/settingsImport.js'),
-		...await import('../../app/ts/background/websiteAccessUpdating.js'),
 		...await import('../../app/ts/background/popupMessageHandlers/settings.js'),
 	}
 }
@@ -154,26 +153,26 @@ describe('manifest v2 content script registration', () => {
 
 	test('re-registers with the new exclusions when the disabled sites change, and removes the previous registration only after that', async () => {
 		const { registrations, activeRegistrations } = installManifestV2BrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccessAndContentScriptInjectionStrategy } = await loadModules()
+		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccess } = await loadModules()
 		await updateContentScriptInjectionStrategyManifestV2()
 
-		await updateWebsiteAccessAndContentScriptInjectionStrategy(() => [disabledSite('example.com')])
+		await updateWebsiteAccess(() => [disabledSite('example.com')])
 
 		assert.equal(registrations.length, 2)
 		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [['http://example.com/*', 'https://example.com/*']])
 		assert.equal(registrations[0]?.unregistered, true)
 
 		// Re-enabling the site registers again without the exclusion.
-		await updateWebsiteAccessAndContentScriptInjectionStrategy(() => [])
+		await updateWebsiteAccess(() => [])
 		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [[]])
 	})
 
 	test('does not re-register when an access change leaves the disabled sites as they were', async () => {
 		const { registrations } = installManifestV2BrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccessAndContentScriptInjectionStrategy } = await loadModules()
+		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccess } = await loadModules()
 		await updateContentScriptInjectionStrategyManifestV2()
 
-		await updateWebsiteAccessAndContentScriptInjectionStrategy(() => [{ website: { websiteOrigin: 'example.com', icon: undefined, title: undefined }, addressAccess: undefined, access: true }])
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'example.com', icon: undefined, title: undefined }, addressAccess: undefined, access: true }])
 
 		assert.equal(registrations.length, 1)
 	})
@@ -225,16 +224,16 @@ describe('manifest v2 content script registration', () => {
 
 	test('keeps a registration whose removal failed and removes it on a later update', async () => {
 		const { activeRegistrations, failNextUnregistrations, browserMock } = installManifestV2BrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccessAndContentScriptInjectionStrategy } = await loadModules()
+		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccess } = await loadModules()
 		await updateContentScriptInjectionStrategyManifestV2()
 
 		failNextUnregistrations(1)
-		await withSilencedConsole(async () => await updateWebsiteAccessAndContentScriptInjectionStrategy(() => [disabledSite('example.com')]))
+		await withSilencedConsole(async () => await updateWebsiteAccess(() => [disabledSite('example.com')]))
 		// The registration without the exclusion is still installed, and the failure is reported.
 		assert.equal(activeRegistrations().length, 2)
 		assert.ok(browserMock.calls.runtimeSendMessage.some((message) => hasMessageMethod(message, 'popup_UnexpectedErrorOccured')))
 
-		await updateWebsiteAccessAndContentScriptInjectionStrategy(() => [disabledSite('example.com'), disabledSite('example.org')])
+		await updateWebsiteAccess(() => [disabledSite('example.com'), disabledSite('example.org')])
 		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [['http://example.com/*', 'https://example.com/*', 'http://example.org/*', 'https://example.org/*']])
 	})
 
