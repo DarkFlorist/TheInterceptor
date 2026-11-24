@@ -23,7 +23,7 @@ const PanicABI = [
 	},
 ] as const satisfies Abi
 
-enum ErrorType {
+export enum ErrorType {
 	EmptyError = 'EmptyError',
 	RevertError = 'RevertError',
 	PanicError = 'PanicError',
