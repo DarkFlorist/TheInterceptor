@@ -1,11 +1,11 @@
-import { updateContentScriptRegistrations } from '../utils/contentScriptsRegistration.js'
+import { type ContentScriptRegistrationDependencies, updateContentScriptRegistrations } from '../utils/contentScriptsRegistration.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getParsedStorageValueOrDefaultFromItems } from '../utils/storageDefaults.js'
 import { sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 
-// Owns normalized reads and serialized domain updates, including disabled-site registration refresh. The registration service has no background imports; error reporting loads only if registration fails.
+// Owns normalized reads and serialized domain updates, including disabled-site registration refresh. Startup and writes share one registration adapter below.
 async function getNormalizedWebsiteAccessFromStorageItems(storedItems: Readonly<Record<string, unknown>>) {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', [])
 	return { rawWebsiteAccess, sanitizedWebsiteAccess: sanitizeWebsiteAccess(rawWebsiteAccess) }
@@ -27,6 +27,15 @@ function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWe
 	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
 }
 
+export const websiteAccessRegistrationDependencies: ContentScriptRegistrationDependencies = {
+	readDisabledSites: async () => getInterceptorDisabledSites(await getWebsiteAccess()),
+	// Keep reporting outside storage module evaluation: the legacy reporter reaches settings, which imports this module. Loading it only on failure preserves that initialization boundary.
+	reportError: async (error, context) => {
+		const { reportUnexpectedError } = await import('../utils/errors.js')
+		await reportUnexpectedError(error, context)
+	},
+}
+
 const websiteAccessSemaphore = new Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return await websiteAccessSemaphore.execute(async () => {
@@ -36,13 +45,7 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 		await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 		const disabledSitesChanged = !haveSameDisabledSites(sanitizedWebsiteAccess, nextWebsiteAccess)
 		if (disabledSitesChanged) {
-			await updateContentScriptRegistrations({
-				readDisabledSites: async () => getInterceptorDisabledSites(await getWebsiteAccess()),
-				reportError: async (error, context) => {
-					const { reportUnexpectedError } = await import('../utils/errors.js')
-					await reportUnexpectedError(error, context)
-				},
-			})
+			await updateContentScriptRegistrations(websiteAccessRegistrationDependencies)
 		}
 		return disabledSitesChanged
 	})
