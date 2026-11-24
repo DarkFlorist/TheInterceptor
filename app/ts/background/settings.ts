@@ -1,10 +1,10 @@
-import { getNormalizedWebsiteAccessFromStorage, getWebsiteAccess } from './websiteAccessStorage.js'
+import { getWebsiteAccess, updateWebsiteAccess } from './websiteAccessStorage.js'
 import { getParsedStorageValueOrDefault, getParsedStorageValueOrDefaultFromItems } from '../utils/storageDefaults.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
-import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { Website } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
@@ -184,16 +184,6 @@ async function replaceModeAndSigningPreferencesForImport(changes: SimulationMode
 		...getSimulationModeStorageUpdate(changes),
 		signingAddressPreferences,
 	}))
-}
-
-const websiteAccessSemaphore = new Semaphore(1)
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	await websiteAccessSemaphore.execute(async () => {
-		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
-		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
-	})
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {

@@ -57,6 +57,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
 		...await import('../../app/ts/background/settings.js'),
+		...await import('../../app/ts/background/websiteAccessStorage.js'),
 		...await import('../../app/ts/background/settingsImport.js'),
 		...await import('../../app/ts/background/websiteAccessUpdating.js'),
 		...await import('../../app/ts/background/popupMessageHandlers/settings.js'),

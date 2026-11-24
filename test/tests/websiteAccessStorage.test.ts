@@ -19,3 +19,13 @@ test('settings and access getters share corruption repair and preserve valid acc
 		assert.equal(entries[0]?.interceptorDisabled, true)
 	}
 })
+
+test('access storage serializes concurrent updates without losing either writer', async () => {
+	installBrowserMockForTest()
+	const { getWebsiteAccess, updateWebsiteAccess } = await import('../../app/ts/background/websiteAccessStorage.js')
+	await Promise.all(['first.test', 'second.test'].map(async (websiteOrigin) => await updateWebsiteAccess((previous) => [
+		...previous,
+		{ website: { websiteOrigin }, access: true },
+	])))
+	assert.deepEqual((await getWebsiteAccess()).map((entry) => entry.website.websiteOrigin), ['first.test', 'second.test'])
+})

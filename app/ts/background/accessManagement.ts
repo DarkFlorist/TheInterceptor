@@ -3,7 +3,7 @@ import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUti
 import { updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { updateWebsiteAccess } from './settings.js'
+import { updateWebsiteAccess } from './websiteAccessStorage.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
