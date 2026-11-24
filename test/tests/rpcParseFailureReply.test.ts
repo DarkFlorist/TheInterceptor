@@ -12,7 +12,7 @@ const createRequest = (method: string, params?: unknown[]): InterceptedRequest =
 	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 })
 
-test('returns the existing method failure without validating the request again', () => {
+test('returns owned parameter guidance without validating the request again', () => {
 	const request = createRequest('eth_getBalance', ['0x1234', 'latest'])
 	const codec = findEthereumJsonRpcRequestCodec(request.method)
 	if (codec === undefined) throw new Error('Missing balance codec')
@@ -20,17 +20,18 @@ test('returns the existing method failure without validating the request again',
 	if (failure.success) throw new Error('Expected malformed address to fail')
 	const parseSpy = spyOn(codec, 'safeParse')
 	try {
-		assert.deepEqual(getInvalidRpcParamsReply(request, failure), {
+		assert.deepEqual(getInvalidRpcParamsReply(request), {
 			type: 'result', method: request.method,
-			error: { code: -32602, message: `Invalid eth_getBalance parameters: ${ failure.message.replace(/\.$/, '') }.` },
+			error: { code: -32602, message: 'Invalid eth_getBalance parameters: Expected [address, block tag].' },
 		})
 		assert.equal(parseSpy.mock.calls.length, 0)
 	} finally { parseSpy.mockRestore() }
 })
 
-test('bounds the echoed failure and identifies the method', () => {
-	const reply = getInvalidRpcParamsReply(createRequest('eth_call'), { success: false, message: 'x'.repeat(1000) })
-	assert.deepEqual(reply, { type: 'result', method: 'eth_call', error: { code: -32602, message: `Invalid eth_call parameters: ${ 'x'.repeat(200) }...` } })
+test('uses a stable generic message for methods without parameter guidance', () => {
+	const reply = getInvalidRpcParamsReply(createRequest('eth_getCode'))
+	assert.deepEqual(reply, { type: 'result', method: 'eth_getCode', error: { code: -32602, message: 'Invalid eth_getCode parameters.' } })
+	assert.equal(getInvalidRpcParamsReply(createRequest('constructor')).error?.message, 'Invalid constructor parameters.')
 })
 
 test('dispatch map selects the original union member for every method', () => {

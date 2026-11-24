@@ -118,8 +118,8 @@ async function handleRPCRequest(
 		if (safePolicyReply !== undefined) return replyWithoutFollowUp(safePolicyReply)
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
-		// Report the existing method failure after applying the Safe signing policy.
-		if (requestCodec !== undefined) return replyWithoutFollowUp(getInvalidRpcParamsReply(request, maybeParsedRequest))
+		// Return stable parameter guidance after applying the Safe signing policy.
+		if (requestCodec !== undefined) return replyWithoutFollowUp(getInvalidRpcParamsReply(request))
 		// Without a method codec the method is not supported here (wallet_revokePermissions is handled before handleRPCRequest), so forward it to the wallet if a signer is available
 		if (forwardToSigner) return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })
 		return replyWithoutFollowUp({
@@ -347,8 +347,9 @@ async function revokeWebsitePermissions(
 function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	const maybeParsedRequest = WalletRevokePermissions.safeParse(request)
 	if (maybeParsedRequest.success) return maybeParsedRequest.value
+	console.warn(maybeParsedRequest.fullError)
 	// Any page may revoke its own permissions, so this runs before the access check; the readable error only describes wallet_revokePermissions, whose parameters are the public EIP-2255 shape.
-	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request, maybeParsedRequest), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	return undefined
 }
 

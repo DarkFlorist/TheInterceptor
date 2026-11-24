@@ -93,9 +93,9 @@ describe('typed data nested past the call stack limit', () => {
 		await withSilencedConsole(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus))
 
 		const reply = messages.find((message) => message.requestId === 7)
-		// Invalid params of a supported method get the readable invalid-params reply, which names the nesting rather than calling the document invalid JSON.
+		// Invalid params of a supported method get the readable invalid-params reply, which describes the supported typed-data input.
 		assert.equal(reply?.error?.code, -32602)
-		assert.equal(reply?.error?.message, 'Invalid eth_signTypedData_v4 parameters: EIP712 message is nested too deeply to validate.')
+		assert.equal(reply?.error?.message, 'Invalid eth_signTypedData_v4 parameters: Expected [address, EIP-712 typed data] within the supported nesting depth.')
 	})
 
 	test('a deep Safe typed message within the 100000 character limit is rejected as invalid', () => {
