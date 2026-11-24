@@ -21,6 +21,7 @@ type LazyPageState<T extends object> =
 
 function useLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
 	const state = useSignal<LazyPageState<T>>({ status: 'loading' })
+	// createLazyPage fixes loader and exportName for each lazy page component, so this still loads the module once per mount.
 	useEffect(() => {
 		let cancelled = false
 		void loader().then(
@@ -37,7 +38,7 @@ function useLazyPage<T extends object, ExportName extends string>(loader: () => 
 		return () => {
 			cancelled = true
 		}
-	}, [])
+	}, [loader, exportName])
 	return state
 }
 

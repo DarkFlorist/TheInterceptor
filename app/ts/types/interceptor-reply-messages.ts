@@ -260,7 +260,6 @@ const RequestIsSimulationVisualizerOpen = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-type ConfirmTransactionBootstrapReply = funtypes.Static<typeof ConfirmTransactionBootstrapReply>
 const ConfirmTransactionBootstrapReply = funtypes.ReadonlyObject({
 	pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
 	currentBlockNumber: EthereumQuantity,
@@ -335,10 +334,6 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 	popup_isSimulationVisualizerOpen: RequestIsSimulationVisualizerOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
-}
-
-type PopupRequestsReplies = {
-	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<typeof PopupRequestsReplies[Key]>
 }
 
 export type RequestAbiAndNameFromBlockExplorer = funtypes.Static<typeof RequestAbiAndNameFromBlockExplorer>

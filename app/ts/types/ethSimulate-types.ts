@@ -2,7 +2,6 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 import { EthereumAccessList, EthereumAddress, EthereumBlockHeaderTransaction, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
-type AccountOverride = funtypes.Static<typeof AccountOverride>
 const AccountOverride = funtypes.ReadonlyPartial({
 	state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
@@ -25,7 +24,6 @@ export const BlockOverrides = funtypes.Partial({
 	blobBaseFee: EthereumQuantity,
 }).asReadonly()
 
-type BlockCall = funtypes.Static<typeof BlockCall>
 const BlockCall = funtypes.Intersect(
 	EthSimulateV1AdditionalProperties,
 	funtypes.Partial({
@@ -88,7 +86,6 @@ export const BlockCalls = funtypes.Intersect(
 	})
 )
 
-type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
 const EthSimulateV1ParamObject = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
@@ -127,7 +124,6 @@ export const EthereumEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 }).asReadonly()
 
-type CallResultLog = funtypes.Static<typeof CallResultLog>
 const CallResultLog = funtypes.Intersect(
 	EthereumEvent,
 	funtypes.ReadonlyObject({
@@ -143,10 +139,8 @@ const CallResultLog = funtypes.Intersect(
 	})
 )
 
-type CallResultLogs = funtypes.Static<typeof CallResultLogs>
 const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
 
-type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
 const EthSimulateCallResultFailure = funtypes.Intersect(
 	EthSimulateV1AdditionalProperties,
 	funtypes.ReadonlyObject({
@@ -160,7 +154,6 @@ const EthSimulateCallResultFailure = funtypes.Intersect(
 	}),
 )
 
-type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
 const EthSimulateCallResultSuccess = funtypes.Intersect(
 	EthSimulateV1AdditionalProperties,
 	funtypes.ReadonlyObject({
@@ -180,7 +173,6 @@ export const EthSimulateV1CallResult = funtypes.Union(EthSimulateCallResultFailu
 export type EthSimulateV1CallResults = funtypes.Static<typeof EthSimulateV1CallResults>
 export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1CallResult)
 
-type EthSimulateV1Withdrawal = funtypes.Static<typeof EthSimulateV1Withdrawal>
 const EthSimulateV1Withdrawal = funtypes.ReadonlyObject({
 	index: EthereumQuantity,
 	validatorIndex: EthereumQuantity,
@@ -226,7 +218,6 @@ export const EthSimulateV1BlockHeader = funtypes.Intersect(
 
 const EthSimulateV1BlockHeaderTransaction = funtypes.Intersect(EthSimulateV1AdditionalProperties, EthereumBlockHeaderTransaction)
 
-type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
 const EthSimulateV1BlockResult = funtypes.Intersect(
 	EthSimulateV1AdditionalProperties,
 	EthSimulateV1BlockHeader,

@@ -440,8 +440,10 @@ const normalizeAbiOutputValue = (parameter: AbiParameter, value: unknown): unkno
 }
 
 const normalizeAbiOutputValues = (parameters: readonly AbiParameter[], decoded: unknown): readonly unknown[] => {
-	if (parameters.length === 0) return []
-	if (parameters.length === 1) return [normalizeAbiOutputValue(parameters[0]!, decoded)]
+	const [firstParameter, ...remainingParameters] = parameters
+	if (firstParameter === undefined) return []
+	// A single output is decoded as the bare value instead of a one-element tuple.
+	if (remainingParameters.length === 0) return [normalizeAbiOutputValue(firstParameter, decoded)]
 	if (!Array.isArray(decoded)) throw new Error('Expected decoded ABI tuple output')
 	return parameters.map((parameter, index) => normalizeAbiOutputValue(parameter, decoded[index]))
 }
