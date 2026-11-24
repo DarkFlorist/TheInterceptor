@@ -378,10 +378,10 @@ describe('SimulationModeEthereumClientService', () => {
 		assert.deepEqual(fromStateRequest?.params[0].blockStateCalls.map((block) => block.calls), fromInputRequest?.params[0].blockStateCalls.map((block) => block.calls))
 		assert.deepEqual(fromStateRequest?.params[0].blockStateCalls.slice(0, simulationState.simulatedBlocks.length).map((block) => block.blockOverrides?.baseFeePerGas), simulationState.simulatedBlocks.map((block) => block.blockBaseFeePerGas))
 	})
-	test('snapshot readers retain captured parent and fees when the node head advances', async () => {
+	test('snapshot readers retain captured parent, fees and timestamps when the node head advances', async () => {
 		const captured = await createSimulationState(ethereum, undefined, createTwoBlockSimulationStateInput())
 		if (!captured.success) throw new Error('simulation unexpectedly failed')
-		const simulatedBlocks = captured.simulatedBlocks.map((block, index) => ({ ...block, blockBaseFeePerGas: BigInt(index + 37) }))
+		const simulatedBlocks = captured.simulatedBlocks.map((block, index) => ({ ...block, blockBaseFeePerGas: BigInt(index + 37), blockTimestamp: new Date(block.blockTimestamp.getTime() + 60_000) }))
 		const state = toResolvedSimulationState({ ...captured, simulatedBlocks })
 		const getBlock = ethereum.getBlock
 		const tags: unknown[] = []
@@ -404,6 +404,7 @@ describe('SimulationModeEthereumClientService', () => {
 			for (const request of requestHandler.ethSimulateV1Requests) {
 				assert.equal(request.params[1], captured.blockNumber)
 				assert.deepEqual(request.params[0].blockStateCalls.slice(0, simulatedBlocks.length).map((block) => block.blockOverrides?.baseFeePerGas), simulatedBlocks.map((block) => block.blockBaseFeePerGas))
+				assert.deepEqual(request.params[0].blockStateCalls.slice(0, simulatedBlocks.length).map((block) => block.blockOverrides?.time), simulatedBlocks.map((block) => block.blockTimestamp))
 			}
 		} finally {
 			restore()
