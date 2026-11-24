@@ -1,4 +1,4 @@
-import { publishAddressBookChangeAndRelabelSimulations } from '../addressBookChangePublication.js'
+import { scheduleAddressBookChangePublication } from '../addressBookChangePublication.js'
 import { createImportSettingsFailureReply, type ImportSettings, type ImportSettingsReply, type SetRpcList } from '../../types/popupSettingsRequests.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
@@ -60,7 +60,7 @@ export async function importSettingsAndRefresh(simulationServicesOwner: Simulati
 			return imported
 		}, { refreshAlways: true })
 	} finally {
-		if (imported) await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+		if (imported) scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 	}
 }
 

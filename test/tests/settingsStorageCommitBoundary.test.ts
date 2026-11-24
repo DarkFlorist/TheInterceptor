@@ -15,7 +15,7 @@ afterEach(() => {
 	clearStorageHooks = undefined
 })
 
-// A combined import commits both owners’ values in one storage write.
+// A combined import retains one generic commit boundary, without address-book-specific bookkeeping.
 test('mixed address-book and settings writes use one storage commit and preserve state on failure', async () => {
 	const { setStorageHooks } = installBrowserMock()
 	clearStorageHooks = () => { setStorageHooks({}) }
@@ -23,7 +23,7 @@ test('mixed address-book and settings writes use one storage commit and preserve
 	setStorageHooks({ beforeSet: async (items) => { writes.push(items) } })
 	const addressBookWrite = userAddressBookEntriesStorageWrite([])
 	const settingsWrite = useTabsInsteadOfPopupStorageWrite(true)
-	const expected = { userAddressBookEntriesV3: [], ...settingsWrite }
+	const expected = { ...addressBookWrite, ...settingsWrite }
 	const result = await runSettingsStorageTransaction(async () => ({ writes: [addressBookWrite, settingsWrite], result: 'committed' }))
 	assert.equal(result, 'committed')
 	assert.deepEqual(writes, [expected])

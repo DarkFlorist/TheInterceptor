@@ -21,7 +21,7 @@ import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetR
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { publishAddressBookChangeAndRelabelSimulations } from '../addressBookChangePublication.js'
+import { scheduleAddressBookChangePublication } from '../addressBookChangePublication.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
@@ -243,7 +243,7 @@ type ResolutionDependencies = {
 	getRequests: typeof getPendingWatchAssetRequests
 	updateRequests: typeof updatePendingWatchAssetRequests
 	updateAddressBook: typeof updateUserAddressBookEntries
-	publishAddressBookChanged: () => Promise<void>
+	scheduleAddressBookChanged: () => void
 	publish: typeof publishWatchAssetRequest
 	closeDialog: typeof closePopupOrTabById
 	processQueue: (websiteTabConnections: WebsiteTabConnections) => Promise<void>
@@ -255,7 +255,7 @@ export function createWatchAssetResolutionDependencies(simulationServicesOwner: 
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
 		updateAddressBook: updateUserAddressBookEntries,
-		publishAddressBookChanged: async () => await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()),
+		scheduleAddressBookChanged: () => scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
 		processQueue: async (connections) => await processWatchAssetQueue(connections),
@@ -361,7 +361,7 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 				return updatedAddressBook
 			})
 			if (updatedAddressBook !== undefined) await dependencies.updateRequests((storedRequests) => refreshQueuedNftRequests(storedRequests, updatedAddressBook ?? []))
-			await dependencies.publishAddressBookChanged()
+			dependencies.scheduleAddressBookChanged()
 		}
 		await dependencies.updateRequests((storedRequests) => storedRequests.filter((stored) => !requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)))
 		await dependencies.closeDialog(request.popupOrTabId)

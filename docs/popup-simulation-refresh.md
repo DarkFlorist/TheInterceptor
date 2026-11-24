@@ -69,6 +69,6 @@ The confirmation popup tags displayed requests with a local `source` discriminan
 
 ## Address-book re-labels
 
-Address-book saves, removals, ENS edits, Safe signer changes, watch-asset additions and settings imports publish their change immediately. The background then replays the stored stack visualization from local names and recorded lookups without RPC requests. `popup_simulationsRelabelled` tells home and stack views to re-read stored data; the sharing dialog receives the updated visualization publication.
+Address-book saves, removals, ENS edits, Safe signer changes, watch-asset additions and settings imports schedule publication after the write commits. The background supervisor broadcasts the change and then replays the stored stack visualization from local names and recorded lookups without RPC requests. `popup_simulationsRelabelled` tells home and stack views to re-read stored data; the sharing dialog receives the updated visualization publication.
 
 A re-label preserves the simulation id and timestamps and increments `metadataRevision` so views accept newer metadata for the same simulation. It uses the simulation semaphore and a write-time run guard. Empty, invalidated, other-chain and legacy runs without recorded lookups are skipped. Real refreshes still simulate normally. Confirmation metadata is handled separately.

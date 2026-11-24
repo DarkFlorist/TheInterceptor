@@ -4,7 +4,6 @@ import { isMissingRecordedProtectorReadError } from '../simulation/protectorChai
 // The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the confirmation re-labels (confirmationRelabel.ts); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationState } from '../types/visualizer-types.js'
-import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './storedRunVisualisation.js'
 
 type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>, 'simulationState'>
@@ -67,13 +66,4 @@ export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { 
 			}
 		},
 	})
-}
-
-// A re-label only replaces names on a result that is already stored, so its failure is reported without failing the address-book change or the confirmation run that requested it.
-export async function relabelReportingUnexpectedErrors(relabel: Promise<void>) {
-	try {
-		await relabel
-	} catch (error: unknown) {
-		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
-	}
 }
