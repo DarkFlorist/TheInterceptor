@@ -81,6 +81,23 @@ describe('content script injection strategy', () => {
 		])
 	})
 
+	test('rejects wildcard hostnames in manifest v3 exclusions', async () => {
+		await installContentScriptBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		assert.deepEqual(getManifestV3ExcludeMatches(['*', '*.example.test', 'https://*', 'https://%2A.example.test']), [])
+	})
+
+	test('a direct storage update refreshes manifest v3 exclusions', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations } = await installContentScriptBrowserMock()
+		const { updateWebsiteAccess } = await import('../../app/ts/background/websiteAccessStorage.js')
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'direct-write.test' }, interceptorDisabled: true }])
+		assert.deepEqual(getRegisteredContentScripts().map(({ excludeMatches }) => excludeMatches), [['*://*.direct-write.test/*'], ['*://*.direct-write.test/*']])
+		await updateWebsiteAccess((previous) => previous)
+		assert.deepEqual(getScriptingOperations(), ['register'])
+		await updateWebsiteAccess(() => [])
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+	})
+
 	test('records manifest v3 registration failures as unexpected errors', async () => {
 		const { sentMessages } = await installContentScriptBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()

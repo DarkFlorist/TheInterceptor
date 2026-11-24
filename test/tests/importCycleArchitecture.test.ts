@@ -131,7 +131,7 @@ test('the unexpected-error reporter does not load background modules', () => {
 })
 
 
-test('settings persistence does not load content-script import orchestration', () => {
+test('settings module evaluation does not load content-script import orchestration', () => {
 	const imports = getTransitiveRuntimeImports('background/settings.ts')
 	assert.equal(imports.includes('background/settingsImport.ts'), false)
 	assert.equal(imports.includes('utils/contentScriptsUpdating.ts'), false)
