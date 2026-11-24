@@ -130,7 +130,6 @@ test('the unexpected-error reporter does not load background modules', () => {
 	assert.deepEqual(backgroundImports, [])
 })
 
-
 test('settings module evaluation does not load content-script import orchestration', () => {
 	const imports = getTransitiveRuntimeImports('background/settings.ts')
 	assert.equal(imports.includes('background/settingsImport.ts'), false)
