@@ -40,7 +40,7 @@ const encodeExecTransactionToRecipient = (signatures: `0x${ string }`) => encode
 
 const ForwardedTransaction = funtypes.ReadonlyObject({ from: funtypes.String, to: funtypes.String, data: funtypes.String })
 
-const confirmWithSelectedSigner = async (websiteTabConnections: Parameters<typeof modules.resolvePendingTransactionOrMessage>[2], selectedSigner: bigint) => await modules.resolvePendingTransactionOrMessage(
+const confirmWithSelectedSigner = async (websiteTabConnections: Parameters<typeof modules.resolvePendingTransactionOrMessage>[2], selectedSigner: bigint) => await modules.resolveCurrentConfirmationForTest(
 	simulator.ethereum,
 	simulator.tokenPriceService,
 	websiteTabConnections,
@@ -230,7 +230,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 
 	const transactionHash = `0x${ 'ab'.repeat(32) }`
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolveCurrentConfirmationForTest(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: transactionHash, uniqueRequestIdentifier },
 	}), true)
