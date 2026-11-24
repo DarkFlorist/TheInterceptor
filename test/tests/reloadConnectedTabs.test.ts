@@ -1,89 +1,31 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
-type RuntimeMessage = {
-	readonly method?: string
-}
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
-type BrowserMockOptions = {
-	readonly reloadError?: Error
+type ReloadBrowserMockOptions = {
+	// Reloading a tab that is not listed rejects with Chrome's "No tab with id: N." error.
+	readonly existingTabIds?: readonly number[]
+	// Reloading a listed tab records the call and then fails with this error.
 	readonly reloadErrorsByTab?: ReadonlyMap<number, Error>
 }
 
-function installBrowserMock(options: BrowserMockOptions) {
-	const storageState: Record<string, unknown> = {}
-	const sentMessages: RuntimeMessage[] = []
-	const reloadedTabs: number[] = []
-	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+function installReloadBrowserMock({ existingTabIds = [10, 11], reloadErrorsByTab = new Map<number, Error>() }: ReloadBrowserMockOptions) {
+	const installedMock = installBrowserMock({ tabs: existingTabIds.map((id) => ({ id })) })
+	const reloadTab = installedMock.browser.tabs.reload
+	installedMock.browser.tabs.reload = async (tabId) => {
+		await reloadTab(tabId)
+		const reloadError = reloadErrorsByTab.get(tabId)
+		if (reloadError !== undefined) throw reloadError
 	}
-
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: null,
-				async sendMessage(message: RuntimeMessage) {
-					sentMessages.push(message)
-					return undefined
-				},
-				getManifest: () => ({ manifest_version: 3 }),
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			storage: {
-				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) { return getStorageItems(keys) },
-					async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-					},
-				},
-			},
-			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				async reload(tabId: number) {
-					reloadedTabs.push(tabId)
-					const tabError = options.reloadErrorsByTab?.get(tabId) ?? options.reloadError
-					if (tabError !== undefined) throw tabError
-				},
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
-			},
-			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-		},
-	})
-	Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
-
-	return { sentMessages, reloadedTabs }
+	return { sentMessages: installedMock.calls.runtimeSendMessage, reloadedTabs: installedMock.calls.tabsReload }
 }
 
 async function loadModules() {
 	return {
-		...await importAllPopupMessageHandlers(),
+		...await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/utils/unexpectedErrorStorage.js'),
 	}
@@ -97,7 +39,7 @@ const multiTabWebsiteTabConnections: WebsiteTabConnections = new Map([
 
 describe('reloadConnectedTabs', () => {
 	test('ignores tabs that disappeared before reload', async () => {
-		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadError: new Error('No tab with id: 10.') })
+		const { sentMessages, reloadedTabs } = installReloadBrowserMock({ existingTabIds: [11] })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(websiteTabConnections)
@@ -108,7 +50,7 @@ describe('reloadConnectedTabs', () => {
 	})
 
 	test('ignores Firefox invalid tab reload errors', async () => {
-		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadError: new Error('Invalid tab ID: 10') })
+		const { sentMessages, reloadedTabs } = installReloadBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('Invalid tab ID: 10')]]) })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(websiteTabConnections)
@@ -119,7 +61,7 @@ describe('reloadConnectedTabs', () => {
 	})
 
 	test('records unexpected reload failures', async () => {
-		const { reloadedTabs } = installBrowserMock({ reloadError: new Error('reload failed') })
+		const { reloadedTabs } = installReloadBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('reload failed')]]) })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(websiteTabConnections)
@@ -131,7 +73,7 @@ describe('reloadConnectedTabs', () => {
 	})
 
 	test('continues reloading later tabs after a missing-tab race', async () => {
-		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('No tab with id: 10.')]]) })
+		const { sentMessages, reloadedTabs } = installReloadBrowserMock({ existingTabIds: [11] })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(multiTabWebsiteTabConnections)
@@ -142,7 +84,7 @@ describe('reloadConnectedTabs', () => {
 	})
 
 	test('continues reloading later tabs after an unexpected reload failure', async () => {
-		const { reloadedTabs } = installBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('reload failed')]]) })
+		const { reloadedTabs } = installReloadBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('reload failed')]]) })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(multiTabWebsiteTabConnections)
