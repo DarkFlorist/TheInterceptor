@@ -164,7 +164,6 @@ function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): 
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
 
-type EntryAmount = funtypes.Static<typeof EntryAmount>
 const EntryAmount = funtypes.ReadonlyObject({ entry: AddressBookEntry, amountDelta: funtypes.BigInt })
 
 export type SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedProxyTokenTransferTransaction>

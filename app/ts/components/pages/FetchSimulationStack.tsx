@@ -1,11 +1,10 @@
 import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
-import { useEffect } from 'preact/hooks'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
+import { useCallback, useEffect } from 'preact/hooks'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
@@ -15,7 +14,7 @@ import type { RpcEntries } from '../../types/rpc.js'
 import type { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
-import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
+import { SimulationStackRows } from '../simulationExplaining/TransactionsAndSignedMessages.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
@@ -29,7 +28,7 @@ export type FetchSimulationStackModalState =
 
 export function FetchSimulationStackModal({ modalState, rpcEntries }: {
 	modalState: Signal<FetchSimulationStackModalState>
-	rpcEntries: Signal<RpcEntries>
+	rpcEntries: ReadonlySignal<RpcEntries>
 }) {
 	const close = () => {
 		modalState.value = { page: 'noModal' }
@@ -94,40 +93,32 @@ export function FetchSimulationStack() {
 		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_simulation_state_changed') {
-				updateSimulation()
-				updateMetaData()
-				return false
-			}
-			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
-			changeRequest.value = parsed.data
-			return false
+	usePopupMessage(async (message) => {
+		if (message.method === 'popup_simulation_state_changed') {
+			await Promise.all([updateSimulation(), updateMetaData()])
+			return
 		}
-		// Still subscribes through the helper directly: #1683 moves this component onto usePopupMessage together with the rest of its hook changes.
-		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
-	}, [])
+		if (message.method !== 'popup_fetchSimulationStackRequest') return
+		changeRequest.value = message.data
+	})
 
-	const updateSimulation = async () => {
+	// Both loaders only write this component's signals, so useCallback keeps them stable and the startup effect below runs once per mount.
+	const updateSimulation = useCallback(async () => {
 		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
-	}
-	const updateMetaData = async () => {
+	}, [])
+	const updateMetaData = useCallback(async () => {
 		const data = await requestPopupSimulationMetadata()
 		if (data === undefined) return
 		simulationMetadata.value = data.metadata
-	}
+	}, [])
 
 	useEffect(() => {
 		void sendPopupReadyAndListening('fetchSimulationStack')
-		updateSimulation()
-		updateMetaData()
-	}, [])
+		void updateSimulation()
+		void updateMetaData()
+	}, [updateSimulation, updateMetaData])
 
 	async function approve() {
 		if (changeRequest.value === undefined) return

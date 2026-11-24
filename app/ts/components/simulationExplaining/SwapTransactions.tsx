@@ -9,7 +9,6 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 
-type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 const BeforeAfterBalance = funtypes.ReadonlyObject({
 	beforeBalance: EthereumQuantity,
 	afterBalance: EthereumQuantity,
