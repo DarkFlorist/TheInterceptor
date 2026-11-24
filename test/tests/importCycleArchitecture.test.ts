@@ -136,3 +136,9 @@ test('settings module evaluation does not load content-script import orchestrati
 	assert.equal(imports.includes('background/settingsImport.ts'), false)
 	assert.equal(imports.includes('utils/contentScriptsUpdating.ts'), false)
 })
+
+test('content-script registration has no background or error-reporting module dependency', () => {
+	const imports = getTransitiveRuntimeImports('utils/contentScriptsRegistration.ts')
+	assert.deepEqual(imports.filter((module) => module.startsWith('background/')), [])
+	assert.equal(imports.includes('utils/errors.ts'), false)
+})
