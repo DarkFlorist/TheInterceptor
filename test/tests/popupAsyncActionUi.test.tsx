@@ -1707,7 +1707,9 @@ describe('popup async action UI', () => {
 				const dom = installDomMock()
 				const direct = createDeferred<unknown>()
 				let simulationRequestCount = 0
-				runtimeSendMessage = async () => {
+				// Only governance simulation requests belong to this counter and reply queue; unrelated popup messages must not consume a simulation reply.
+				runtimeSendMessage = async (message: unknown) => {
+					if (getRuntimeMethod(message) !== 'popup_simulateGovernanceContractExecution') return undefined
 					simulationRequestCount += 1
 					return simulationRequestCount === 1 ? createGnosisSimulationSuccessReply(7n, 'Original recipient') : direct.promise
 				}
