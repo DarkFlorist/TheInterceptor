@@ -1563,6 +1563,8 @@ function createSignerRequests(bridge: BackgroundBridge, selection: SignerSelecti
 
 	const requestWatchAssetFromSigner = async (parameters: unknown) => {
 		if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)
+			|| !('signerReplyMode' in parameters)
+			|| (parameters.signerReplyMode !== 'notify' && parameters.signerReplyMode !== 'request')
 			|| !('parameters' in parameters)
 			|| typeof parameters.parameters !== 'object'
 			|| parameters.parameters === null
@@ -1588,14 +1590,14 @@ function createSignerRequests(bridge: BackgroundBridge, selection: SignerSelecti
 		const forwardRequest: {
 			type: 'forwardToSigner'
 			replyWithSignersReply: true
-			signerReplyMode: 'notify'
+			signerReplyMode: SignerReplyMode
 			method: string
 			requestId: number
 			params: unknown
 		} = {
 			type: 'forwardToSigner',
 			replyWithSignersReply: true,
-			signerReplyMode: 'notify',
+			signerReplyMode: parameters.signerReplyMode,
 			method: 'wallet_watchAsset',
 			requestId: parameters.uniqueRequestIdentifier.requestId,
 			params: parameters,
