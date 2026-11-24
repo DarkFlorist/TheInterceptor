@@ -1,10 +1,11 @@
+import { updateContentScriptRegistrations } from '../utils/contentScriptsRegistration.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getParsedStorageValueOrDefaultFromItems } from '../utils/storageDefaults.js'
 import { sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 
-// Owns normalized reads and serialized updates. Disabled-site writes also await registration refresh; the lazy import keeps settings reads free of registration/error-reporting module initialization.
+// Owns normalized reads and serialized domain updates, including disabled-site registration refresh. The registration service has no background imports; error reporting loads only if registration fails.
 async function getNormalizedWebsiteAccessFromStorageItems(storedItems: Readonly<Record<string, unknown>>) {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', [])
 	return { rawWebsiteAccess, sanitizedWebsiteAccess: sanitizeWebsiteAccess(rawWebsiteAccess) }
@@ -35,8 +36,13 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 		await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 		const disabledSitesChanged = !haveSameDisabledSites(sanitizedWebsiteAccess, nextWebsiteAccess)
 		if (disabledSitesChanged) {
-			const { updateContentScriptInjectionStrategy } = await import('../utils/contentScriptsUpdating.js')
-			await updateContentScriptInjectionStrategy()
+			await updateContentScriptRegistrations({
+				readDisabledSites: async () => getInterceptorDisabledSites(await getWebsiteAccess()),
+				reportError: async (error, context) => {
+					const { reportUnexpectedError } = await import('../utils/errors.js')
+					await reportUnexpectedError(error, context)
+				},
+			})
 		}
 		return disabledSitesChanged
 	})
