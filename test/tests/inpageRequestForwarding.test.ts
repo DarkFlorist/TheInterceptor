@@ -134,78 +134,83 @@ describe('inpage request forwarding, replies and error propagation', () => {
 		assert.equal(bridgeRequests.filter((request) => request.internal === true).every((request) => request.replayOnDisconnect === undefined), true)
 	})
 
-	test('forwards an approved watch-asset dialog action to the selected signer', async () => {
-		const signerRequests: SignerRequest[] = []
-		let signerReply: unknown
-		let signerProviderGeneration: number | undefined
-		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
-			handleRequest: (request, sendBackgroundMessageForRequest) => {
-				if (request.method === 'connected_to_signer') {
-					const generation = request.params?.[2]
-					if (typeof generation === 'number') signerProviderGeneration = generation
-					return false
-				}
-				if (request.method !== 'signer_reply') return false
-				signerReply = request.params?.[0]
-				sendBackgroundMessageForRequest({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: 'signer_reply',
-					result: '0x',
-				})
-				return true
-			},
-			handleSignerRequest: (request) => {
-				signerRequests.push(request)
-				return true
-			},
-		})
-		const parameters = {
-			type: 'ERC20',
-			options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 },
-		}
-
-		await withFakeInpageWindow(fakeWindow, 'watch-asset-forward', async () => {
-			await waitFor(() => signerProviderGeneration !== undefined)
-			if (signerProviderGeneration === undefined) throw new Error('Missing signer provider generation')
-			sendBackgroundMessage({
-				interceptorApproved: true,
-				type: 'result',
-				method: 'request_signer_to_wallet_watchAsset',
-				result: {
-					parameters,
-					uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
-					signerIdentity: {
-						tabId: 7,
-						connectionName: '0x3',
-						ownerGeneration: 2,
-						signerProviderGeneration,
-					},
+	for (const signerReplyMode of ['notify', 'request']) {
+		test(`forwards an approved watch-asset action using the background's ${ signerReplyMode } reply mode`, async () => {
+			const signerRequests: SignerRequest[] = []
+			let signerReply: unknown
+			let signerProviderGeneration: number | undefined
+			const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+				handleRequest: (request, sendBackgroundMessageForRequest) => {
+					if (request.method === 'connected_to_signer') {
+						const generation = request.params?.[2]
+						if (typeof generation === 'number') signerProviderGeneration = generation
+						return false
+					}
+					if (request.method !== 'signer_reply') return false
+					signerReply = request.params?.[0]
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'signer_reply',
+						result: '0x',
+					})
+					return true
+				},
+				handleSignerRequest: (request) => {
+					signerRequests.push(request)
+					return true
 				},
 			})
-			await waitFor(() => signerRequests.some(({ method }) => method === 'wallet_watchAsset'))
-			await waitFor(() => signerReply !== undefined)
-		})
+			const parameters = {
+				type: 'ERC20',
+				options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 },
+			}
 
-		assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
-			method: 'wallet_watchAsset',
-			params: parameters,
+			await withFakeInpageWindow(fakeWindow, `watch-asset-forward-${ signerReplyMode }`, async () => {
+				await waitFor(() => signerProviderGeneration !== undefined)
+				if (signerProviderGeneration === undefined) throw new Error('Missing signer provider generation')
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_wallet_watchAsset',
+					result: {
+						signerReplyMode,
+						parameters,
+						uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
+						signerIdentity: {
+							tabId: 7,
+							connectionName: '0x3',
+							ownerGeneration: 2,
+							signerProviderGeneration,
+						},
+					},
+				})
+				await waitFor(() => signerRequests.some(({ method }) => method === 'wallet_watchAsset'))
+				await waitFor(() => signerReply !== undefined)
+			})
+
+			assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
+				method: 'wallet_watchAsset',
+				params: parameters,
+			})
+			if (!isSignerReplyCandidate(signerReply) || !isForwardRequestCandidate(signerReply.forwardRequest)) throw new Error('Malformed signer reply')
+			assert.equal(signerReply.success, true)
+			assert.equal(signerReply.forwardRequest.method, 'wallet_watchAsset')
+			assert.equal(readProperty(signerReply.forwardRequest, 'signerReplyMode'), signerReplyMode)
+			assert.deepEqual(signerReply.forwardRequest.params, {
+				signerReplyMode,
+				parameters,
+				uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
+				signerIdentity: {
+					tabId: 7,
+					connectionName: '0x3',
+					ownerGeneration: 2,
+					signerProviderGeneration,
+				},
+			})
 		})
-		if (!isSignerReplyCandidate(signerReply) || !isForwardRequestCandidate(signerReply.forwardRequest)) throw new Error('Malformed signer reply')
-		assert.equal(signerReply.success, true)
-		assert.equal(signerReply.forwardRequest.method, 'wallet_watchAsset')
-		assert.deepEqual(signerReply.forwardRequest.params, {
-			parameters,
-			uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
-			signerIdentity: {
-				tabId: 7,
-				connectionName: '0x3',
-				ownerGeneration: 2,
-				signerProviderGeneration,
-			},
-		})
-	})
+	}
 
 	test('accepts MetaMask by-name wallet_watchAsset parameters from webpages', async () => {
 		let capturedRequest: InpageRequest | undefined
