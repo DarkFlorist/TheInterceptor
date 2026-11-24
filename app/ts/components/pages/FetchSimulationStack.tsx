@@ -1,10 +1,11 @@
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
@@ -85,7 +86,7 @@ export function FetchSimulationStack() {
 
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
 
@@ -103,16 +104,12 @@ export function FetchSimulationStack() {
 				updateMetaData()
 				return false
 			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
 			changeRequest.value = parsed.data
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		// Still subscribes through the helper directly: #1683 moves this component onto usePopupMessage together with the rest of its hook changes.
+		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
 	}, [])
 
 	const updateSimulation = async () => {
@@ -130,7 +127,6 @@ export function FetchSimulationStack() {
 		void sendPopupReadyAndListening('fetchSimulationStack')
 		updateSimulation()
 		updateMetaData()
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 
 	async function approve() {

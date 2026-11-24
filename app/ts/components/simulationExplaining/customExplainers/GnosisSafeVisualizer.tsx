@@ -3,7 +3,7 @@ import { getMissingPopupReplyErrorMessage, requestPopupSimulateGnosisSafeTransac
 import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
@@ -132,8 +132,8 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			simulateExecutionReply.value = reply
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		// Still subscribes through the helper directly: #1682 moves this component onto usePopupMessage together with the rest of its hook changes.
+		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
 	}, [])
 
 	const requestToSimulate = () => {

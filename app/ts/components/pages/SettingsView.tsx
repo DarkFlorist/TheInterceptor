@@ -1,23 +1,22 @@
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
-import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
-import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
-import { useEffect } from 'preact/hooks'
+import type { ImportSettingsReply } from '../../types/interceptor-messages.js'
+import { RpcEntry } from '../../types/rpc.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import { getChainName } from '../../utils/constants.js'
-import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
+import { usePopupSettingsSnapshot } from '../hooks/usePopupSettingsSnapshot.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
-import { reportUnexpectedError } from '../../utils/errors.js'
+import { shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -44,10 +43,10 @@ type ScheduleObjectUrlCleanup = (cleanup: () => void) => void
 const OBJECT_URL_CLEANUP_DELAY_MS = 1000
 const scheduleObjectUrlCleanup: ScheduleObjectUrlCleanup = (cleanup) => { setTimeout(cleanup, OBJECT_URL_CLEANUP_DELAY_MS) }
 
-export function withObjectUrl<T>(blob: Blob, useObjectUrl: (objectUrl: string) => T, urlApi: DownloadUrlApi = URL, scheduleCleanup: ScheduleObjectUrlCleanup = scheduleObjectUrlCleanup) {
+export function withObjectUrl<T>(blob: Blob, consumeObjectUrl: (objectUrl: string) => T, urlApi: DownloadUrlApi = URL, scheduleCleanup: ScheduleObjectUrlCleanup = scheduleObjectUrlCleanup) {
 	const objectUrl = urlApi.createObjectURL(blob)
 	try {
-		return useObjectUrl(objectUrl)
+		return consumeObjectUrl(objectUrl)
 	} finally {
 		scheduleCleanup(() => urlApi.revokeObjectURL(objectUrl))
 	}
@@ -80,24 +79,15 @@ function ImportExport() {
 	const errorText = useComputed(() => settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined)
 	const { value: importSettingsState, waitFor: waitForImportSettings } = useAsyncState<void>()
 
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_initiate_export_settings_reply') {
-				dismissedNotification.value = false
-				settingsReply.value = parsed
-				return false
-			}
-			if (parsed.method !== 'popup_initiate_export_settings') return false
-			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
-			return false
+	usePopupMessage((message) => {
+		if (message.method === 'popup_initiate_export_settings_reply') {
+			dismissedNotification.value = false
+			settingsReply.value = message
+			return
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+		if (message.method !== 'popup_initiate_export_settings') return
+		downloadFile('interceptorSettingsAndAddressbook.json', message.data.fileContents)
+	})
 
 	const importSettings = (inputElement: { target: EventTarget | EventTarget & { files: FileList } | null }) => {
 		const inputTarget = inputElement.target
@@ -144,30 +134,10 @@ function ImportExport() {
 }
 
 export function SettingsView() {
-	const useTabsInsteadOfPopup = useSignal<boolean>(false)
-	const metamaskCompatibilityMode = useSignal<boolean>(false)
-	const safeAppsCompatibilityMode = useSignal<boolean>(false)
-
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method !== 'popup_requestSettingsReply') return false
-			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
-			safeAppsCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
-			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
-
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
+	const settingsSnapshot = usePopupSettingsSnapshot()
+	const useTabsInsteadOfPopup = settingsSnapshot.value?.useTabsInsteadOfPopup ?? false
+	const metamaskCompatibilityMode = settingsSnapshot.value?.metamaskCompatibilityMode ?? false
+	const safeAppsCompatibilityMode = settingsSnapshot.value?.safeAppsCompatibilityMode ?? false
 
 	async function requestToUseTabsInsteadOfPopup(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
@@ -208,17 +178,17 @@ export function SettingsView() {
 						<p class = 'paragraph'>Misc</p>
 						<CheckBoxSetting
 							text = { 'Open popups as tabs (experimental)' }
-							checked = { useTabsInsteadOfPopup.value }
+							checked = { useTabsInsteadOfPopup }
 							onInput = { requestToUseTabsInsteadOfPopup }
 						/>
 						<CheckBoxSetting
 							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
-							checked = { metamaskCompatibilityMode.value }
+							checked = { metamaskCompatibilityMode }
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
 							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental).' }
-							checked = { safeAppsCompatibilityMode.value }
+							checked = { safeAppsCompatibilityMode }
 							onInput = { requestToSafeAppsCompatibilityMode }
 						/>
 					</li>
@@ -288,44 +258,4 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 			</div>
 		</li>
 	)
-}
-
-export function useRpcConnectionsList() {
-	const entries = useSignal<RpcEntries>([])
-
-	useEffect(() => {
-		let disposed = false
-		let updateVersion = 0
-		const trackRpcListChanges = (message: unknown): false => {
-			const parsedMessage = MessageToPopup.safeParse(message)
-			if (parsedMessage.success === false) return false
-			if (parsedMessage.value.method === 'popup_update_rpc_list') {
-				updateVersion += 1
-				entries.value = parsedMessage.value.data
-			}
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
-		const initialUpdateVersion = updateVersion
-		const initiallyLoadEntriesFromStorage = async () => {
-			try {
-				const initialEntries = await getRpcList()
-				if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) entries.value = initialEntries
-			} catch(error: unknown) {
-				await reportUnexpectedError(error, {
-					source: 'settingsView',
-					code: 'rpc_list_initial_load_failed',
-					displayMessage: 'Failed to load RPC connections.',
-					suppressExpectedHandledErrors: false,
-				})
-			}
-		}
-		void initiallyLoadEntriesFromStorage()
-		return () => {
-			disposed = true
-			browser.runtime.onMessage.removeListener(trackRpcListChanges)
-		}
-	}, [])
-
-	return entries
 }

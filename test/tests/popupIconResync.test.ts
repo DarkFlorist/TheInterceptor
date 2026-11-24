@@ -1,10 +1,11 @@
+import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { act } from 'preact/test-utils'
 import { h, render } from 'preact'
 import { App } from '../../app/ts/components/App.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { installDomMock } from './domMock.js'
 import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/utils/popupPerformance.js'
@@ -190,7 +191,8 @@ class TestClipboardEvent extends Event {
 	}
 }
 
-const defaultSettings: Settings = {
+// Serialized settings fixtures use JSON-RPC quantity strings.
+const defaultSettings = {
 	activeSimulationAddress: undefined,
 	activeRpcNetwork: {
 		name: 'Ethereum',
@@ -238,7 +240,6 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 		rpcConnectionStatus: undefined,
 		activeSigningAddressInThisTab: undefined,
 		tabId,
-		rpcEntries: defaultRpcEntries,
 		interceptorDisabled: false,
 		preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0xc', deltaUnit: 'Seconds' },
 		...dataOverrides,
@@ -257,7 +258,6 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 			settings: homePage.data.settings,
 			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,
 			tabId: homePage.data.tabId,
-			rpcEntries: homePage.data.rpcEntries,
 			interceptorDisabled: homePage.data.interceptorDisabled,
 		},
 	}
@@ -1077,4 +1077,31 @@ describe('popup icon sync', () => {
 			dom.restore()
 		}
 	})
+})
+
+function HomeRpcListProbe() {
+	const home = useLiveSimulationHomeData({ answerMainPopupOpen: false, answerSimulationDataConsumerOpen: false, requestFreshHomeDataOnMount: false })
+	return h('p', {}, home.rpcEntries.value.map(entry => entry.name).join(', '))
+}
+
+test('home RPC entries follow list broadcasts and ignore older bootstrap and home-data copies', async () => {
+	const dom = installDomMock()
+	const messaging = installBrowserMock()
+	try {
+		await act(() => { render(h(HomeRpcListProbe, {}), dom.document.body) })
+		const entries = defaultRpcEntries.map(entry => ({ ...entry, name: 'Live RPC list' }))
+		await act(() => { messaging.messageListener()({ role: 'all', method: 'popup_update_rpc_list', data: entries }, {}, () => undefined) })
+		assert.equal(dom.document.body.textContent, 'Live RPC list')
+		const bootstrap = { role: 'all', ...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1) }
+		assert.equal(MessageToPopup.safeParse(bootstrap).success, true)
+		await act(() => { messaging.messageListener()(bootstrap, {}, () => undefined) })
+		assert.equal(dom.document.body.textContent, 'Live RPC list')
+		const homeData = { role: 'all', ...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 2) }
+		assert.equal(MessageToPopup.safeParse(homeData).success, true)
+		await act(() => { messaging.messageListener()(homeData, {}, () => undefined) })
+		assert.equal(dom.document.body.textContent, 'Live RPC list')
+	} finally {
+		await act(() => { render(undefined, dom.document.body) })
+		dom.restore()
+	}
 })

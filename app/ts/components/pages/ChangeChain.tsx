@@ -1,12 +1,11 @@
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
 
@@ -33,18 +32,10 @@ export function ChangeChain() {
 	const { value: approveChainChangeState, waitFor: waitForApproveChainChangeState, reset: resetApproveChainChangeState } = useAsyncState<void>()
 	const { value: rejectChainChangeState, waitFor: waitForRejectChainChangeState, reset: resetRejectChainChangeState } = useAsyncState<void>()
 
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false// not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method !== 'popup_ChangeChainRequest') return false
-			chainChangeData.value = parsed.data
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	usePopupMessage((message) => {
+		if (message.method !== 'popup_ChangeChainRequest') return
+		chainChangeData.value = message.data
+	})
 
 	useEffect(() => { void sendPopupReadyAndListening('changeChain') }, [])
 
