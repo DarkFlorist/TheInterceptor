@@ -1,4 +1,5 @@
 import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
+import { WalletTransactionDetails } from '../subcomponents/WalletTransactionDetails.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -32,7 +33,7 @@ import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
 import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
 import { getResultsForTransaction, getVisualizedTransactionResult } from '../../utils/visualizedTransactionResult.js'
-import { isPossibleToSignMessage } from '../../utils/personalSignRequest.js'
+import { canSignatureRequestProceedWithoutOverride } from '../../utils/personalSignRequest.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -48,7 +49,8 @@ import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
-import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getDirectSafeExecutionSignerRequest, getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<ShownPendingTransactionOrSignableMessage[]>
@@ -121,14 +123,16 @@ export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addre
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
+// canProceedWithoutOverride comes from canSignatureRequestProceedWithoutOverride, the rule the background's send-anyway check also uses.
 export function shouldDisableSignableMessageConfirm(params: {
 	isValidMessage: boolean
-	canSignMessage: boolean
+	canProceedWithoutOverride: boolean
 	forceSendEnabled: boolean
-	hasSupportedRpc: boolean
+	quarantined: boolean
 }) {
 	if (!params.isValidMessage) return true
-	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
+	if (params.forceSendEnabled) return false
+	return params.quarantined || !params.canProceedWithoutOverride
 }
 
 // Confirming needs the background's copy, a reviewable result and, for a failing or quarantined result or a gas edit not yet simulated, the send-anyway override; it never bypasses creation or signer blockers.
@@ -142,9 +146,9 @@ export function shouldDisableConfirm(pending: ShownPendingTransactionOrSignableM
 	if (pending.type !== 'Transaction') {
 		return shouldDisableSignableMessageConfirm({
 			isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
-			canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
+			canProceedWithoutOverride: canSignatureRequestProceedWithoutOverride(pending.visualizedPersonalSignRequest),
 			forceSendEnabled,
-			hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+			quarantined: pending.visualizedPersonalSignRequest.quarantine,
 		})
 	}
 	return false
@@ -468,6 +472,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
+	const directExecutionRequest = getDirectSafeExecutionSignerRequest(currentPendingTransaction)
 	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -504,7 +509,8 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					/>
 				</> }
 
-				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
+				{ directExecutionRequest === undefined ? <></> : <WalletTransactionDetails request = { directExecutionRequest }/> }
+				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } signerNonce = { getSignerNonce(currentPendingTransaction) } />
 
 				<SafeExecutionSimulationNotice transaction = { simTx }/>
 

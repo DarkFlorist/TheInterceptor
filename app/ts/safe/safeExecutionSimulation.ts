@@ -4,7 +4,7 @@ import { getGasEstimateFromSimulation } from '../simulation/services/simulationG
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionGasPayment, type TransactionSimulationOptions, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { decodeFunctionOutput, encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -245,3 +245,11 @@ export const createSafeExecutionCallFormation = (ethereum: EthereumClientService
 		return await estimateSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields)
 	},
 })
+
+// Safe executor-paid simulations use a dynamic-fee envelope, while EIP-7702 authorizations retain their envelope. Ordinary requests keep the website's type.
+export function getSafeTransactionFormation(ethereum: EthereumClientService, gasPayment: TransactionGasPayment, requestedType: Exclude<EthereumUnsignedTransaction['type'], '4844'>): { readonly type: Exclude<EthereumUnsignedTransaction['type'], '4844'>, readonly executedCallFormation: ExecutedCallFormation | undefined } {
+	return {
+		type: gasPayment === 'transaction-sender' || requestedType === '7702' ? requestedType : '1559',
+		executedCallFormation: gasPayment === 'simulated-safe-executor' ? createSafeExecutionCallFormation(ethereum) : undefined,
+	}
+}

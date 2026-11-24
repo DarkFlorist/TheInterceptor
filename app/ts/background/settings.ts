@@ -10,7 +10,9 @@ import { runSettingsStorageTransaction, type StorageWrite } from './settingsStor
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
+import { findWebsiteAccessEntryForOrigin } from './websiteAccessPolicy.js'
+import { toCanonicalWebsiteAccess } from '../utils/canonicalWebsiteAccess.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
@@ -60,7 +62,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(toCanonicalWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
@@ -180,7 +182,7 @@ export async function changeSimulationMode(changes: SimulationModeChanges) {
 
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
-	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
+	const sanitizedWebsiteAccess = toCanonicalWebsiteAccess(rawWebsiteAccess)
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
 
@@ -188,13 +190,13 @@ export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
-export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): StorageWrite => ({ websiteAccess: sanitizeWebsiteAccess(websiteAccess) })
+export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): StorageWrite => ({ websiteAccess: toCanonicalWebsiteAccess(websiteAccess) })
 
 // Returns the stored value before and after the update so rollback transactions can restore only what this update changed.
 export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return await runSettingsStorageTransaction(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
+		const nextWebsiteAccess = toCanonicalWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		const changed = nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess
 		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: { previousWebsiteAccess: sanitizedWebsiteAccess, updatedWebsiteAccess: nextWebsiteAccess } }
 	})
@@ -207,9 +209,11 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 
 export async function updateKnownWebsiteMetadata(website: Website) {
 	await updateWebsiteAccess((previousWebsiteAccess) => {
+		const match = findWebsiteAccessEntryForOrigin(previousWebsiteAccess, website.websiteOrigin)
+		if (match === undefined) return previousWebsiteAccess
 		let changed = false
-		const nextWebsiteAccess = previousWebsiteAccess.map((entry) => {
-			if (entry.website.websiteOrigin !== website.websiteOrigin) return entry
+		const nextWebsiteAccess = previousWebsiteAccess.map((entry, index) => {
+			if (index !== match.index) return entry
 			const mergedWebsite = mergeStoredWebsiteMetadata(entry.website, website)
 			if (mergedWebsite === entry.website) return entry
 			changed = true

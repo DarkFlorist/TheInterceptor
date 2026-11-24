@@ -1,7 +1,7 @@
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { DecodedError } from '../types/error.js'
 import type { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
-import { isPossibleToSignMessage } from './personalSignRequest.js'
+import { canSignatureRequestProceedWithoutOverride } from './personalSignRequest.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from './requests.js'
 import { getVisualizedTransactionResult } from './visualizedTransactionResult.js'
 
@@ -28,7 +28,8 @@ function getSendAnywayConsent(pending: SendAnywayConsentInput): SendAnywayConsen
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 	if (pending.type === 'SignableMessage') {
 		const signRequest = pending.visualizedPersonalSignRequest
-		if (!isPossibleToSignMessage(signRequest, signRequest.activeAddress.address) || !signRequest.quarantine) return undefined
+		// A quarantined signature request needs the acknowledgement wherever it can otherwise proceed, matching the popup's shouldDisableSignableMessageConfirm.
+		if (!signRequest.quarantine || !canSignatureRequestProceedWithoutOverride(signRequest)) return undefined
 		return { reason: 'quarantinedSignature', failure: undefined, quarantineReasons: signRequest.quarantineReasons }
 	}
 	const result = getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier)

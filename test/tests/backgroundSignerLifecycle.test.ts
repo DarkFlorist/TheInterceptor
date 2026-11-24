@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
@@ -862,6 +862,41 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'accountsChanged', 'eth_accounts'])
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [undefined])
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
+	})
+
+	for (const storedOrigin of ['example.test:443', 'example.test:80', 'example.test:8080']) test(`MV3 blocks canonical pages from legacy ${ storedOrigin } with a hostname-only rule`, async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const updateRules = spyOn(browser.declarativeNetRequest, 'updateDynamicRules')
+		try {
+			await updateWebsiteAccess(() => [{ website: { websiteOrigin: storedOrigin }, declarativeNetRequestBlockMode: 'block-all' }])
+			await updateDeclarativeNetRequestBlocks(new Map())
+			assert.deepEqual(updateRules.mock.calls.at(-1)?.[0].addRules?.[0]?.condition.initiatorDomains, ['example.test'])
+			assert.equal(await areWeBlocking(new Map(), 1, 'https://example.test'), true)
+			assert.equal(await areWeBlocking(new Map(), 1, 'http://example.test'), true)
+			assert.equal(await areWeBlocking(new Map(), 1, 'https://other.test'), false)
+		} finally { updateRules.mockRestore() }
+	})
+
+	test('blocks third-party requests from a block-all file page on manifest v2', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 2 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const blockedFile = 'file:///tmp/blocked-dapp.html'
+		await updateWebsiteAccess(() => [
+			{ website: { websiteOrigin: blockedFile, icon: undefined, title: undefined }, addressAccess: undefined, declarativeNetRequestBlockMode: 'block-all' },
+			{ website: { websiteOrigin: 'https://blocked-host.example', icon: undefined, title: undefined }, addressAccess: undefined, declarativeNetRequestBlockMode: 'block-all' },
+		])
+		await updateDeclarativeNetRequestBlocks(new Map())
+		const listener = browserMock.requestBlockingCalls.webRequestListener
+		if (listener === undefined) throw new Error('The manifest v2 request blocking listener was not installed')
+		const requestFrom = (originUrl: string) => listener({ originUrl, url: 'https://third-party.example/script.js', type: 'script', tabId: 3 } as browser.webRequest._OnBeforeRequestDetails)
+
+		assert.deepEqual(requestFrom(`${ blockedFile }?query=1`), { cancel: true })
+		assert.deepEqual(requestFrom('file:///tmp/other-page.html'), {})
+		// A blocked origin's host stays blocked on its other scheme too, as manifest v3 initiator rules do.
+		assert.deepEqual(requestFrom('http://blocked-host.example/page'), { cancel: true })
+		assert.equal(await areWeBlocking(new Map(), 3, blockedFile), true)
+		assert.equal(await areWeBlocking(new Map(), 3, 'file:///tmp/other-page.html'), false)
 	})
 
 	for (const manifestVersion of [2, 3] as const) {

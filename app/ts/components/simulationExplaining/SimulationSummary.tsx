@@ -6,7 +6,7 @@ import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPri
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { addressString, bytes32String, nanoString } from '../../utils/bigint.js'
+import { addressString, bytes32String } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
@@ -30,7 +30,10 @@ import { getGasFeePaidByTransactionSender, isGnosisSafeExecution, type Transacti
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
+import { TransactionFeeFields } from '../subcomponents/TransactionFeeFields.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
+import { assertNever } from '../../utils/typescript.js'
+import type { SignerNonce } from '../../utils/signerFacingTransactionRequest.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -933,6 +936,18 @@ type RawTransactionDetailsCardParams = {
 	gasSpent: bigint | undefined
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
+	signerNonce: SignerNonce,
+}
+
+export function getNonceDisplayText(simulatedNonce: bigint, signerNonce: SignerNonce) {
+	switch (signerNonce.kind) {
+		case 'simulated': return simulatedNonce.toString(10)
+		case 'wallet-selected': return `${ simulatedNonce.toString(10) } (estimate, your wallet picks the final nonce)`
+		case 'website-requested': return signerNonce.nonce === simulatedNonce
+			? signerNonce.nonce.toString(10)
+			: `${ signerNonce.nonce.toString(10) } (simulated with nonce ${ simulatedNonce.toString(10) })`
+		default: return assertNever(signerNonce)
+	}
 }
 
 type GasLimitEditorParams = {
@@ -976,7 +991,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	</>
 }
 
-export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, signerNonce }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -1010,22 +1025,14 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 							<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
 						</dd>
 						<dt>Nonce: </dt>
-						<dd>{ transaction.nonce.toString(10) }</dd>
+						<dd>{ getNonceDisplayText(transaction.nonce, signerNonce) }</dd>
 						<dt>Chain</dt>
 						<dd>{ transaction.rpcNetwork.name }</dd>
 						<dt>Unsigned transaction hash</dt>
 						<dd><span class = 'text-legible truncate'>{ bytes32String(transaction.hash) }</span></dd>
 
 
-						{ transaction.type !== '1559'
-							? <></>
-							: <>
-								<dt>Max Fee Per Gas</dt>
-								<dd>{ `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }</dd>
-								<dt>Max Priority Fee Per Gas</dt>
-								<dd>{ `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }</dd>
-							</>
-						}
+						<TransactionFeeFields transaction = { transaction } />
 					</dl>
 
 					<div>

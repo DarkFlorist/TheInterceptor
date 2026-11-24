@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { getFrameOrigins } from '../../app/ts/utils/requests.js'
+import { getFrameOrigins } from '../../app/ts/utils/websiteOrigin.js'
 import { test } from 'bun:test'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
@@ -47,7 +47,7 @@ async function openSignInConfirmation(siweMessage: string, pageUrl: string, live
 		{ kind: 'message', parameters: signRequest },
 		true,
 		activeAddress,
-		{ websiteOrigin: 'localhost:3000', icon: undefined, title: 'Local dapp' },
+		{ websiteOrigin: getFrameOrigins(pageUrl).websiteOrigin, icon: undefined, title: 'Local dapp' },
 		websiteTabConnections,
 	)
 	return { reply, pendingMessages: await modules.getPendingTransactionsAndMessages() }

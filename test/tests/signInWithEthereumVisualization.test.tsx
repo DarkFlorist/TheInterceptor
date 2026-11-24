@@ -14,7 +14,7 @@ import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-typ
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../app/ts/utils/constants.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
-import { getFrameOrigins } from '../../app/ts/utils/requests.js'
+import { getFrameOrigins } from '../../app/ts/utils/websiteOrigin.js'
 import { SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
 import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
 
@@ -80,10 +80,10 @@ const siweText = ({ scheme, domain = 'example.com', address = VITALIK_CHECKSUMME
 	...optionalFields,
 ].join('\n')
 
-// The requesting website: its host and port as `Website.websiteOrigin` keeps them, and the full origin recorded with the request, which records stored before it was recorded lack.
+// The requesting website: its canonical origin as `Website.websiteOrigin` keeps it, and the full origin recorded with the request, which records stored before it was recorded lack.
 type Requester = { readonly websiteOrigin: string, readonly requestOrigin: string | undefined }
-const FROM_EXAMPLE_COM: Requester = { websiteOrigin: 'example.com', requestOrigin: 'https://example.com' }
-const FROM_EVIL_EXAMPLE: Requester = { websiteOrigin: 'evil.example', requestOrigin: 'https://evil.example' }
+const FROM_EXAMPLE_COM: Requester = { websiteOrigin: 'https://example.com', requestOrigin: 'https://example.com' }
+const FROM_EVIL_EXAMPLE: Requester = { websiteOrigin: 'https://evil.example', requestOrigin: 'https://evil.example' }
 
 function createSignedMessageTransaction(message: string, requester: Requester = FROM_EXAMPLE_COM): SignedMessageTransaction {
 	const params: readonly [string, bigint] = [bytesToHex(stringToBytes(message)), VITALIK_ADDRESS]
@@ -129,10 +129,10 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 		const frameOrigins = getFrameOrigins(port.sender.url)
 		const { websiteOrigin } = frameOrigins
 		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, ...frameOrigins, approved: true, wantsToConnect: false } } }]])
-		assert.equal(websiteOrigin, 'localhost:3000')
+		assert.equal(websiteOrigin, 'http://localhost:3000')
 		port.sender.url = 'https://attacker.example/'
-		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, 'attacker.example'), undefined)
-		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, websiteOrigin), `http://${ websiteOrigin }`)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, 'https://attacker.example'), undefined)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, websiteOrigin), 'http://localhost:3000')
 		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }, websiteOrigin), undefined)
 	})
 

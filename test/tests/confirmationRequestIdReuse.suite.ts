@@ -19,7 +19,7 @@ async function startPageConnection(messagesPostedToPage: unknown[] = []) {
 	browserMock.setLiveTabIds([99])
 	const socket = pageRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, messagesPostedToPage)
-	return new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: pageWebsite.websiteOrigin, approved: true, wantsToConnect: true } } }]])
+	return new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: pageWebsite.websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true } } }]])
 }
 
 type PageConnections = Awaited<ReturnType<typeof startPageConnection>>

@@ -801,6 +801,35 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
 	})
 
+	test.each(['about:blank', 'about:srcdoc', 'data:text/html,<p>dapp</p>'])('refuses an account request from a %s frame instead of asking for consent that could not be stored', async (frameUrl) => {
+		installBrowserMock()
+		const { changeSimulationMode, getPendingAccessRequests, getWebsiteAccess, handleInterceptedRequest, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const { getFrameOrigins } = await import('../../app/ts/utils/websiteOrigin.js')
+		const { websiteOrigin } = getFrameOrigins(frameUrl)
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 0x4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4dn })
+		// Even a record stored under the old shared empty key, which file pages and these frames used to collide on, grants nothing.
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: '' }, access: true, addressAccess: undefined }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const reply = messages.find((message) => message.method === 'eth_requestAccounts' && message.requestId === 12)
+		assert.equal(reply?.error?.code, 4100)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+		assert.deepEqual((await getWebsiteAccess()).map((entry) => entry.website.websiteOrigin), [''])
+	})
+
 	test('replays account state for already-approved eth_requestAccounts on signer-only networks', async () => {
 		installBrowserMock()
 		const {
@@ -2867,6 +2896,87 @@ describe('background eth_accounts', () => {
 		assert.equal(hasAddressAccess([{ website: { websiteOrigin, icon: undefined, title: undefined }, addressAccess: undefined }], websiteOrigin, address), 'askAccess')
 		assert.equal(hasAccess([], websiteOrigin), 'askAccess')
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
+		assert.equal(hasAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy grant' },
+			access: true,
+			addressAccess: [{ address: address.address, access: true }],
+		}], websiteOrigin), 'askAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy grant' },
+			access: true,
+			addressAccess: [{ address: address.address, access: true }],
+		}], websiteOrigin, address), 'askAccess')
+	})
+
+	test('preserves restrictive legacy website decisions without trusting legacy grants', async () => {
+		installBrowserMock()
+		const { hasAccess, hasAddressAccess } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+		const otherAddress = { ...address, address: 0x2222222222222222222222222222222222222222n }
+
+		assert.equal(hasAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy denial' },
+			access: false,
+		}], websiteOrigin), 'noAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy address denial' },
+			access: true,
+			addressAccess: [
+				{ address: address.address, access: false },
+				{ address: otherAddress.address, access: true },
+			],
+		}], websiteOrigin, address), 'noAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy mixed grants' },
+			access: true,
+			addressAccess: [
+				{ address: address.address, access: false },
+				{ address: otherAddress.address, access: true },
+			],
+		}], websiteOrigin, otherAddress), 'askAccess')
+		assert.equal(hasAddressAccess([
+			{
+				website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy address denial' },
+				access: true,
+				addressAccess: [{ address: address.address, access: false }],
+			},
+			{
+				website: { websiteOrigin, icon: undefined, title: 'Exact site grant' },
+				access: true,
+			},
+		], websiteOrigin, { ...address, askForAddressAccess: false }), 'noAccess')
+		assert.equal(hasAddressAccess([
+			{
+				website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy address denial' },
+				access: true,
+				addressAccess: [{ address: address.address, access: false }],
+			},
+			{
+				website: { websiteOrigin, icon: undefined, title: 'Exact address grant' },
+				access: true,
+				addressAccess: [{ address: address.address, access: true }],
+			},
+		], websiteOrigin, address), 'hasAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy disabled site' },
+			access: true,
+			interceptorDisabled: true,
+		}], websiteOrigin, address), 'interceptorDisabled')
+	})
+
+	test.each([['http://example.test', 'example.test:80'], ['https://example.test', 'example.test:443']])('keeps legacy default-port restrictions and requires explicit rebinding for %s grants', async (websiteOrigin, legacyOrigin) => {
+		installBrowserMock()
+		const { hasAccess, hasAddressAccess } = await loadModules()
+		const address = { address: 1n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+		const legacyGrant = { website: { websiteOrigin: legacyOrigin }, access: true, addressAccess: [{ address: address.address, access: true }] }
+		assert.equal(hasAccess([legacyGrant], websiteOrigin), 'askAccess')
+		assert.equal(hasAddressAccess([legacyGrant], websiteOrigin, address), 'askAccess')
+		assert.equal(hasAccess([{ ...legacyGrant, access: false }], websiteOrigin), 'noAccess')
+		assert.equal(hasAddressAccess([{ ...legacyGrant, addressAccess: [{ address: address.address, access: false }] }], websiteOrigin, address), 'noAccess')
+		assert.equal(hasAccess([{ ...legacyGrant, interceptorDisabled: true }], websiteOrigin), 'interceptorDisabled')
+		// A second alias must not hide the restrictive default-port row.
+		assert.equal(hasAccess([{ website: { websiteOrigin: 'example.test' }, access: true }, { ...legacyGrant, access: false }], websiteOrigin), 'noAccess')
 	})
 
 	test('preserves the configured simulation address across a signing-mode round trip', async () => {
@@ -3220,5 +3330,196 @@ describe('background eth_accounts', () => {
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
 		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
+	})
+
+	test('does not let a cached port approval authorize a newly selected unapproved account', async () => {
+		installBrowserMock()
+		const { getSettings, updateWebsiteAccess, verifyAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const approvedAddress = 0x1111111111111111111111111111111111111111n
+		const unapprovedAddress = {
+			address: 0x2222222222222222222222222222222222222222n,
+			askForAddressAccess: true,
+			type: 'contact',
+			name: 'Unapproved',
+		} as const
+		await updateWebsiteAccess(() => [{
+			website: { websiteOrigin, icon: undefined, title: undefined },
+			access: true,
+			addressAccess: [{ address: approvedAddress, access: true }],
+		}])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, approvedAddress, wantsToConnect: true },
+		} }]])
+
+		const result = verifyAccess(websiteTabConnections, socket, true, websiteOrigin, unapprovedAddress, await getSettings())
+
+		assert.equal(result, 'askAccess')
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, true)
+	})
+
+	test('the consent dialog associates only the exact origin\'s address grants, never a legacy record\'s that approval would drop', async () => {
+		installBrowserMock()
+		const { getAssociatedAddresses, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const legacyGrantedAddress = 0x5757575757575757575757575757575757575757n
+		const requestedAddress = 0x5858585858585858585858585858585858585858n
+		await updateUserAddressBookEntries(() => [
+			{ type: 'contact', name: 'Legacy granted', address: legacyGrantedAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+			{ type: 'contact', name: 'Requested', address: requestedAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+		])
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'example.test' }, access: true, addressAccess: [{ address: legacyGrantedAddress, access: true }] }])
+		const settings = await getSettings()
+		const requested = { type: 'contact' as const, name: 'Requested', address: requestedAddress, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
+
+		const associatedAddresses = await getAssociatedAddresses(settings, 'https://example.test', requested)
+
+		assert.deepEqual(associatedAddresses.map((entry) => entry.address), [requestedAddress])
+	})
+
+	test('suspends approved ports before publishing a signer account transition', async () => {
+		installBrowserMock()
+		const { suspendWebsitePortApprovalsForTab, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, approvedAddress: 1n, wantsToConnect: true },
+		} }]])
+
+		suspendWebsitePortApprovalsForTab(websiteTabConnections, socket.tabId)
+
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approvedAddress, undefined)
+		assert.deepEqual(messages.slice(-2).map((message) => ({ method: message.method, result: message.result })), [
+			{ method: 'accountsChanged', result: [] },
+			{ method: 'disconnect', result: [] },
+		])
+	})
+
+	async function replyWithSignerAccountsInSigningMode(previousActiveSigningAddress: bigint | undefined, { supersedeWhileStoringSignerAccounts = false, requestAccounts = false } = {}) {
+		const { setStorageHooks } = installBrowserMock()
+		const { changeSimulationMode, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x5151515151515151515151515151515151515151n
+		const otherAccount = 0x5252525252525252525252525252525252525252n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			signerAccounts: previousActiveSigningAddress === undefined ? [] : [previousActiveSigningAddress],
+			activeSigningAddress: previousActiveSigningAddress,
+		}))
+		const unboundSocket = { tabId: 1, connectionName: 0n }
+		const sameAccountSocket = { tabId: 1, connectionName: 1n }
+		const otherAccountSocket = { tabId: 1, connectionName: 2n }
+		const unbound = createPort(unboundSocket.tabId)
+		const sameAccount = createPort(sameAccountSocket.tabId, undefined, undefined, sameAccountSocket.connectionName)
+		const otherAccountPort = createPort(otherAccountSocket.tabId, undefined, undefined, otherAccountSocket.connectionName)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[unboundSocket.tabId, { ...confirmedSignerOwnership(unboundSocket), connections: {
+			[websiteSocketToString(unboundSocket)]: { port: unbound.port, socket: unboundSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[websiteSocketToString(sameAccountSocket)]: { port: sameAccount.port, socket: sameAccountSocket, websiteOrigin, approved: true, approvedAddress: account, wantsToConnect: true },
+			[websiteSocketToString(otherAccountSocket)]: { port: otherAccountPort.port, socket: otherAccountSocket, websiteOrigin, approved: true, approvedAddress: otherAccount, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		let superseded = false
+		if (supersedeWhileStoringSignerAccounts) setStorageHooks({ afterSet: async (items) => {
+			if (superseded || !('tabState_1' in items)) return
+			const signerStateOwner = websiteTabConnections.get(1)?.signerStateOwner
+			if (signerStateOwner?.generation === undefined) throw new Error('Missing signer state owner')
+			// A newer signer state (a reconnect of the signer provider) takes ownership while the reply is storing its accounts, so the reply is superseded.
+			signerStateOwner.generation += 1
+			superseded = true
+		} })
+		await handleInterceptedRequest(unbound.port, websiteOrigin, website, simulationServicesOwner, unboundSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 501, requestSocket: unboundSocket },
+			method: 'eth_accounts_reply',
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(account)], requestAccounts }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const wasDisconnected = (messages: typeof unbound.messages) => messages.some((message) => message.method === 'disconnect')
+		setStorageHooks({})
+		if (supersedeWhileStoringSignerAccounts) assert.equal(superseded, true)
+		return {
+			unboundDisconnected: wasDisconnected(unbound.messages),
+			sameAccountDisconnected: wasDisconnected(sameAccount.messages),
+			otherAccountDisconnected: wasDisconnected(otherAccountPort.messages),
+			sameAccountApproved: websiteTabConnections.get(1)?.connections[websiteSocketToString(sameAccountSocket)]?.approved,
+		}
+	}
+
+	test('does not disconnect approved ports on the first signer account report after a reload', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(undefined)
+		assert.equal(result.unboundDisconnected, false)
+		assert.equal(result.sameAccountDisconnected, false)
+		assert.equal(result.sameAccountApproved, true)
+		assert.equal(result.otherAccountDisconnected, true)
+	})
+
+	test('suspends every approved port when the signer switches between two accounts', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n)
+		assert.equal(result.unboundDisconnected, true)
+		assert.equal(result.sameAccountDisconnected, true)
+		assert.equal(result.otherAccountDisconnected, true)
+	})
+
+	test('an eth_requestAccounts reply also suspends approvals when the signer account changed', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n, { requestAccounts: true })
+		assert.equal(result.unboundDisconnected, true)
+		assert.equal(result.sameAccountDisconnected, true)
+		assert.equal(result.otherAccountDisconnected, true)
+	})
+
+	test('a signer account reply superseded by a newer signer state does not revoke approvals', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n, { supersedeWhileStoringSignerAccounts: true })
+		assert.equal(result.unboundDisconnected, false)
+		assert.equal(result.sameAccountDisconnected, false)
+		assert.equal(result.sameAccountApproved, true)
+		assert.equal(result.otherAccountDisconnected, false)
+	})
+
+	test('keeps a port approved for the selected Safe on the first signer account report after a signer reconnect', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings, handleInterceptedRequest, updateTabState, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://safe-dapp.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const ownerAccount = 0x5454545454545454545454545454545454545454n
+		const safeAddress = 0x5555555555555555555555555555555555555555n
+		const otherAccount = 0x5656565656565656565656565656565656565656n
+		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Owned Safe', address: safeAddress, chainId: activeChainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [ownerAccount] }])
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined, activeSigningSafeAddress: safeAddress })
+		const { rememberSigningAddressPreference } = await import('../../app/ts/background/settings.js')
+		await rememberSigningAddressPreference({ signerAddress: ownerAccount, selection: 'safe', safeAddress, chainId: activeChainId })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
+		// A signer reconnect clears the signer state while the approved connections remain.
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
+		const safeSocket = { tabId: 1, connectionName: 0n }
+		const otherAccountSocket = { tabId: 1, connectionName: 1n }
+		const safePort = createPort(safeSocket.tabId)
+		const otherAccountPort = createPort(otherAccountSocket.tabId, undefined, undefined, otherAccountSocket.connectionName)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[safeSocket.tabId, { ...confirmedSignerOwnership(safeSocket), connections: {
+			[websiteSocketToString(safeSocket)]: { port: safePort.port, socket: safeSocket, websiteOrigin, approved: true, approvedAddress: safeAddress, wantsToConnect: true },
+			[websiteSocketToString(otherAccountSocket)]: { port: otherAccountPort.port, socket: otherAccountSocket, websiteOrigin, approved: true, approvedAddress: otherAccount, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(safePort.port, websiteOrigin, website, simulationServicesOwner, safeSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 502, requestSocket: safeSocket },
+			method: 'eth_accounts_reply',
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(ownerAccount)], requestAccounts: false }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(safePort.messages.some((message) => message.method === 'disconnect'), false)
+		assert.equal(websiteTabConnections.get(1)?.connections[websiteSocketToString(safeSocket)]?.approved, true)
+		assert.equal(otherAccountPort.messages.some((message) => message.method === 'disconnect'), true)
 	})
 })

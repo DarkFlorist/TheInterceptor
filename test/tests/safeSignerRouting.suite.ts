@@ -32,8 +32,8 @@ test('accepts a signer reply from the current approved child-frame port', async 
 			providerGeneration: 8,
 		},
 		connections: {
-			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
-			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
+			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
 		},
 	}]])
 	await modules.browserStorageLocalSet2({
@@ -170,6 +170,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -304,6 +305,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -437,6 +439,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -577,130 +580,33 @@ test('shows Safe transaction context failures in the co-signing dialog without r
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
-test('shows a Safe signing-account mismatch in the confirmation dialog without reporting an unexpected error', async () => {
-	const walletOwner = safeTestOwnerAddress
-	const mismatchedRequestedAccount = recipientAddress
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
-		to: recipientAddress,
-		value: 0n,
-		input: new Uint8Array(),
-	}, 0n)
-	fakeSafeContract.owners = [walletOwner]
-	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+test('rejects a Safe transaction message naming an unauthorized EOA before creating a confirmation', async () => {
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	const walletOwnerEntry = {
-		type: 'contact' as const,
-		name: 'Known Safe owner',
-		address: walletOwner,
-		chainId: fakeRpcNetwork.chainId,
-		entrySource: 'User' as const,
-	}
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddresses: [walletOwner],
-		safeVersion: '1.4.1',
-	}), walletOwnerEntry])
-	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
-		...state,
-		signerAccounts: [walletOwner],
-		activeSigningAddress: walletOwner,
-		signerChain: fakeRpcNetwork.chainId,
-	}))
-	const socket = uniqueRequestIdentifier.requestSocket
-	const port = createWebsitePort(socket, 0, [])
-	const websiteTabConnections = new Map([[socket.tabId, {
-		connections: {
-			[modules.websiteSocketToString(socket)]: {
-				port,
-				socket,
-				websiteOrigin: 'https://sealwort.example',
-				approved: true,
-				wantsToConnect: true,
-			},
-		},
-	}]])
-	const signRequest = {
-		method: 'eth_signTypedData_v4' as const,
-		params: [mismatchedRequestedAccount, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
-	}
-	const request = {
-		interceptorRequest: true as const,
-		usingInterceptorWithoutSigner: false,
-		uniqueRequestIdentifier,
-		...signRequest,
-	}
-	const unexpectedErrorBeforeRequest = await getLatestUnexpectedError()
-
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	const parameters = { method: 'eth_signTypedData_v4' as const, params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
+	const before = await getLatestUnexpectedError()
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
-		simulator.ethereum,
-		simulator.tokenPriceService,
-		request,
-		{ kind: 'message', parameters: signRequest },
-		false,
-		activeAddress,
-		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
-		websiteTabConnections,
-	), { type: 'doNotReply' })
+		simulator.ethereum, simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...parameters },
+		{ kind: 'message', parameters }, false, activeAddress,
+		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' }, new Map(),
+	), { type: 'result', error: { code: 4100, message: 'The requested signing account has not been authorized by the user.' } })
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await getLatestUnexpectedError(), before)
+})
 
-	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(pendingMessage?.type, 'SignableMessage')
-	assert.equal(pendingMessage?.transactionOrMessageCreationStatus, 'Simulated')
-	assert.equal(pendingMessage?.approvalStatus.status, 'SignerError')
-	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe account mismatch error')
-	assert.equal(pendingMessage.approvalStatus.code, -32010)
-	assert.equal(pendingMessage.approvalStatus.message, 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
-	assert.deepEqual(pendingMessage.approvalStatus.safeSignerErrorDetails, {
-		kind: 'safeSigningAccountMismatch',
-		requestedSigningAccount: mismatchedRequestedAccount,
-		activeSafe: activeAddress,
-		requestedSafe: activeAddress,
-		safeOwners: [walletOwner],
-		safeOwnerAddressBookEntries: [walletOwnerEntry],
-	})
-	assert.equal(pendingMessage.type === 'SignableMessage' ? pendingMessage.safeMessageCoSignSnapshot : undefined, undefined)
-	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
-
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	fakeSafeContract.safeOwnerLookupFailure = 'expected'
-	try {
-		assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
-			simulator.ethereum,
-			simulator.tokenPriceService,
-			request,
-			{ kind: 'message', parameters: signRequest },
-			false,
-			activeAddress,
-			{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
-			websiteTabConnections,
-		), { type: 'doNotReply' })
-	} finally {
-		fakeSafeContract.safeOwnerLookupFailure = undefined
-	}
-	const [pendingMessageWithoutOwners] = await modules.getPendingTransactionsAndMessages()
-	if (pendingMessageWithoutOwners?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe account mismatch error after owner lookup failure')
-	assert.deepEqual(pendingMessageWithoutOwners.approvalStatus.safeSignerErrorDetails, {
-		kind: 'safeSigningAccountMismatch',
-		requestedSigningAccount: mismatchedRequestedAccount,
-		activeSafe: activeAddress,
-		requestedSafe: activeAddress,
-		safeOwners: [],
-		safeOwnerAddressBookEntries: [],
-		safeOwnersUnavailableReason: 'Safe owner lookup unavailable',
-	})
-	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
-
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+test('Safe account mismatch diagnostics propagate unexpected owner decoder failures', async () => {
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const parameters = { method: 'eth_signTypedData_v4' as const, params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
 	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
 	try {
 		const { createSafeMessageCoSignSnapshot } = await import('../../app/ts/background/safeConfirmationResolver.js')
-		await assert.rejects(
-			createSafeMessageCoSignSnapshot(simulator.ethereum, activeAddress, walletOwner, signRequest, safeTx),
-			/Unexpected Safe owner decoder failure/u,
-		)
+		await assert.rejects(createSafeMessageCoSignSnapshot(simulator.ethereum, activeAddress, safeTestOwnerAddress, parameters, safeTx), /Unexpected Safe owner decoder failure/u)
 	} finally {
 		fakeSafeContract.safeOwnerLookupFailure = undefined
 	}
-	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
-	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
 test('signs Safe transaction typed data normally when the active signing address is an EOA', async () => {
@@ -732,6 +638,7 @@ test('signs Safe transaction typed data normally when the active signing address
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -806,6 +713,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://simulation-signer.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1130,6 +1038,7 @@ test('routes a completed active Safe execution through its configured signer and
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1348,6 +1257,123 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(dappReply.result, transactionHash)
 })
 
+const directExecutionEnvelopeCases = [
+	{ name: 'wallet-selected gas and fees', fields: {} },
+	{ name: 'legacy fees', fields: { type: '0x0', gas: '0x493e0', gasPrice: '0x2540be400' } },
+	{ name: 'EIP-2930 fees', fields: { type: '0x1', gas: '0x493e0', gasPrice: '0x2540be400', accessList: [] } },
+	{ name: 'EIP-1559 fees', fields: { type: '0x2', gas: '0x493e0', maxFeePerGas: '0x4a817c800', maxPriorityFeePerGas: '0x77359400' } },
+] as const
+
+for (const { name, fields } of directExecutionEnvelopeCases) test(`forwards the reviewed direct Safe execution with ${ name }`, async () => {
+	await modules.changeSimulationMode({ simulationMode: false })
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const safeSignerAddress = recipientAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, fakeSafeContract.nonce)
+	const existingSignature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	fakeSafeContract.owners = [safeTestOwnerAddress, safeSignerAddress]
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSignerAddresses: [safeSignerAddress] })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [safeSignerAddress],
+		activeSigningAddress: safeSignerAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			...fields,
+			from: addressString(activeAddress),
+			to: addressString(activeAddress),
+			data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [
+				addressString(recipientAddress),
+				0n,
+				'0x',
+				0n,
+				0n,
+				0n,
+				0n,
+				addressString(0n),
+				addressString(0n),
+				existingSignature,
+			]),
+		}],
+	})
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port: createWebsitePort(socket, 0, postedMessages),
+				socket,
+				websiteOrigin: 'https://sealwort.example',
+				approved: true,
+				approvedAddress: activeAddress,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams },
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+		websiteTabConnections,
+	), { type: 'doNotReply' })
+	const [pendingExecution] = await modules.getPendingTransactionsAndMessages()
+	if (pendingExecution?.type !== 'Transaction' || pendingExecution.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Missing direct Safe execution request')
+	assert.equal(pendingExecution.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(pendingExecution.approvalStatus.status, 'WaitingForUser')
+	assert.equal(pendingExecution.safeFlow.kind === 'directExecution' ? pendingExecution.safeFlow.safeExecutionSignerAddress : undefined, safeSignerAddress)
+	// The pending request keeps the routed website inputs; the zero-fee simulation values for the external executor never replace them.
+	assert.equal(pendingExecution.originalRequestParameters.params[0].type, transactionParams.params[0].type)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].gas, transactionParams.params[0].gas)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].maxFeePerGas, transactionParams.params[0].maxFeePerGas)
+
+	const staleAccept = await createAcceptConfirmation()
+	const request = pendingExecution.originalRequestParameters.params[0]
+	const changedFees = request.type === 'legacy' || request.type === '2930' ? { gasPrice: 30_000_000_000n } : { maxFeePerGas: 30_000_000_000n }
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' ? {
+		...pending,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ ...request, ...changedFees }] },
+	} : pending)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, staleAccept, { selectedSigner: safeSignerAddress, verificationError: undefined }), false)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false, 'changed wallet fees invalidate the previous review')
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async () => pendingExecution)
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		websiteTabConnections,
+		await createAcceptConfirmation(),
+		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+	), true)
+	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
+	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing direct Safe execution signer request')
+	const signerTransaction = signerRequest.params[0]
+	if (!isRecord(signerTransaction)) throw new Error('Missing direct Safe execution transaction parameters')
+	assert.equal(signerRequest.method, 'eth_sendTransaction')
+	assert.equal(signerTransaction.from, addressString(safeSignerAddress))
+	const { getDirectSafeExecutionSignerRequest } = await import('../../app/ts/safe/safePendingFlow.js')
+	const displayedRequest = getDirectSafeExecutionSignerRequest(pendingExecution)
+	if (displayedRequest === undefined) throw new Error('Missing displayed wallet request')
+	const displayedTransaction = SendTransactionParams.serialize(displayedRequest).params[0]
+	assert.equal(signerTransaction.type, displayedTransaction.type)
+	assert.equal(signerTransaction.gas, displayedTransaction.gas)
+	assert.equal(signerTransaction.gasPrice, displayedTransaction.gasPrice)
+	assert.equal(signerTransaction.maxFeePerGas, displayedTransaction.maxFeePerGas)
+	assert.equal(signerTransaction.maxPriorityFeePerGas, displayedTransaction.maxPriorityFeePerGas)
+	assert.equal(pendingExecution.transactionOrMessageCreationStatus === 'Simulated' && pendingExecution.transactionToSimulate.transaction.type === '1559' ? pendingExecution.transactionToSimulate.transaction.maxFeePerGas : undefined, 0n, 'the simulation still excludes executor gas costs')
+})
+
 test('blocks direct Safe execution when the configured signer cannot satisfy the threshold', async () => {
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const configuredSigner = recipientAddress
@@ -1401,6 +1427,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},

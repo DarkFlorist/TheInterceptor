@@ -154,9 +154,11 @@ async function loadModules() {
 	return {
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
+		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
+		changeSimulationMode: settings.changeSimulationMode,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
@@ -164,6 +166,7 @@ async function loadModules() {
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
+		websiteSocketToString: (await import('../../app/ts/background/backgroundUtils.js')).websiteSocketToString,
 	}
 }
 
@@ -573,5 +576,95 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.updateConfirmTransactionView(ethereum, tokenPriceService)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
+	})
+
+	test('backend refuses a quarantined signer request until its matching approval explicitly acknowledges it', async () => {
+		await browserMock.reset()
+		const modules = await modulesPromise
+		// Accepting forwards only while the Interceptor itself is in signing mode, not just the request.
+		await modules.changeSimulationMode({ simulationMode: false })
+		const fakeRpcNetwork: RpcEntry = {
+			name: 'Test Chain',
+			chainId: 1337n,
+			httpsRpc: 'https://example.invalid',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			currencyLogoUri: undefined,
+			primary: true,
+			minimized: true,
+		}
+		const fakeBlock = makeFakeBlock(789n)
+		const fakeRequestHandler = {
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() {
+				return undefined
+			},
+			async jsonRpcRequest(rpcRequest: { method: string }) {
+				switch (rpcRequest.method) {
+					case 'eth_getBlockByNumber':
+						return serializeForRpc(modules.EthereumBlockHeader, fakeBlock)
+					case 'eth_blockNumber':
+						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
+					default:
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+				}
+			},
+		}
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
+		const pendingMessage = createPendingSafeTxMessage(modules, fakeRpcNetwork)
+		if (pendingMessage.type !== 'SignableMessage') throw new Error('Expected a pending signable message')
+		const quarantinedPendingMessage: PendingTransactionOrSignableMessage = {
+			...pendingMessage,
+			simulationMode: false,
+			signedMessageTransaction: { ...pendingMessage.signedMessageTransaction, simulationMode: false },
+			visualizedPersonalSignRequest: {
+				...pendingMessage.visualizedPersonalSignRequest,
+				simulationMode: false,
+				quarantine: true,
+				quarantineReasons: ['Test quarantine'],
+			},
+		}
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [quarantinedPendingMessage] })
+
+		const forwardedMessages: unknown[] = []
+		const requestSocket = quarantinedPendingMessage.uniqueRequestIdentifier.requestSocket
+		const websiteTabConnections = new Map([[requestSocket.tabId, { connections: {
+			[modules.websiteSocketToString(requestSocket)]: {
+				port: { postMessage: (message: unknown) => forwardedMessages.push(message) } as browser.runtime.Port,
+				socket: requestSocket,
+				websiteOrigin: quarantinedPendingMessage.website.websiteOrigin,
+				approved: true,
+				approvedAddress: quarantinedPendingMessage.activeAddress,
+				wantsToConnect: true,
+			},
+		} }]])
+		const { getReviewedResultId } = await import('../../app/ts/background/reviewedResult.js')
+		const confirmationBase = {
+			method: 'popup_confirmDialog' as const,
+			data: {
+				action: 'accept' as const,
+				uniqueRequestIdentifier: quarantinedPendingMessage.uniqueRequestIdentifier,
+				reviewedResultId: getReviewedResultId(quarantinedPendingMessage),
+			},
+		}
+
+		// The refusal keeps the request waiting for the user instead of throwing.
+		assert.equal(await modules.resolvePendingTransactionOrMessage(
+			ethereum,
+			tokenPriceService,
+			websiteTabConnections,
+			{ ...confirmationBase, data: { ...confirmationBase.data, forceSend: false } },
+		), false)
+		assert.equal(forwardedMessages.length, 0)
+
+		assert.equal(await modules.resolvePendingTransactionOrMessage(
+			ethereum,
+			tokenPriceService,
+			websiteTabConnections,
+			{ ...confirmationBase, data: { ...confirmationBase.data, forceSend: true } },
+		), true)
+		assert.equal(forwardedMessages.length, 1)
+		assert.equal(isRecord(forwardedMessages[0]) && forwardedMessages[0].type, 'forwardToSigner')
 	})
 })

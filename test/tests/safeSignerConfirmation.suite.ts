@@ -68,6 +68,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -724,6 +725,7 @@ test('refreshes the selected signer and uses services installed during the walle
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -832,6 +834,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -923,6 +926,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -960,6 +964,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1348,3 +1353,17 @@ test('refuses a Safe proposal whose domain chain and connected chain are both th
 	assert.match(refusedProposal.approvalStatus.message, /Gnosis Safe transactions require a chain ID\./u)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
+
+for (const simulationMode of [false, true]) {
+	test(`an active Safe does not authorize a message naming an unrelated EOA (simulationMode=${ simulationMode })`, async () => {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+		const { SignMessageParams } = await import('../../app/ts/types/jsonRpc-signing-types.js')
+		const parameters = SignMessageParams.parse({ method: 'personal_sign', params: ['hello', addressString(recipientAddress)] })
+		const reply = await modules.openConfirmTransactionDialogForMessage(ethereum, simulator.tokenPriceService, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...parameters,
+		}, { kind: 'message', parameters }, simulationMode, activeAddress, { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, new Map())
+		assert.equal('error' in reply ? reply.error.code : undefined, 4100)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	})
+}

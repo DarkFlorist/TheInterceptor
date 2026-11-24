@@ -20,7 +20,7 @@ async function createApprovedSubscriberHarness({ onPostMessage }: { readonly onP
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port, messages } = createPort(socket.tabId, onPostMessage)
 	const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
-		[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, approvedAddress: account, wantsToConnect: true },
 	} }]])
 	const getBlockCalls = { count: 0 }
 	const { ethereum, simulationServicesOwner } = createEthereumWithGetBlockCounter(getBlockCalls)
