@@ -1,3 +1,4 @@
+import { getForwardedSignerReplyMode } from './forwardedRequestSettlement.js'
 import { type InterceptedRequestForward, InterceptorMessageToInpage, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -28,6 +29,14 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
+		if (message.type === 'forwardToSigner') {
+			return postMessageToPortIfConnected(connection.port, {
+				...message,
+				interceptorApproved: true,
+				requestId: message.uniqueRequestIdentifier.requestId,
+				signerReplyMode: getForwardedSignerReplyMode(message.method),
+			})
+		}
 		return postMessageToPortIfConnected(connection.port, {
 			...message,
 			interceptorApproved: true,
