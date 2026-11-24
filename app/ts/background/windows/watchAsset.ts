@@ -1,3 +1,4 @@
+import { getForwardedSignerReplyMode } from '../forwardedRequestSettlement.js'
 import type { WalletWatchAsset } from '../../types/JsonRpc-types.js'
 import type { WatchAssetConfirmation } from '../../types/interceptor-messages.js'
 import type { PendingWatchAssetRequest, StoredWatchAssetRequest, WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -268,6 +269,7 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 			{
 				method: 'request_signer_to_wallet_watchAsset',
 				result: {
+					signerReplyMode: getForwardedSignerReplyMode('wallet_watchAsset'),
 					parameters: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
 					uniqueRequestIdentifier: request.request.uniqueRequestIdentifier,
 					signerIdentity: {
