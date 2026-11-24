@@ -18,6 +18,7 @@ import { serialize } from '../../app/ts/types/wire-types.js'
 import { decodeFunctionDataStrict, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { installDomMock } from './domMock.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => unknown
@@ -639,9 +640,7 @@ describe('FetchSimulationStack address-book re-labels', () => {
 			// Saved as the address editor this page opens saves it.
 			const reply = await popupMessageHandler(new Map(), simulationServicesOwner, serialize(AddOrEditAddressBookEntry, { method: 'popup_addOrModifyAddressBookEntry', data: createContractEntry('Renamed Contract') }), await getSettings(), async () => undefined)
 			assert.deepEqual(reply, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
-			for (let tick = 0; tick < MAX_SETTLE_TICKS && !page.getText().includes('Renamed Contract'); tick++) {
-				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-			}
+			await act(waitForBackgroundTasks)
 			await settleMessageFlow()
 
 			assert.ok(page.getText().includes('Renamed Contract'))
