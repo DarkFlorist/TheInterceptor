@@ -161,6 +161,16 @@ describe('content script injection strategy', () => {
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
 	})
 
+	test('propagates reporter failures after a manifest v3 registration error', async () => {
+		await installBrowserMock({ registerError: new Error('registration failed') })
+		const { updateManifestV3ContentScripts } = await import('../../app/ts/utils/contentScriptsRegistration.js')
+		const reporterFailure = new Error('reporter unavailable')
+		await assert.rejects(updateManifestV3ContentScripts({
+			readDisabledSites: async () => [],
+			reportError: async () => { throw reporterFailure },
+		}), reporterFailure)
+	})
+
 	test('records manifest v3 registration failures as unexpected errors', async () => {
 		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
