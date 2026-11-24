@@ -537,8 +537,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 }
 
-// What a request was decided and executes on: the network, the mode and the active addresses it executes with, and the access policy's answers for this website and the request's address entry. Comparing the policy's answers rather than the fields it reads keeps every policy input in, including the address's own askForAddressAccess. The popup's open page and other websites' entries are left out, so changes to them do not make a waiting request decide again.
-function getRequestDecisionFingerprint(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry) {
+// What a request was decided and executes on: the network, the mode and the active addresses it executes with, and the access policy's answers for this website and the request's address entry. Comparing the policy's answers rather than the fields it reads keeps every policy input in, including the address's own askForAddressAccess. The execution selection is resolved by the same helper before preparation and admission, so Safe ownership and wallet signer changes are compared through their actual policy results. The popup's open page and other websites' entries are left out, so changes to them do not make a waiting request decide again.
+function getRequestDecisionFingerprint(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry, selection: RequestExecutionSelection) {
 	return stringifyJSONWithBigInts([
 		settings.activeRpcNetwork,
 		settings.simulationMode,
@@ -546,9 +546,28 @@ function getRequestDecisionFingerprint(settings: Settings, websiteOrigin: string
 		settings.activeSigningSafeAddress,
 		settings.useSignersAddressAsActiveAddress,
 		activeAddress.address,
+		selection,
 		getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin),
 		getWebsiteAddressAccessApprovalState(settings.websiteAccess, websiteOrigin, activeAddress),
 	])
+}
+
+type RequestExecutionSelection = {
+	readonly safeSigningMode: boolean
+	readonly simulationOverlayEnabled: boolean
+	readonly walletSelectedSafeSigner: bigint | undefined
+}
+
+// Resolve the same execution selection before preparation and at final admission. Compare policy results rather than duplicating the Safe/owner eligibility inputs in the fingerprint.
+async function readRequestExecutionSelection(settings: Settings, activeAddress: AddressBookEntry, tabId: number): Promise<RequestExecutionSelection> {
+	const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
+	const signerTabState = await getTabState(tabId)
+	const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+	return {
+		safeSigningMode,
+		simulationOverlayEnabled: settings.simulationMode || safeSigningMode,
+		walletSelectedSafeSigner: safeSigningMode ? getWalletSelectedAccount(signerTabState) : undefined,
+	}
 }
 
 // Metadata and Safe preparation may outlive a settings transition. Final admission rechecks the decision under the transition lock, then starts execution with the same services used during preparation.
@@ -562,21 +581,21 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 	try {
 		const services = simulationServicesOwner.getCurrent()
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+		const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
+		const selection = await readRequestExecutionSelection(settings, activeAddress, tabId)
+		const { safeSigningMode, simulationOverlayEnabled, walletSelectedSafeSigner } = selection
 		const admission = request.method === 'safe_apps_request'
 			? await prepareSafeAppsRequest(services.ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 			: { kind: 'execute' as const, context: { request } }
-		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
-		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
-		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
 		const execution = await withSettingsTransitionLock(async (lock) => {
+			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
 			const currentSettings = (await lock.readSettings()).settings
 			const currentActiveAddress = await readActiveAddress(currentSettings)
-			if (currentActiveAddress === undefined
-				|| getRequestDecisionFingerprint(currentSettings, website.websiteOrigin, currentActiveAddress) !== getRequestDecisionFingerprint(settings, website.websiteOrigin, activeAddress)
-				|| simulationServicesOwner.getCurrent() !== services) return undefined
+			if (currentActiveAddress === undefined) return undefined
+			const currentSelection = await readRequestExecutionSelection(currentSettings, currentActiveAddress, tabId)
+			if (getRequestDecisionFingerprint(currentSettings, website.websiteOrigin, currentActiveAddress, currentSelection) !== getRequestDecisionFingerprint(settings, website.websiteOrigin, activeAddress, selection)
+				|| simulationServicesOwner.getCurrent() !== services
+				|| signerStateToken !== undefined && !isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return undefined
 			// Start synchronously, but return the promise in an object: the lock must be released before awaiting execution, which may itself switch networks or wait for a user confirmation.
 			return { result: (async () => {
 				if (admission.kind === 'reply') return await replyToInterceptedRequest(websiteTabConnections, admission.reply)
