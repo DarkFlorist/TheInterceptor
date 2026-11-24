@@ -1,5 +1,5 @@
-import { useEffect } from 'preact/hooks'
-import { useComputed, useSignal } from '@preact/signals'
+import { useSignal } from '@preact/signals'
+import { useEffect, useRef } from 'preact/hooks'
 
 interface SomeTimeAgoProps {
 	priorTimestamp: Date,
@@ -17,18 +17,21 @@ export function getSomeTimeAgoText(
 	return diffToText(countBackwards ? timeDiff : -timeDiff)
 }
 
+function getTextForProps(props: SomeTimeAgoProps) {
+	return getSomeTimeAgoText(props.priorTimestamp, new Date(), props.countBackwards, props.diffToText)
+}
+
 export function SomeTimeAgo(props: SomeTimeAgoProps) {
-	const priorTimestampMs = props.priorTimestamp.getTime()
-	const getTimeDiff = () => (priorTimestampMs - Date.now()) / 1000
-	const timeDiff = useSignal(getTimeDiff())
-	const diffTotext = props.diffToText !== undefined ? props.diffToText : humanReadableDateDelta
-	const humanReadableTimeDiff = useComputed(() => diffTotext(props.countBackwards ? timeDiff.value : -timeDiff.value))
+	const text = useSignal('')
+	const latestProps = useRef(props)
+	latestProps.current = props
+	// Plain prop changes update immediately; interval ticks write only the rendered text signal.
+	text.value = getTextForProps(props)
 	useEffect(() => {
-		timeDiff.value = getTimeDiff()
-		const id = setInterval(() => { timeDiff.value = getTimeDiff() }, 1000)
-		return () => clearInterval(id)
-	}, [priorTimestampMs, props.countBackwards, diffTotext])
-	return <>{ humanReadableTimeDiff }</>
+		const intervalId = setInterval(() => { text.value = getTextForProps(latestProps.current) }, 1000)
+		return () => clearInterval(intervalId)
+	}, [])
+	return <>{ text }</>
 }
 
 function humanReadableDateDelta(secondsDiff: number) {

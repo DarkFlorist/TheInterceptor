@@ -4,26 +4,28 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 
 const RESET_BUTTON_RECOVERY_DELAY_MS = 4000
 
+type ResetRecoveryTimeoutId = { current: ReturnType<typeof globalThis.setTimeout> | undefined }
+
+function clearResetRecoveryTimeout(resetRecoveryTimeoutId: ResetRecoveryTimeoutId) {
+	if (resetRecoveryTimeoutId.current === undefined) return
+	globalThis.clearTimeout(resetRecoveryTimeoutId.current)
+	resetRecoveryTimeoutId.current = undefined
+}
+
 export function useResetSimulation(resetButtonRecoveryDelayMs = RESET_BUTTON_RECOVERY_DELAY_MS) {
 	const disableReset = useSignal<boolean>(false)
-	const resetRecoveryTimeoutId = useRef<ReturnType<typeof globalThis.setTimeout> | undefined>(undefined)
-
-	function clearResetRecoveryTimeout() {
-		if (resetRecoveryTimeoutId.current === undefined) return
-		globalThis.clearTimeout(resetRecoveryTimeoutId.current)
-		resetRecoveryTimeoutId.current = undefined
-	}
+	const resetRecoveryTimeoutId = useRef<ResetRecoveryTimeoutId['current']>(undefined)
 
 	function markSimulationDataReceived() {
-		clearResetRecoveryTimeout()
+		clearResetRecoveryTimeout(resetRecoveryTimeoutId)
 		disableReset.value = false
 	}
 
-	useEffect(() => () => clearResetRecoveryTimeout(), [])
+	useEffect(() => () => clearResetRecoveryTimeout(resetRecoveryTimeoutId), [])
 
 	async function resetSimulation() {
 		disableReset.value = true
-		clearResetRecoveryTimeout()
+		clearResetRecoveryTimeout(resetRecoveryTimeoutId)
 		resetRecoveryTimeoutId.current = globalThis.setTimeout(() => {
 			resetRecoveryTimeoutId.current = undefined
 			disableReset.value = false

@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { getSomeTimeAgoText, humanReadableDateDeltaLessDetailed, SomeTimeAgo } from '../../app/ts/components/subcomponents/SomeTimeAgo.js'
+import { replaceGlobal } from '../harness/globals.js'
 import { installDateMock, installDomMock } from './domMock.js'
 
 describe('SomeTimeAgo', () => {
@@ -40,4 +41,38 @@ describe('SomeTimeAgo', () => {
 		clock.restore()
 		dom.restore()
 	})
+
+	test('ticks with the latest formatter and direction, then clears its interval on unmount', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const intervals = new Map<number, () => void>()
+		const restoreInterval = replaceGlobal('setInterval', (callback: () => void, delay: number) => {
+			assert.equal(delay, 1000)
+			intervals.set(1, callback)
+			return 1
+		})
+		const restoreClear = replaceGlobal('clearInterval', (id: number) => { intervals.delete(id) })
+		const priorTimestamp = new Date('2024-01-01T00:00:05.000Z')
+		try {
+			await act(() => { render(h(SomeTimeAgo, { priorTimestamp, diffToText: (seconds) => `${ seconds }s` }), dom.document.body) })
+			assert.equal(dom.document.body.textContent, '5s')
+			clock.setNow('2024-01-01T00:00:11.000Z')
+			await act(() => { for (const tick of intervals.values()) tick() })
+			assert.equal(dom.document.body.textContent, '6s')
+			await act(() => { render(h(SomeTimeAgo, { priorTimestamp, countBackwards: true, diffToText: (seconds) => `remaining: ${ seconds }` }), dom.document.body) })
+			assert.equal(dom.document.body.textContent, 'remaining: -6')
+			clock.setNow('2024-01-01T00:00:12.000Z')
+			await act(() => { for (const tick of intervals.values()) tick() })
+			assert.equal(dom.document.body.textContent, 'remaining: -7')
+			await act(() => { render(undefined, dom.document.body) })
+			assert.equal(intervals.size, 0)
+		} finally {
+			await act(() => { render(undefined, dom.document.body) })
+			restoreClear()
+			restoreInterval()
+			clock.restore()
+			dom.restore()
+		}
+	})
+
 })
