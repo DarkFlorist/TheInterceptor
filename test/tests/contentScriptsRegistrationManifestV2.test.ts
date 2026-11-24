@@ -236,6 +236,16 @@ describe('manifest v2 content script registration', () => {
 		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [['http://example.com/*', 'https://example.com/*', 'http://example.org/*', 'https://example.org/*']])
 	})
 
+	test('propagates reporter failures after a manifest v2 registration error', async () => {
+		installManifestV2BrowserMock({ registerError: new Error('registration failed') })
+		const { updateManifestV2ContentScripts } = await import('../../app/ts/utils/contentScriptsRegistration.js')
+		const reporterFailure = new Error('reporter unavailable')
+		await assert.rejects(updateManifestV2ContentScripts({
+			readDisabledSites: async () => [],
+			reportError: async () => { throw reporterFailure },
+		}), reporterFailure)
+	})
+
 	test('reports a failed registration and keeps the previous registration', async () => {
 		const working = installManifestV2BrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
