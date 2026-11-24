@@ -103,7 +103,7 @@ function installBrowserMock({ registerError, updateError, registeredContentScrip
 
 	return {
 		sentMessages,
-		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+		getRegisteredContentScripts(): readonly RegisteredContentScript[] { return [...registeredContentScripts.values()] },
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 	}
@@ -143,6 +143,23 @@ describe('content script injection strategy', () => {
 			'https://*.secure.example/*',
 			'https://localhost:4443/*',
 		])
+	})
+
+	test('rejects wildcard hostnames in manifest v3 exclusions', async () => {
+		await installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		assert.deepEqual(getManifestV3ExcludeMatches(['*', '*.example.test', 'https://*', 'https://%2A.example.test']), [])
+	})
+
+	test('a direct storage update refreshes manifest v3 exclusions', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations } = await installBrowserMock()
+		const { updateWebsiteAccess } = await import('../../app/ts/background/websiteAccessStorage.js')
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'direct-write.test' }, interceptorDisabled: true }])
+		assert.deepEqual(getRegisteredContentScripts().map(({ excludeMatches }) => excludeMatches), [['*://*.direct-write.test/*'], ['*://*.direct-write.test/*']])
+		await updateWebsiteAccess((previous) => previous)
+		assert.deepEqual(getScriptingOperations(), ['register'])
+		await updateWebsiteAccess(() => [])
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
 	})
 
 	test('records manifest v3 registration failures as unexpected errors', async () => {
