@@ -9,7 +9,7 @@ import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
-import { decodeEthereumError } from '../utils/errorDecoding.js'
+import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -156,7 +156,7 @@ export async function refreshConfirmTransactionSimulation(
 						} }
 					: { error: {
 						...transactionToSimulate.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
+						decodedErrorMessage: getFailureReasonForDisplay(availableAbis, transactionToSimulate.error)
 					} }
 				}
 			}
@@ -182,7 +182,7 @@ export async function refreshConfirmTransactionSimulation(
 		return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
-			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
+			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(await extractToAbi(), baseError) : baseError.message },
 			simulationState: {
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()
