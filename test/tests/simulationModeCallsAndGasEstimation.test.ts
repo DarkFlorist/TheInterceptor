@@ -1,9 +1,12 @@
+import { replaceProperty } from '../harness/globals.js'
 import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
-import { createSimulationCallParams, createSimulationState, simulateEstimateGas, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { createSimulationCallParams, createSimulationState, getSimulatedBalance, getSimulatedCode, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, simulateEstimateGas, simulateEstimateGasFromInput, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { PASSTHROUGH_STATE, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
-import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, exampleTransaction, rpcNetwork } from './simulationModeEthereumClientServiceTestHelpers.js'
+import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, exampleTransaction, rpcNetwork } from './simulationModeEthereumClientServiceTestHelpers.js'
 
 const { requestHandler, ethereum, reset } = createSimulationModeTestContext()
 beforeEach(reset)
@@ -304,6 +307,107 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 1)
 		} finally {
 			requestHandler.rejectOmittedGas = false
+		}
+	})
+
+	test('state-based readers report the RPC error of a failed simulation for simulated block tags', async () => {
+		const failedState = toResolvedSimulationState({
+			success: false,
+			simulationStateInput: createSimulationStateInput(),
+			jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'simulation failed' } },
+			blockNumber,
+			blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			baseFeePerGas: 1n,
+			simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			rpcNetwork,
+		})
+		const isSimulationFailure = (error: unknown) => error instanceof JsonRpcResponseError && error.message === 'simulation failed'
+		const callParams = { from: exampleTransaction.from, to: exampleTransaction.to, value: 0n, input: new Uint8Array(), maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+
+		await assert.rejects(getSimulatedTransactionCount(ethereum, undefined, failedState, exampleTransaction.from), isSimulationFailure)
+		await assert.rejects(simulateEstimateGas(ethereum, undefined, failedState, { from: exampleTransaction.from, to: exampleTransaction.to }), isSimulationFailure)
+		await assert.rejects(simulatedCall(ethereum, undefined, failedState, callParams), isSimulationFailure)
+		assert.deepEqual(await getSimulatedCode(ethereum, undefined, failedState, 0x1234n), { statusCode: 'failure' })
+		assert.equal(await getSimulatedTransactionCount(ethereum, undefined, failedState, exampleTransaction.from, 'safe'), 0n)
+	})
+
+	test('getSimulatedCode passes on RPC errors from reading the node instead of reporting a failed lookup', async () => {
+		const nodeError = new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'node unavailable' } })
+		const failingNodeEthereum = new EthereumClientService({
+			rpcUrl: requestHandler.rpcUrl,
+			clearCache: requestHandler.clearCache,
+			getChainId: requestHandler.getChainId,
+			jsonRpcRequest: async (rpcRequest) => {
+				if (rpcRequest.method === 'eth_getCode') throw nodeError
+				return await requestHandler.jsonRpcRequest(rpcRequest)
+			},
+		}, async () => undefined, async () => undefined, rpcNetwork)
+		const simulatedState = toResolvedSimulationState(await createSimulationState(ethereum, undefined, createSimulationStateInput()))
+
+		await assert.rejects(getSimulatedCode(failingNodeEthereum, undefined, PASSTHROUGH_STATE, 0x1234n), (error: unknown) => error === nodeError)
+		await assert.rejects(getSimulatedCode(failingNodeEthereum, undefined, simulatedState, 0x1234n, 'earliest'), (error: unknown) => error === nodeError)
+		const failingBlockEthereum = new EthereumClientService({
+			rpcUrl: requestHandler.rpcUrl,
+			clearCache: requestHandler.clearCache,
+			getChainId: requestHandler.getChainId,
+			jsonRpcRequest: async (rpcRequest) => {
+				if (rpcRequest.method === 'eth_getBlockByNumber') throw nodeError
+				return await requestHandler.jsonRpcRequest(rpcRequest)
+			},
+		}, async () => undefined, async () => undefined, rpcNetwork)
+		await assert.rejects(getSimulatedCode(failingBlockEthereum, undefined, simulatedState, 0x1234n), (error: unknown) => error === nodeError)
+	})
+
+	test('state-based nonce and gas estimation match the input-based path', async () => {
+		const simulationStateInput = createTwoBlockSimulationStateInput()
+		const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+		if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+		const resolvedState = toResolvedSimulationState(simulationState)
+		const resolvedInput = toResolvedSimulationInput(simulationStateInput)
+		const estimateRequest = { from: exampleTransaction.from, to: exampleTransaction.to, value: 0n, input: new Uint8Array() }
+
+		assert.equal(await getSimulatedTransactionCount(ethereum, undefined, resolvedState, exampleTransaction.from), 2n)
+		assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, resolvedInput, exampleTransaction.from), 2n)
+		assert.equal(await getSimulatedTransactionCount(ethereum, undefined, resolvedState, exampleTransaction.from, blockNumber + 1n), 1n)
+		const fromStateEstimate = await simulateEstimateGas(ethereum, undefined, resolvedState, estimateRequest)
+		const fromStateRequest = requestHandler.ethSimulateV1Requests.at(-1)
+		const fromInputEstimate = await simulateEstimateGasFromInput(ethereum, undefined, resolvedInput, estimateRequest)
+		const fromInputRequest = requestHandler.ethSimulateV1Requests.at(-1)
+		assert.deepEqual(fromStateEstimate, fromInputEstimate)
+		assert.equal(fromStateRequest?.params[1], fromInputRequest?.params[1])
+		assert.deepEqual(fromStateRequest?.params[0].blockStateCalls.map((block) => block.calls), fromInputRequest?.params[0].blockStateCalls.map((block) => block.calls))
+		assert.deepEqual(fromStateRequest?.params[0].blockStateCalls.slice(0, simulationState.simulatedBlocks.length).map((block) => block.blockOverrides?.baseFeePerGas), simulationState.simulatedBlocks.map((block) => block.blockBaseFeePerGas))
+	})
+	test('snapshot readers retain captured parent, fees and timestamps when the node head advances', async () => {
+		const captured = await createSimulationState(ethereum, undefined, createTwoBlockSimulationStateInput())
+		if (!captured.success) throw new Error('simulation unexpectedly failed')
+		const simulatedBlocks = captured.simulatedBlocks.map((block, index) => ({ ...block, blockBaseFeePerGas: BigInt(index + 37), blockTimestamp: new Date(block.blockTimestamp.getTime() + 60_000) }))
+		const state = toResolvedSimulationState({ ...captured, simulatedBlocks })
+		const getBlock = ethereum.getBlock
+		const tags: unknown[] = []
+		const restore = replaceProperty(ethereum, 'getBlock', async (abort, tag, fullObjects) => {
+			tags.push(tag)
+			const block = await getBlock.call(ethereum, abort, tag ?? 'latest', fullObjects ?? true)
+			if (block === null || typeof tag === 'bigint') return block
+			return { ...block, number: block.number + 100n, baseFeePerGas: 999n }
+		})
+		try {
+			requestHandler.ethSimulateV1Requests.length = 0
+			assert.equal(await getSimulatedTransactionCount(ethereum, undefined, state, exampleTransaction.from), 2n)
+			await getSimulatedBalance(ethereum, undefined, state, exampleTransaction.from)
+			await simulateEstimateGas(ethereum, undefined, state, { from: exampleTransaction.from, to: exampleTransaction.to })
+			await simulatedCall(ethereum, undefined, state, { to: exampleTransaction.to, value: 0n, input: new Uint8Array(), maxFeePerGas: 0n, maxPriorityFeePerGas: 0n })
+			assert.equal((await getSimulatedCode(ethereum, undefined, state, exampleTransaction.from)).statusCode, 'success')
+			assert.ok(tags.length > 0)
+			assert.ok(tags.every((tag) => tag === captured.blockNumber), tags.map(String).join(', '))
+			assert.ok(requestHandler.ethSimulateV1Requests.length > 0)
+			for (const request of requestHandler.ethSimulateV1Requests) {
+				assert.equal(request.params[1], captured.blockNumber)
+				assert.deepEqual(request.params[0].blockStateCalls.slice(0, simulatedBlocks.length).map((block) => block.blockOverrides?.baseFeePerGas), simulatedBlocks.map((block) => block.blockBaseFeePerGas))
+				assert.deepEqual(request.params[0].blockStateCalls.slice(0, simulatedBlocks.length).map((block) => block.blockOverrides?.time), simulatedBlocks.map((block) => block.blockTimestamp))
+			}
+		} finally {
+			restore()
 		}
 	})
 
