@@ -1,5 +1,5 @@
 import { addressString, addressStringWithout0x } from '../utils/bigint.js'
-import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry, SafeEntry } from '../types/addressBookTypes.js'
 import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { getAddress, keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -7,7 +7,8 @@ import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, getEnsLabelHashes, getEnsNodeHashes } from './storageVariables.js'
+import { addAddressBookEntryIfMissing, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
@@ -178,7 +179,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		})
 		return { ...getFilledInContactEntry(address), chainId }
 	}
-	const getEntry = (tokenIdentification: IdentifiedAddress): AddressBookEntry => {
+	const getEntry = (tokenIdentification: IdentifiedAddress): Exclude<AddressBookEntry, SafeEntry> => {
 		switch (tokenIdentification.type) {
 			case 'ERC20': return !isValidErc20Decimals(tokenIdentification.decimals) ? {
 				name: tokenIdentification.name,
@@ -230,7 +231,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		}
 	}
 	const entry = getEntry(tokenIdentification)
-	if (useLocalStorage) await addUserAddressBookEntryIfItDoesNotExist(entry)
+	if (useLocalStorage) await addAddressBookEntryIfMissing(entry)
 	return entry
 }
 

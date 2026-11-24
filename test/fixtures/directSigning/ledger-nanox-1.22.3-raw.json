@@ -1,0 +1,119 @@
+{
+  "model": "Nano X",
+  "ethereumApp": "1.22.3",
+  "speculos": "0.27.0",
+  "rawMessages": true,
+  "account": {
+    "address": "0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D",
+    "publicKey": "0x04ef5b152e3f15eb0c50c9916161c2309e54bd87b9adce722d69716bcdef85f547678e15ab40a78919c7284e67a17ee9a96e8b9886b60f767d93023bac8dbc16e4",
+    "derivationPath": "m/44'/60'/0'/0/0"
+  },
+  "transcripts": [
+    {
+      "method": "eth_sendTransaction",
+      "screens": [
+        [
+          "Review transaction"
+        ],
+        [
+          "From",
+          "0xDad77910DbDFdE7",
+          "64fC21FCD4E74D71b",
+          "BACA6D8D"
+        ],
+        [
+          "Amount",
+          "0.001 ETH"
+        ],
+        [
+          "To",
+          "0xDad77910DbDFdE7",
+          "64fC21FCD4E74D71b",
+          "BACA6D8D"
+        ],
+        [
+          "Max fees",
+          "0.000042 ETH"
+        ],
+        [
+          "Sign transaction"
+        ]
+      ],
+      "result": "0x02f8710180843b9aca00847735940082520894dad77910dbdfde764fc21fcd4e74d71bbaca6d8d87038d7ea4c6800080c080a086ea3552b9bef86e0e046a438733b64a9b5e131a1a092196e52253eee65b5168a055d7c76800d3788468074f5ca929f12df9ae444b69e5eaf35c92d9031d6e9edb"
+    },
+    {
+      "method": "personal_sign",
+      "screens": [
+        [
+          "Review message"
+        ],
+        [
+          "Message",
+          "Hello Ledger"
+        ],
+        [
+          "Sign message"
+        ]
+      ],
+      "result": "0x57208e7157bb7438039a3aa318c3f773da432af2843be6380775e35b001034ad2acd5a5ba1107e4bd3bb45147e3e885d09d7aa48d056e811dfc80659d6a7f6f51c"
+    },
+    {
+      "method": "eth_signTypedData_v4",
+      "screens": [
+        [
+          "Blind signing ahead",
+          "To accept risk, press ",
+          "both buttons"
+        ],
+        [
+          "Review typed ",
+          "message"
+        ],
+        [
+          "Review struct",
+          "EIP712Domain"
+        ],
+        [
+          "Press right button to ",
+          "continue message or ",
+          "\bpress both to skip\b"
+        ],
+        [
+          "name",
+          "Interceptor"
+        ],
+        [
+          "Press right button to ",
+          "continue message or ",
+          "\bpress both to skip\b"
+        ],
+        [
+          "chainId",
+          "1"
+        ],
+        [
+          "Press right button to ",
+          "continue message or ",
+          "\bpress both to skip\b"
+        ],
+        [
+          "Review struct",
+          "Message"
+        ],
+        [
+          "Press right button to ",
+          "continue message or ",
+          "\bpress both to skip\b"
+        ],
+        [
+          "contents",
+          "Hello Ledger"
+        ],
+        [
+          "Sign message"
+        ]
+      ],
+      "result": "0x44849717c33352a9ffa2589433b919c325f162b41e2d62d437958a86c0f0dd3d5bfb1ae295fe93f64438f7e8dd4a7e438201bf0a71b5b654e9d2bdcd1fec5bed1b"
+    }
+  ]
+}

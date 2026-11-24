@@ -11,7 +11,7 @@ import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWeb
 import { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { getSettings, setSelectedSigningAddress, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { changeSimulationMode } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
@@ -69,6 +69,7 @@ type ActiveSettingsTransition = {
 	readonly change: ActiveAddressAndChainChange
 	readonly simulationSignerSelection?: { readonly useSignerAddress: boolean, readonly signerAddress: bigint | undefined }
 	readonly signingPreference?: SigningAddressPreference
+	readonly explicitSigningAddress?: { readonly address: bigint | undefined }
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
@@ -131,6 +132,7 @@ export async function runActiveSettingsTransition(
 async function runActiveSettingsChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: ActiveSettingsTransition) {
 	const { change } = transition
 	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+		if (transition.explicitSigningAddress !== undefined) await setSelectedSigningAddress(transition.explicitSigningAddress.address)
 		if (transition.simulationSignerSelection !== undefined) {
 			const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 			await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -178,7 +180,6 @@ export async function activateAddressSelection(
 	},
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
-	if (!options.simulationMode && selection?.type === 'addressBookEntry' && selectedSafe === undefined) throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
 	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
 	const signingPreference: SigningAddressPreference | undefined = options.simulationMode || options.signerAddress === undefined || selection === undefined
 		? undefined
@@ -186,6 +187,7 @@ export async function activateAddressSelection(
 			? { signerAddress: options.signerAddress, selection: 'signer' }
 			: { signerAddress: options.signerAddress, selection: 'safe', safeAddress: selectedSafe.address, chainId: selectedSafe.chainId }
 	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, {
+		...(!options.simulationMode ? { explicitSigningAddress: { address: selection?.type === 'addressBookEntry' && selectedSafe === undefined ? selection.entry.address : undefined } } : {}),
 		change: {
 			simulationMode: options.simulationMode,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,

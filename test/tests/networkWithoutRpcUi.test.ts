@@ -10,27 +10,33 @@ describe('getNetworkWithoutRpcWarningState', () => {
 	test('has nothing to warn about on a network with an RPC, whatever the signer state', () => {
 		for (const simulationMode of [true, false]) {
 			for (const signerAvailability of signerAvailabilities) {
-				assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithRpc, simulationMode, signerAvailability), { kind: 'none' })
+				assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithRpc, simulationMode, signerAvailability, false), { kind: 'none' })
 			}
 		}
 	})
 
 	test('simulation mode keeps intercepting without an RPC, whatever the signer state', () => {
 		for (const signerAvailability of signerAvailabilities) {
-			assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, true, signerAvailability), { kind: 'noRpcNeedsConfig' })
+			assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, true, signerAvailability, false), { kind: 'noRpcNeedsConfig' })
 		}
 	})
 
 	test('signing mode bypasses the Interceptor without an RPC when a signer is available', () => {
-		assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, 'available'), { kind: 'noRpcBypassToSigner' })
+		assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, 'available', false), { kind: 'noRpcBypassToSigner' })
 	})
 
 	test('signing mode keeps intercepting without an RPC when no signer is available', () => {
-		assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, 'missing'), { kind: 'noRpcNeedsConfig' })
+		assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, 'missing', false), { kind: 'noRpcNeedsConfig' })
+	})
+
+	test('signing mode keeps intercepting without an RPC when the active address signs with a Ledger or AirGap wallet', () => {
+		for (const signerAvailability of ['available', 'missing'] as const) {
+			assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, signerAvailability, true), { kind: 'noRpcNeedsConfig' })
+		}
 	})
 
 	test('signing mode only may bypass the Interceptor without an RPC when the signer is unknown', () => {
-		assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, 'unknown'), { kind: 'noRpcMayBypass' })
+		assert.deepEqual(getNetworkWithoutRpcWarningState(networkWithoutRpc, false, 'unknown', false), { kind: 'noRpcMayBypass' })
 	})
 })
 

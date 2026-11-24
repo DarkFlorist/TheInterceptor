@@ -5,7 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries } from './storageVariables.js'
+import { getAddressBookAndSigningWalletBindings } from './signingWalletStore.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
@@ -48,6 +48,7 @@ export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
 	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
+		'selectedSigningAddress',
 		'independentActiveSimulationAddress',
 		'activeSigningSafeAddress',
 		'openedPageV2',
@@ -63,7 +64,9 @@ export async function getSettings() : Promise<Settings> {
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	const selectedSigningAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'selectedSigningAddress', undefined))
+	const [selectedSigningAddress, activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+		selectedSigningAddressPromise,
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
@@ -72,12 +75,16 @@ export async function getSettings() : Promise<Settings> {
 		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { selectedSigningAddress, activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
 export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
 export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
+
+export const selectedSigningAddressStorageWrite = (selectedSigningAddress: EthereumAddress | undefined): StorageWrite => ({ selectedSigningAddress })
+// Runs under the settings storage lock, so an explicit selection and a settings import that resets it apply in the order they started.
+export const setSelectedSigningAddress = async (selectedSigningAddress: EthereumAddress | undefined) => await runSettingsStorageTransaction(async () => ({ writes: [selectedSigningAddressStorageWrite(selectedSigningAddress)], result: undefined }))
 
 export async function getSigningAddressPreferences() {
 	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
@@ -234,10 +241,10 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences, addressBook] = await Promise.all([getSettings(), getSigningAddressPreferences(), getAddressBookAndSigningWalletBindings()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.6' as const,
+		version: '1.7' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
@@ -248,7 +255,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			websiteAccess: settings.websiteAccess,
 			rpcNetwork: settings.activeRpcNetwork,
 			simulationMode: settings.simulationMode,
-			addressBookEntries: await getUserAddressBookEntries(),
+			...addressBook,
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),

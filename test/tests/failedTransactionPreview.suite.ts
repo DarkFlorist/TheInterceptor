@@ -48,7 +48,7 @@ function createSimulatorWithRpcFailure(getFailure: (rpcRequest: RpcRequest) => E
 const createRpcError = (message: string) => new modules.JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message } })
 
 async function useInvoiceAddressBook() {
-	await modules.updateUserAddressBookEntries(() => [
+	await modules.updateAddressBookAndSigningWalletBindings(() => [
 		{ type: 'contact', name: 'Invoice Payer', address: activeAddress, entrySource: 'User', chainId: previewRpcNetwork.chainId, useAsActiveAddress: true, askForAddressAccess: false },
 		{ type: 'contact', name: 'Supplier', address: recipientAddress, entrySource: 'User', chainId: previewRpcNetwork.chainId },
 	])
@@ -211,7 +211,7 @@ test('refreshes the failed transaction preview when the address book changes', a
 	await useInvoiceAddressBook()
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
-	await modules.updateUserAddressBookEntries((entries) => [
+	await modules.updateAddressBookAndSigningWalletBindings((entries) => [
 		...entries,
 		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: previewRpcNetwork.chainId },
 	])
@@ -242,7 +242,7 @@ test('refreshes the metadata of a confirmation stored without a confirmation run
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	await setStoredConfirmationRunId(undefined)
 	assert.deepEqual((await getPendingFailedTransactionVisualisation()).data.confirmationRunId, { lifetime: '', sequence: 0 }, 'a confirmation stored without a confirmation run id decodes as a run of no lifetime')
-	await modules.updateUserAddressBookEntries((entries) => [
+	await modules.updateAddressBookAndSigningWalletBindings((entries) => [
 		...entries,
 		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: previewRpcNetwork.chainId },
 	])
@@ -265,7 +265,7 @@ test('keeps a newer simulation run stored during the failure preview metadata re
 		await openUsdcTransferConfirmation(confirmationSimulator)
 		initialVisualisation = await getPendingFailedTransactionVisualisation()
 		// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the newer simulation run is stored.
-		await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+		await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 		const ethereumRunningNewerSimulationDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
 			// Saving the supplier again gives the newer run a preview that the metadata refresh, already past the address book, cannot produce.
 			await useInvoiceAddressBook()
@@ -317,7 +317,7 @@ for (const { storedRun, getStoredRunId } of runsStoredBeforeRestart) {
 		const newerRunSequence = (await getPendingFailedTransactionVisualisation()).data.confirmationRunId.sequence + 1
 		await setStoredConfirmationRunId(getStoredRunId(newerRunSequence))
 		// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the newer simulation run is stored.
-		await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+		await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 		let newerVisualisation: Awaited<ReturnType<typeof getPendingFailedTransactionVisualisation>> | undefined
 		const ethereumRunningNewerSimulationDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
 			// Saving the supplier again gives the newer run a preview that the metadata refresh, already past the address book, cannot produce.
@@ -354,7 +354,7 @@ test('stores the names of a metadata refresh on a successful run from before a b
 		popupVisualisation: { ...successfulPopupVisualisation, data: { ...successfulRun, confirmationRunId: runBeforeRestart, simulationState: { ...successfulRun.simulationState, simulationStateInput } } },
 	}] })
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const renamePayer = async (name: string) => await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name } : entry))
+	const renamePayer = async (name: string) => await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name } : entry))
 	const initialConductedTime = successfulRun.simulationState.simulationConductedTimestamp.getTime()
 	// Holds the older refresh's write until the newer refresh has read the run, so the newer refresh finds the run stamped with a time it did not read.
 	let releaseOlderWrite: (() => void) | undefined
@@ -398,7 +398,7 @@ test('stores the names of a metadata refresh on its run when another field of th
 	if (initialVisualisation.statusCode !== 'failed') throw new Error('Expected the initial run to fail')
 	const sameRunDerivedAgain = { ...initialVisualisation, data: { ...initialVisualisation.data, error: { ...initialVisualisation.data.error, decodedErrorMessage: 'decoded again with a newly saved ABI' } } }
 	// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the stored run changes.
-	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+	await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const ethereumDerivingStoredRunAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
 		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
 	})
@@ -531,14 +531,14 @@ test('keeps and shows the names of a newer metadata refresh when an older refres
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	// Forgetting the supplier makes the older refresh look it up on chain after reading the payer's name, which is when the payer is renamed and the newer refresh runs.
-	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+	await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const getStoredPayerName = async () => (await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === activeAddress)?.name
 	const isDialogUpdate = (message: unknown) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'
 	let payerNameAfterNewerRefresh: string | undefined
 	let messagesSentBeforeOlderRefreshResumes = 0
 	const ethereumRefreshingAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
-		await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name: 'Renamed Payer' } : entry))
+		await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name: 'Renamed Payer' } : entry))
 		await refreshPopupConfirmTransactionMetadata(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, undefined)
 		payerNameAfterNewerRefresh = await getStoredPayerName()
 		messagesSentBeforeOlderRefreshResumes = browserMock.sentMessages.length
@@ -559,7 +559,7 @@ test('stores the names of a newer metadata refresh that read the confirmation be
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const getStoredPayerName = async () => (await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === activeAddress)?.name
-	const renamePayer = async (name: string) => await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name } : entry))
+	const renamePayer = async (name: string) => await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name } : entry))
 	// Holds the older refresh's write of the pending transactions until the newer refresh has read them.
 	let releaseOlderWrite: (() => void) | undefined
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
@@ -710,7 +710,7 @@ for (const { description, createLookupError, isDefect } of failedPreviewLookups)
 		await openUsdcTransferConfirmation(confirmationSimulator)
 		const storedFailure = await getPendingFailedTransactionVisualisation()
 		// Forgetting the supplier makes the metadata refresh look it up on chain, where the lookup fails.
-		await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+		await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 		const lookupError = await createLookupError()
 		const ethereumFailingRecipientLookup = new Proxy(confirmationSimulator.ethereum, {
 			get(target, property, receiver) {
@@ -741,7 +741,7 @@ test('keeps the newer stored simulation when a refresh is superseded during its 
 	await openUsdcTransferConfirmation(createUnformableTransferSimulator())
 	const initialSimulationConductedTimestamp = (await getPendingFailedTransactionVisualisation()).data.simulationState.simulationConductedTimestamp
 	// Forgetting the supplier makes the failure preview look it up on chain, which is when the newer refresh runs.
-	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+	await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const newerSimulator = createUnformableTransferSimulator()
 	const supersededSimulator = createUnformableTransferSimulator()
@@ -796,7 +796,7 @@ const supersededFailurePreviewScenarios = [
 for (const { scenario, createSimulator, refresh } of supersededFailurePreviewScenarios) {
 	for (const supersededLookupOutcome of SUPERSEDED_LOOKUP_OUTCOMES) {
 		test(`returns no result from a refresh superseded during its recipient lookup when ${ scenario } and the lookup ${ supersededLookupOutcome }`, async () => {
-			await modules.updateUserAddressBookEntries(() => [])
+			await modules.updateAddressBookAndSigningWalletBindings(() => [])
 			const failingSimulator = createSimulator()
 			let newerRefreshResult: Awaited<ReturnType<typeof refresh>>
 			const ethereumSupersededDuringLookup = supersedeDuringAddressLookup(failingSimulator.ethereum, recipientAddress, supersededLookupOutcome, async () => {

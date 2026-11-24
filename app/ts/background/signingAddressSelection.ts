@@ -1,10 +1,11 @@
+import { hasPinnedSigningAddress } from './safeSigningAccount.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { TabState } from '../types/user-interface-types.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { getActiveAddressSelection, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getSigningAddressPreferences, rememberSigningAddressPreference } from './settings.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 
 export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {
 	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
@@ -26,7 +27,7 @@ async function getWalletAccountSigningSelection(signerAddress: bigint, settings:
 	if (signerSelection === undefined) throw new Error('The connected signing wallet does not expose an active account.')
 	if (preference === undefined || preference.selection === 'signer') return signerSelection
 	if (preference.chainId !== settings.activeRpcNetwork.chainId) return signerSelection
-	const selection = getActiveAddressSelection(preference.safeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress])
+	const selection = getActiveAddressSelection(preference.safeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress], 'safe')
 	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection : signerSelection
 }
 
@@ -41,6 +42,7 @@ export async function getSigningAddressSelectionTransition(
 	previousTabState: TabState,
 	currentTabState: TabState,
 ): Promise<SigningAddressSelectionTransition> {
+	if (!settings.simulationMode && await hasPinnedSigningAddress(settings)) return { shouldActivate: false, selection: undefined, signerAddress: currentTabState.signerAccounts[0] }
 	const selectedSafe = await getConfiguredSigningSafe(settings, currentTabState.signerAccounts)
 	const configuredActiveAddress = settings.simulationMode
 		? settings.activeSimulationAddress

@@ -13,7 +13,11 @@ import { modifyObject } from '../utils/typescript.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessageInstance } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
+import { updatePendingTransactionOrMessageInstance } from './storageVariables.js'
+import { getConfiguredSafeEntry } from './safeSigningAccount.js'
+import { getPendingRequestSigningWalletBinding } from './pendingSigningWallet.js'
+import { resolveSafeSigningPlan, type SafeSigningPlan } from '../utils/safeSigningPlan.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -174,6 +178,13 @@ async function refreshSafeMessageCoSignSignerSelection(
 	})
 }
 
+// A newly selected wallet account resolves a new plan; otherwise the refresh keeps the reviewed signing owner and execution account, never deriving the owner from the payer. A request stored before the owner was recorded resolves its plan from the reviewed execution account, as it was reviewed.
+function getRefreshedSafeExecutionPlan(safeEntry: SafeEntry | undefined, safeFlow: DirectSafeExecutionFlow['pending']['safeFlow'], selectedSigner: bigint | undefined): SafeSigningPlan {
+	if (selectedSigner !== undefined) return resolveSafeSigningPlan(safeEntry, selectedSigner)
+	if (safeFlow.safeExecutionSigningOwnerAddress === undefined) return resolveSafeSigningPlan(safeEntry, safeFlow.safeExecutionSignerAddress)
+	return { signingOwner: safeFlow.safeExecutionSigningOwnerAddress, executor: safeFlow.safeExecutionSignerAddress }
+}
+
 export async function refreshSafeExecutionSignerSelection(
 	ethereum: EthereumClientService,
 	flow: DirectSafeExecutionFlow,
@@ -187,7 +198,7 @@ export async function refreshSafeExecutionSignerSelection(
 	const safeAddress = originalRequest.params[0].from
 	if (safeAddress === undefined) throw createSafeContractValidationFailure('The original Gnosis Safe execution request is missing its Gnosis Safe address.')
 	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
-	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, selectedSigner ?? pending.safeFlow.safeExecutionSignerAddress)
+	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, getRefreshedSafeExecutionPlan(safeEntry, pending.safeFlow, selectedSigner))
 	if (refreshedRoute === undefined) throw createSafeContractValidationFailure('The configured Gnosis Safe execution route is no longer available.')
 	assertSafeContractStateUnchanged(reviewedSafeState, refreshedRoute.safeState)
 	if (selectedSigner === undefined && (
@@ -197,7 +208,13 @@ export async function refreshSafeExecutionSignerSelection(
 	return modifyObject(pending, {
 		activeAddress: refreshedRoute.executor,
 		originalRequestParameters: refreshedRoute.transactionParams,
-		safeFlow: modifyObject(pending.safeFlow, { safeExecutionSignerAddress: refreshedRoute.executor, safeExecutionReviewedSafeState: refreshedRoute.safeState }),
+		safeFlow: {
+			...pending.safeFlow,
+			safeExecutionSignerAddress: refreshedRoute.executor,
+			...(refreshedRoute.signingOwner === undefined ? {} : { safeExecutionSigningOwnerAddress: refreshedRoute.signingOwner }),
+			safeExecutionOwnerApprovedOnChain: refreshedRoute.ownerApprovedOnChain,
+			safeExecutionReviewedSafeState: refreshedRoute.safeState,
+		},
 		approvalStatus: { status: 'WaitingForUser' as const },
 	})
 }
@@ -294,10 +311,21 @@ export async function refreshSafeSignerSelection(
 	}
 }
 
-function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
+// The saved Safe entry a direct execution's signing plan is resolved from; the other flows decide without it.
+async function getDirectExecutionSafeEntry(ethereum: EthereumClientService, flow: SafePendingFlow | undefined) {
+	if (flow?.kind !== 'directExecution') return undefined
+	return await getConfiguredSafeEntry(flow.pending.safeFlow.safeExecutionOriginalRequestParameters.params[0].from, ethereum.getChainId())
+}
+
+function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint, directExecutionSafeEntry: SafeEntry | undefined) {
 	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
 	switch (flow.kind) {
-		case 'directExecution': return flow.pending.safeFlow.safeExecutionSignerAddress !== selectedSigner
+		// Refresh only when the plan resolved with the current wallet selection differs from the reviewed one. With a saved signing owner and execution account, the wallet selection changes neither, so the comparison converges.
+		case 'directExecution': {
+			const plan = resolveSafeSigningPlan(directExecutionSafeEntry, selectedSigner)
+			const reviewedExecutor = flow.pending.safeFlow.safeExecutionSignerAddress
+			return plan.executor !== reviewedExecutor || plan.signingOwner !== (flow.pending.safeFlow.safeExecutionSigningOwnerAddress ?? reviewedExecutor)
+		}
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
 		case 'proposal': return (
 			flow.pending.approvalStatus.status === 'WaitingForUser'
@@ -316,21 +344,27 @@ function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, ref
 		&& pending.approvalStatus.message === refreshResult.approvalStatus.message
 }
 
+// The refreshed request's signing wallet, resolved before the storage update because a refresh can change who signs.
+const getRefreshedSigningWalletBinding = async (refreshed: PendingTransactionOrSignableMessage) => await getPendingRequestSigningWalletBinding(refreshed)
+
 function mergeSafeSignerSelectionRefresh(
 	current: PendingTransactionOrSignableMessage,
 	refreshed: PendingTransactionOrSignableMessage,
+	signingWalletBinding: PendingTransactionOrSignableMessage['signingWalletBinding'],
 ): PendingTransactionOrSignableMessage {
 	const currentFlow = getSafePendingFlow(current)
 	const refreshedFlow = getSafePendingFlow(refreshed)
 	if (currentFlow === undefined || refreshedFlow === undefined || currentFlow.kind !== refreshedFlow.kind) return current
 	if (currentFlow.kind === 'messageCoSign' && refreshedFlow.kind === 'messageCoSign') return modifyObject(currentFlow.pending, {
 		safeMessageCoSignSnapshot: refreshedFlow.pending.safeMessageCoSignSnapshot,
+		signingWalletBinding,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
 	if (currentFlow.kind === 'directExecution' && refreshedFlow.kind === 'directExecution') return modifyObject(currentFlow.pending, {
 		activeAddress: refreshedFlow.pending.activeAddress,
 		originalRequestParameters: refreshedFlow.pending.originalRequestParameters,
 		safeFlow: refreshedFlow.pending.safeFlow,
+		signingWalletBinding,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 		...refreshedFlow.pending.transactionOrMessageCreationStatus === 'Simulated' || refreshedFlow.pending.transactionOrMessageCreationStatus === 'FailedToSimulate'
 			? {
@@ -342,6 +376,7 @@ function mergeSafeSignerSelectionRefresh(
 	})
 	if (currentFlow.kind === 'proposal' && refreshedFlow.kind === 'proposal') return modifyObject(currentFlow.pending, {
 		safeFlow: refreshedFlow.pending.safeFlow,
+		signingWalletBinding,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
 	return current
@@ -350,10 +385,11 @@ function mergeSafeSignerSelectionRefresh(
 // Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
 export async function persistSafeConfirmationRefresh(refreshed: PendingTransactionOrSignableMessage) {
 	let persisted = false
+	const signingWalletBinding = await getRefreshedSigningWalletBinding(refreshed)
 	await updatePendingTransactionOrMessageInstance(refreshed, async (current) => {
 		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
 		persisted = true
-		return mergeSafeSignerSelectionRefresh(current, refreshed)
+		return mergeSafeSignerSelectionRefresh(current, refreshed, signingWalletBinding)
 	})
 	return persisted
 }
@@ -402,6 +438,7 @@ function pendingSafeRefreshBaseMatches(
 			&& refreshBaseFlow.pending.originalRequestParameters.method === 'eth_sendTransaction'
 			&& areSafeExecutionSignerRequestsEqual(currentFlow.pending.originalRequestParameters, refreshBaseFlow.pending.originalRequestParameters)
 			&& currentFlow.pending.safeFlow.safeExecutionSignerAddress === refreshBaseFlow.pending.safeFlow.safeExecutionSignerAddress
+			&& currentFlow.pending.safeFlow.safeExecutionSigningOwnerAddress === refreshBaseFlow.pending.safeFlow.safeExecutionSigningOwnerAddress
 			&& areSafeContractStateSnapshotsEqual(currentFlow.pending.safeFlow.safeExecutionReviewedSafeState, refreshBaseFlow.pending.safeFlow.safeExecutionReviewedSafeState)
 	}
 	if (currentFlow.kind !== 'proposal' || refreshBaseFlow.kind !== 'proposal') return false
@@ -429,6 +466,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		refreshResult = await handleSafeSignerSelectionRefreshFailure(error, undefined, 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
+	const signingWalletBinding = refreshResult.status === 'refreshed' ? await getRefreshedSigningWalletBinding(refreshResult.pending) : undefined
 	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		// Do not overwrite a cancellation, another completed refresh, or changed review data while the owner lookup was pending.
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
@@ -436,7 +474,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 			|| stringifyJSONWithBigInts(current.signedMessageTransaction.safeMessageReview) !== stringifyJSONWithBigInts(pending.signedMessageTransaction.safeMessageReview)
 			|| stringifyJSONWithBigInts(current.originalRequestParameters) !== stringifyJSONWithBigInts(pending.originalRequestParameters)) return current
 		if (refreshResult.status === 'refreshed' && refreshResult.pending.type === 'SignableMessage') {
-			persistedPending = { ...current, safeMessageCoSignSnapshot: refreshResult.pending.safeMessageCoSignSnapshot, approvalStatus: refreshResult.pending.approvalStatus }
+			persistedPending = { ...current, safeMessageCoSignSnapshot: refreshResult.pending.safeMessageCoSignSnapshot, signingWalletBinding, approvalStatus: refreshResult.pending.approvalStatus }
 		} else if (refreshResult.status === 'blocked' && !isSameSafeSignerError(current, refreshResult)) {
 			persistedPending = { ...current, approvalStatus: refreshResult.approvalStatus }
 		}
@@ -445,16 +483,22 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
+// What a Safe signer refresh starts from: an account selected in the browser wallet, which may change who signs, or nothing to re-resolve, which keeps the reviewed signing owner and execution account (a saved Ledger or AirGap wallet is no wallet selection).
+export type SafeSignerRefreshSelection = { readonly kind: 'walletSelection', readonly account: bigint } | { readonly kind: 'reuseReviewed' }
+
 export async function refreshAndPersistSafeSignerSelection(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
-	selectedSigner: bigint,
+	selection: SafeSignerRefreshSelection,
 	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
 ): Promise<SafeSignerSelectionRefreshPersistence> {
+	if (selection.kind === 'reuseReviewed') return { refreshRequired: false, refreshResult: { status: 'unchanged', pending }, persisted: false, persistedPending: undefined }
+	const selectedSigner = selection.account
 	const recoveredMessage = await recoverSafeMessageReview(ethereum, pending, selectedSigner)
 	if (recoveredMessage !== undefined) return recoveredMessage
 	const flow = getSafePendingFlow(pending)
-	if (flow === undefined || !shouldRefreshSafeSignerSelection(flow, selectedSigner)) {
+	const directExecutionSafeEntry = await getDirectExecutionSafeEntry(ethereum, flow)
+	if (flow === undefined || !shouldRefreshSafeSignerSelection(flow, selectedSigner, directExecutionSafeEntry)) {
 		return {
 			refreshRequired: false,
 			refreshResult: { status: 'unchanged', pending },
@@ -483,12 +527,13 @@ export async function refreshAndPersistSafeSignerSelection(
 		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
+	const signingWalletBinding = refreshResult.status === 'refreshed' ? await getRefreshedSigningWalletBinding(refreshResult.pending) : undefined
 	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
-		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
+		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner, directExecutionSafeEntry)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
 		persistedPending = refreshResult.status === 'refreshed'
-			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
+			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending, signingWalletBinding)
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
 		return persistedPending
 	})

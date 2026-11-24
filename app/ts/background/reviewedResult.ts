@@ -1,7 +1,9 @@
+import { isPendingTransactionGasLimitCurrent } from '../utils/pendingTransactionSimulation.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { encodeBigIntOrBytesForJson } from '../utils/bigint.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isRecord } from '../utils/runtimeTypeGuards.js'
+import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../utils/sendAnywayConsent.js'
 
 type FieldOf<T> = T extends unknown ? keyof T : never
 type PendingRequestField = FieldOf<PendingTransactionOrSignableMessage>
@@ -21,6 +23,9 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	created: true,
 	safeFlow: true,
 	safeMessageCoSignSnapshot: true,
+	// The wallet and chain the request was admitted to sign with; a changed wallet binding or signing chain is a different signer.
+	signingWalletBinding: true,
+	signingChainId: true,
 	// Identity and signer round-trip bookkeeping, which change without changing what the user reviewed.
 	type: false,
 	// A replacement with identical content still needs its own approval.
@@ -44,4 +49,24 @@ export const stringifyCanonically = (value: unknown) => JSON.stringify(value, (_
 export const getReviewedResultId = (pending: PendingTransactionOrSignableMessage) => {
 	const reviewedContent = Object.fromEntries(Object.entries(pending).filter(([field]) => isReviewedField(field)))
 	return keccak256(stringToBytes(stringifyCanonically(reviewedContent)))
+}
+
+export type ReviewedAccept = { readonly reviewedResultId: string, readonly forceSend: boolean }
+
+// Why an accept does not authorize the stored request, or undefined when it does. An accept authorizes only the stored request whose reviewed content the user saw; a transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override. A confirmation accept and a direct signing approval both apply this rule.
+export function getAcceptRefusal(pending: PendingTransactionOrSignableMessage, accept: ReviewedAccept) {
+	if (getReviewedResultId(pending) !== accept.reviewedResultId) return 'staleReview' as const
+	if (isRejectOnlyTransaction(pending)) return 'rejectOnly' as const
+	// A gas edit is stored before it is simulated again, so only the send-anyway override accepts it without results for the edited gas.
+	if (!accept.forceSend && !isPendingTransactionGasLimitCurrent(pending)) return 'unsimulatedGasLimit' as const
+	if (!accept.forceSend && getSendAnywayOverrideReason(pending) !== undefined) return 'sendAnywayRequired' as const
+	return undefined
+}
+
+export const isAcceptForStoredResult = (pending: PendingTransactionOrSignableMessage, accept: ReviewedAccept) => getAcceptRefusal(pending, accept) === undefined
+
+// What a page approving the stored request must show and echo back: the reviewed-result id, whether only rejection is possible, why a send-anyway override is needed, and whether an edited gas limit has no results yet, which also needs it.
+export const getPendingRequestReview = (pending: PendingTransactionOrSignableMessage) => {
+	const sendAnywayReason = getSendAnywayOverrideReason(pending)
+	return { reviewedResultId: getReviewedResultId(pending), rejectOnly: isRejectOnlyTransaction(pending), unsimulatedGasLimit: !isPendingTransactionGasLimitCurrent(pending), ...sendAnywayReason === undefined ? {} : { sendAnywayReason } }
 }

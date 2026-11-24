@@ -1,13 +1,19 @@
+import { useSigningWalletBindings } from '../hooks/useSigningWalletBindings.js'
+import { SigningWalletSummary, openSigningWalletSetup } from '../subcomponents/SigningWalletSummary.js'
+import { useState } from 'preact/hooks'
 
 import type { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
-	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
+	const wallets = useSigningWalletBindings()
+	const [error, setError] = useState<string>()
+	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer', entry?: AddressBookEntry) {
 		param.close()
-		param.setActiveAddressAndInformAboutIt(activeAddress)
+		param.setActiveAddressAndInformAboutIt(activeAddress, entry)
 	}
 
 	function getSignerAccount() {
@@ -21,16 +27,13 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		return address !== undefined && getSignerAccount() === address
 	}
 
-	function changePageToAddAddress() {
-		param.addNewAddress()
-	}
 
 	const activeAddresses = param.activeAddresses.value
 	const signerAddressName = activeAddresses.find((x) => x.address === getSignerAccount() )?.name
 
 	return ( <>
 		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
+		<div class = 'modal-card signing-address-selector' style = 'height: 100%;'>
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -39,7 +42,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</div>
 				<div class = 'card-header-title'>
 					<p class = 'paragraph'>
-					Change Active Address
+					Choose address
 					</p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
@@ -47,6 +50,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</button>
 			</header>
 			<section class = 'modal-card-body'>
+				<p class = 'signing-muted'>Select an address to use in your current mode.</p>
 				<ul>
 					{ getSignerAccount() === undefined ? <></> : <li>
 						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
@@ -73,8 +77,8 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					</li> }
 
 					{ activeAddresses.map((activeAddress) => (
-						<li key = { activeAddress.address.toString() }>
-							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
+						<li key = { `${ activeAddress.type }:${ activeAddress.address.toString() }` }>
+							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address, activeAddress) } }>
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 									<BigAddress
 										addressBookEntry = { activeAddress }
@@ -82,6 +86,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										noEditAddress = { true }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
+									{ activeAddress.type === 'safe' ? undefined : <SigningWalletSummary wallets = { wallets } address = { activeAddress.address } showSimulationShortcut = { false }/> }
 									{ isSignerConnected(activeAddress.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
@@ -95,8 +100,9 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</ul>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary is-success' onClick = { param.close }> Close </button>
-				<button class = 'button is-primary' onClick = { changePageToAddAddress }> Add New Address </button>
+				<button class = 'button signing-secondary' onClick = { param.close }> Close </button>
+				<button class = 'button is-primary' onClick = { () => { void openSigningWalletSetup().catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>Add address</button>
+				{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
 			</footer>
 		</div>
 	</> )

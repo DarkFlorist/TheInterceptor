@@ -29,7 +29,10 @@ export const ChangeActiveAddress = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-	})
+	}).And(funtypes.ReadonlyPartial({
+		// The kind of the picked address-book entry, which tells a Safe apart from an ordinary entry at the same address.
+		activeAddressKind: funtypes.Union(funtypes.Literal('safe'), funtypes.Literal('account')),
+	}))
 }).asReadonly()
 
 export type ImportSettings = funtypes.Static<typeof ImportSettings>

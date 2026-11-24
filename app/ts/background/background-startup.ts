@@ -1,6 +1,8 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { isSigningPageMessage, signingPageMessageHandler } from './signingRequestService.js'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
+import { pruneIneligibleSigningWalletBindings } from './signingAddressBookCoordinator.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -284,6 +286,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await pruneIneligibleSigningWalletBindings().catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
@@ -365,9 +368,11 @@ browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
-browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+browser.runtime.onMessage.addListener((message: unknown, sender) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settings = await getSettings()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	// Popup and signing services share only this extension-page sender boundary.
+	if (sender.id !== browser.runtime.id || sender.url === undefined || !sender.url.startsWith(browser.runtime.getURL(''))) return { ok: false, message: 'Controls are available only inside Interceptor' }
+	if (isSigningPageMessage(message)) return await signingPageMessageHandler(message, simulationServicesOwner.getCurrent(), websiteTabConnections)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, await getSettings(), rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

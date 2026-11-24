@@ -66,6 +66,8 @@ function installBrowserMock() {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/addressBookStore.js'),
+		...await import('../../app/ts/background/signingAddressBookCoordinator.js'),
 		...await import('../../app/ts/background/simulationModeHandlers.js'),
 		...await import('../../app/ts/utils/errors.js'),
 	}

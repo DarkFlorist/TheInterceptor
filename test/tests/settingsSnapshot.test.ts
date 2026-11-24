@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 
 const firstSnapshot = {
+	selectedSigningAddress: '0x5555555555555555555555555555555555555555',
 	independentActiveSimulationAddress: '0x1111111111111111111111111111111111111111',
 	activeSigningSafeAddress: '0x3333333333333333333333333333333333333333',
 	openedPageV2: { page: 'Home' },
@@ -20,6 +21,7 @@ const firstSnapshot = {
 }
 
 const secondSnapshot = {
+	selectedSigningAddress: '0x6666666666666666666666666666666666666666',
 	independentActiveSimulationAddress: '0x2222222222222222222222222222222222222222',
 	activeSigningSafeAddress: '0x4444444444444444444444444444444444444444',
 	openedPageV2: { page: 'Settings' },
@@ -66,6 +68,7 @@ test('getSettings returns one atomic browser storage snapshot', async () => {
 	const settings = await getSettings()
 
 	assert.equal(storageReadCount, 1)
+	assert.equal(settings.selectedSigningAddress, 0x5555555555555555555555555555555555555555n)
 	assert.equal(settings.activeSimulationAddress, 0x1111111111111111111111111111111111111111n)
 	assert.equal(settings.activeSigningSafeAddress, 0x3333333333333333333333333333333333333333n)
 	assert.deepEqual(settings.openedPage, { page: 'Home' })

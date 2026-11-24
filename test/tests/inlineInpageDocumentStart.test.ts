@@ -1,18 +1,18 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import * as ts from 'typescript'
+import { bundleClassicInpageScripts } from '../../build/inpage.mts'
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker } from '../../scripts/content-script-injection-markers.mts'
 import { generateInpageArtifacts, inlineDocumentStartPageWorldProvider, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 
-const compileClassicScript = async (sourcePath: string) => ts.transpileModule(await Bun.file(new URL(sourcePath, import.meta.url)).text(), {
-	compilerOptions: {
-		module: ts.ModuleKind.ESNext,
-		target: ts.ScriptTarget.ES2022,
-	},
-}).outputText
+// The classic scripts the inpage build ships, bundled the same way, so the tests run what the extension injects.
+const compileClassicScript = async (entrypointName: string) => {
+	const [output] = await bundleClassicInpageScripts([entrypointName])
+	if (output === undefined) throw new Error(`Bundling ${ entrypointName } produced no script`)
+	return await output.text()
+}
 
-const generateArtifactsFromSources = async () => generateInpageArtifacts(await compileClassicScript('../../app/inpage/ts/document_start.ts'), await compileClassicScript('../../app/inpage/ts/inpage.ts'))
+const generateArtifactsFromSources = async () => generateInpageArtifacts(await compileClassicScript('document_start'), await compileClassicScript('inpage'))
 
 const getArtifact = (artifacts: Awaited<ReturnType<typeof generateArtifactsFromSources>>, path: string) => {
 	const artifact = artifacts.find((candidate) => candidate.path === path)
@@ -62,10 +62,10 @@ function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScri
 const isInterceptorProvider = (value: unknown) => typeof value === 'object' && value !== null && Reflect.get(value, 'isInterceptor') === true
 
 test('page-world compatibility mode is embedded as a build-time boolean', async () => {
-	const compiledSource = await compileClassicScript('../../app/inpage/ts/inpage.ts')
+	const compiledSource = await compileClassicScript('inpage')
 	for (const metamaskCompatibilityMode of [false, true]) {
 		const generatedPageWorldSource = inlineMetamaskCompatibilityModeAtPageLoad(compiledSource, metamaskCompatibilityMode)
-		assert.equal(generatedPageWorldSource.includes(`const metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
+		assert.equal(generatedPageWorldSource.includes(`var metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
 		assert.equal(generatedPageWorldSource.includes(metamaskCompatibilityModeAtPageLoadMarker), false)
 		assert.equal(generatedPageWorldSource.includes('TheInterceptor.metamaskCompatibilityMode'), false)
 	}
@@ -81,8 +81,8 @@ test('MV2 document-start defines window.ethereum synchronously before its bootst
 		assert.deepEqual(insertedScripts, [{ external: false, ranSynchronously: true, src: '' }])
 		assert.equal(contentScriptGlobal.interceptorInjected, true)
 		assert.deepEqual(errors, [])
-		assert.equal(documentStart.source.includes(`const metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
-		assert.equal(documentStart.source.includes(`const metamaskCompatibilityModeAtPageLoad = ${ !metamaskCompatibilityMode }`), false)
+		assert.equal(documentStart.source.includes(`var metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
+		assert.equal(documentStart.source.includes(`var metamaskCompatibilityModeAtPageLoad = ${ !metamaskCompatibilityMode }`), false)
 	}
 })
 
@@ -107,7 +107,7 @@ test('MV2 generated document-start scripts keep no build markers', async () => {
 })
 
 test('MV3 page-world provider artifacts are the compatibility-mode providers, unchanged by MV2 inlining', async () => {
-	const compiledInpage = await compileClassicScript('../../app/inpage/ts/inpage.ts')
+	const compiledInpage = await compileClassicScript('inpage')
 	const artifacts = await generateArtifactsFromSources()
 	for (const metamaskCompatibilityMode of [false, true]) {
 		const providerPath = getPageWorldScriptPaths(metamaskCompatibilityMode)[0]
@@ -119,7 +119,7 @@ test('MV3 page-world provider artifacts are the compatibility-mode providers, un
 
 test('inlining keeps $ replacement sequences in the provider source literal', async () => {
 	const providerSource = 'window.replacementSequences = "$& $1 $$ $\' $`"'
-	const inlined = inlineDocumentStartPageWorldProvider(await compileClassicScript('../../app/inpage/ts/document_start.ts'), { source: providerSource, scriptPath: 'inpage/js/inpage.js' })
+	const inlined = inlineDocumentStartPageWorldProvider(await compileClassicScript('document_start'), { source: providerSource, scriptPath: 'inpage/js/inpage.js' })
 	assert.equal(inlined.includes(JSON.stringify(providerSource)), true)
 })
 

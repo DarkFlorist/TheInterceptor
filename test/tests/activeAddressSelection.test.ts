@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
+import { getActiveSigningAddress, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 import { getActiveAddressEntry } from '../../app/ts/components/subcomponents/address.js'
@@ -201,18 +201,18 @@ describe('active address selection', () => {
 		assert.equal(isSignerConnectedForMode(true, EOA_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), true)
 		assert.equal(isSignerConnectedForMode(true, SAFE_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), false)
 	})
-	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
+	test('keeps ordinary addresses selectable without a connected wallet while protecting unowned Safes', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, []).map(({ address }) => address),
-			[],
+			[EOA_ADDRESS],
 		)
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, []), false)
 	})
 
-	test('shows only current-chain Safes owned by the wallet-selected signer account', () => {
+	test('shows ordinary addresses and current-chain Safes owned by the selected signer', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, [EOA_ADDRESS]).map(({ address }) => address),
-			[SAFE_ADDRESS],
+			[EOA_ADDRESS, SAFE_ADDRESS],
 		)
 	})
 
@@ -242,9 +242,34 @@ describe('active address selection', () => {
 		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, selectableAddresses, false, 1n, [EOA_ADDRESS]), true)
 	})
 
+	test('a Safe row resolves to the Safe when a contact shares its address', () => {
+		const sharedAddress = 0x6000000000000000000000000000000000000006n
+		const contact = { type: 'contact' as const, name: 'Shadowing contact', address: sharedAddress, entrySource: 'User' as const, useAsActiveAddress: true, chainId: 'AllChains' as const }
+		const safe = { type: 'safe' as const, name: 'Shared-address Safe', address: sharedAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSigningSignerAddress: EOA_ADDRESS, safeExecutionAddress: OTHER_EOA_ADDRESS, safeSignerAddresses: [EOA_ADDRESS] }
+		const sharedAddressEntries: AddressBookEntries = [contact, safe]
+		// Signing mode: an address saved as a Safe cannot hold a signing wallet, so only the Safe is offered, whichever kind or none is named.
+		assert.deepEqual(getSelectableActiveAddresses(sharedAddressEntries, false, 1n, [EOA_ADDRESS]), [safe])
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, false, 1n, [EOA_ADDRESS], 'safe'), { type: 'addressBookEntry', entry: safe })
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, false, 1n, [EOA_ADDRESS]), { type: 'addressBookEntry', entry: safe })
+		assert.equal(getActiveAddressSelection(sharedAddress, sharedAddressEntries, false, 1n, [EOA_ADDRESS], 'account'), undefined)
+		// Simulation mode offers both, and the picked entry's kind decides.
+		assert.deepEqual(getSelectableActiveAddresses(sharedAddressEntries, true, 1n, [EOA_ADDRESS]), [contact, safe])
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, true, 1n, [EOA_ADDRESS], 'safe'), { type: 'addressBookEntry', entry: safe })
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, true, 1n, [EOA_ADDRESS], 'account'), { type: 'addressBookEntry', entry: contact })
+	})
+
+	test('an active-address change names the kind of the picked entry', async () => {
+		let sentMessage: unknown
+		await requestActiveAddressChange({ activeAddress: SAFE_ADDRESS, activeAddressKind: 'safe' }, false, async (message) => {
+			sentMessage = message
+			return { type: 'ChangeActiveAddressReply', ok: true }
+		})
+		assert.deepEqual(sentMessage, { method: 'popup_changeActiveAddress', data: { activeAddress: SAFE_ADDRESS, simulationMode: false, activeAddressKind: 'safe' } })
+	})
+
 	test('waits for the background to accept an active-address change', async () => {
 		let sentMessage: unknown
-		await requestActiveAddressChange(EOA_ADDRESS, true, async (message) => {
+		await requestActiveAddressChange({ activeAddress: EOA_ADDRESS }, true, async (message) => {
 			sentMessage = message
 			return { type: 'ChangeActiveAddressReply', ok: true }
 		})
@@ -257,7 +282,7 @@ describe('active address selection', () => {
 
 	test('surfaces background rejection of an active-address change', async () => {
 		await assert.rejects(
-			requestActiveAddressChange(EOA_ADDRESS, true, async () => ({
+			requestActiveAddressChange({ activeAddress: EOA_ADDRESS }, true, async () => ({
 				type: 'ChangeActiveAddressReply',
 				ok: false,
 				message: 'The address is not available yet.',
@@ -268,15 +293,15 @@ describe('active address selection', () => {
 
 	test('surfaces a missing background active-address reply', async () => {
 		await assert.rejects(
-			requestActiveAddressChange(EOA_ADDRESS, true, async () => undefined),
+			requestActiveAddressChange({ activeAddress: EOA_ADDRESS }, true, async () => undefined),
 			/Changing the active address failed because the background page did not return a reply\./u,
 		)
 	})
 
-	test('blocks alternate signing-mode selection paths from choosing arbitrary EOAs or unowned Safes', () => {
+	test('allows saved EOAs through shared selection paths while blocking unowned Safes', () => {
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, [EOA_ADDRESS]), true)
-		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
-		assert.equal(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), undefined)
+		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
+		assert.deepEqual(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), { type: 'addressBookEntry', entry: activeAddresses[0] })
 		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
 		assert.equal(isActiveAddressSelectionAllowed(UNOWNED_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
 		assert.throws(() => assertActiveAddressSelectionAllowed(OTHER_CHAIN_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), /configured for another chain/u)
@@ -337,4 +362,31 @@ describe('active address selection', () => {
 		assert.doesNotMatch(providerMessageHandlersSource, /shouldActivateWalletAccountSelection/u)
 		assert.doesNotMatch(backgroundUtilsSource, /signingAddressPreferences/u)
 	})
+})
+
+
+test('configured signing address prefers an explicit wallet selection over a saved Safe', () => {
+	assert.deepEqual(getActiveSigningAddress({ selectedSigningAddress: EOA_ADDRESS, activeSigningSafeAddress: SAFE_ADDRESS }), { type: 'walletAccount', address: EOA_ADDRESS })
+	assert.deepEqual(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: SAFE_ADDRESS }), { type: 'safe', address: SAFE_ADDRESS })
+	assert.equal(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: undefined }), undefined)
+})
+
+test('display signing address uses only eligible Safe and live account fallbacks', () => {
+	const configured = { selectedSigningAddress: undefined, activeSigningSafeAddress: SAFE_ADDRESS }
+	assert.deepEqual(getActiveSigningAddress(configured, { safeAddress: undefined, signerAddress: EOA_ADDRESS }), { type: 'walletAccount', address: EOA_ADDRESS })
+	assert.equal(getActiveSigningAddress(configured, { safeAddress: undefined, signerAddress: undefined }), undefined)
+	assert.deepEqual(getActiveSigningAddress(configured, { safeAddress: SAFE_ADDRESS, signerAddress: EOA_ADDRESS }), { type: 'safe', address: SAFE_ADDRESS })
+	assert.deepEqual(getActiveSigningAddress({ ...configured, selectedSigningAddress: EOA_ADDRESS }, { safeAddress: SAFE_ADDRESS, signerAddress: undefined }), { type: 'walletAccount', address: EOA_ADDRESS })
+})
+
+test('signing selection excludes ordinary contacts scoped to other chains', () => {
+	const entries: AddressBookEntries = [
+		{ type: 'contact', address: EOA_ADDRESS, name: 'Current', entrySource: 'User', chainId: 1n },
+		{ type: 'contact', address: OTHER_EOA_ADDRESS, name: 'Other chain', entrySource: 'User', chainId: 5n },
+		{ type: 'contact', address: 3n, name: 'All chains', entrySource: 'User', chainId: 'AllChains' },
+		{ type: 'contact', address: 4n, name: 'Legacy mainnet', entrySource: 'User' },
+	]
+	assert.deepEqual(getSelectableActiveAddresses(entries, false, 1n, []).map((entry) => entry.address), [EOA_ADDRESS, 3n, 4n])
+	assert.equal(getActiveAddressSelection(OTHER_EOA_ADDRESS, entries, false, 1n, []), undefined)
+	assert.deepEqual(getSelectableActiveAddresses(entries, false, 5n, []).map((entry) => entry.address), [OTHER_EOA_ADDRESS, 3n])
 })
