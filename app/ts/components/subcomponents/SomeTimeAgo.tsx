@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useSignal } from '@preact/signals'
+import { useEffect, useRef } from 'preact/hooks'
 
 interface SomeTimeAgoProps {
 	priorTimestamp: Date,
@@ -16,18 +17,21 @@ export function getSomeTimeAgoText(
 	return diffToText(countBackwards ? timeDiff : -timeDiff)
 }
 
-function useRerenderEverySecond() {
-	const [, setRenderTick] = useState(0)
-	useEffect(() => {
-		const intervalId = setInterval(() => setRenderTick((renderTick) => renderTick + 1), 1000)
-		return () => clearInterval(intervalId)
-	}, [])
+function getTextForProps(props: SomeTimeAgoProps) {
+	return getSomeTimeAgoText(props.priorTimestamp, new Date(), props.countBackwards, props.diffToText)
 }
 
 export function SomeTimeAgo(props: SomeTimeAgoProps) {
-	// The text is computed against the current time on every render, so new props show up immediately and the ticking rerender keeps it fresh.
-	useRerenderEverySecond()
-	return <>{ getSomeTimeAgoText(props.priorTimestamp, new Date(), props.countBackwards, props.diffToText) }</>
+	const text = useSignal('')
+	const latestProps = useRef(props)
+	latestProps.current = props
+	// Plain prop changes update immediately; interval ticks write only the rendered text signal.
+	text.value = getTextForProps(props)
+	useEffect(() => {
+		const intervalId = setInterval(() => { text.value = getTextForProps(latestProps.current) }, 1000)
+		return () => clearInterval(intervalId)
+	}, [])
+	return <>{ text }</>
 }
 
 function humanReadableDateDelta(secondsDiff: number) {
