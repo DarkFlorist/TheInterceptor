@@ -622,7 +622,6 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
-		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	}).And(funtypes.ReadonlyPartial({
@@ -641,7 +640,6 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 		settings: Settings,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
-		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 	}).And(funtypes.ReadonlyPartial({
 		walletSelectedAddressBookEntry: AddressBookEntry,
@@ -802,7 +800,6 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
-		rpcEntries: RpcEntries,
 	})
 }).asReadonly()
 

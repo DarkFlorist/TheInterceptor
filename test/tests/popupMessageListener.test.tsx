@@ -39,7 +39,6 @@ const settingsReplyMessage = MessageToPopup.serialize({
 		metamaskCompatibilityMode: false,
 		safeAppsCompatibilityMode: false,
 		activeRpcNetwork: rpcNetwork,
-		rpcEntries: [rpcNetwork],
 	},
 })
 

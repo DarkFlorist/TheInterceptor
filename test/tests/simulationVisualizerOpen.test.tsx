@@ -309,7 +309,6 @@ function createHomePageUpdate(tabId: number, popupRefreshGeneration: number, ico
 			rpcConnectionStatus: undefined,
 			activeSigningAddressInThisTab: undefined,
 			tabId,
-			rpcEntries: [settings.activeRpcNetwork],
 			interceptorDisabled: false,
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0x0', deltaUnit: 'Seconds' },
 		},
@@ -413,7 +412,6 @@ function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number
 			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: safeOwnerAddress, safeSignerAddresses: [safeOwnerAddress] }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
-			rpcEntries: [serializableSettings.activeRpcNetwork],
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
 		},
 	}
@@ -462,7 +460,6 @@ function createSerializableRichHomePageUpdate(tabId: number, popupRefreshGenerat
 		data: {
 			...update.data,
 			settings: serializableSettings,
-			rpcEntries: [serializableSettings.activeRpcNetwork],
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
 		},
 	}
@@ -531,7 +528,6 @@ function createFailedStackHomePageUpdate(tabId: number, popupRefreshGeneration: 
 				numberOfAddressesMadeRich: 0,
 			},
 			settings: serializableSettings,
-			rpcEntries: [serializableSettings.activeRpcNetwork],
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
 		},
 	}

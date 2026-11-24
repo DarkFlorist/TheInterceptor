@@ -77,7 +77,7 @@ describe('SettingsView checkboxes', () => {
 	const settingsReply = (useTabsInsteadOfPopup: boolean, metamaskCompatibilityMode: boolean, safeAppsCompatibilityMode: boolean) => MessageToPopup.serialize({
 		role: 'all',
 		method: 'popup_requestSettingsReply',
-		data: { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode, activeRpcNetwork: firstRpc, rpcEntries: [firstRpc] },
+		data: { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode, activeRpcNetwork: firstRpc },
 	})
 
 	const deliverSettingsReply = async (messaging: RuntimeMessaging, reply: unknown) => await act(async () => { await messaging.dispatchAndAwaitListeners(reply) })

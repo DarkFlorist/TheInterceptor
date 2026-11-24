@@ -32,7 +32,6 @@ const createSettingsReply = (activeRpcNetwork: RpcEntry) => MessageToPopup.seria
 		metamaskCompatibilityMode: false,
 		safeAppsCompatibilityMode: false,
 		activeRpcNetwork,
-		rpcEntries: [mainnet, sepolia],
 	},
 })
 
