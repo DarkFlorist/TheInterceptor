@@ -4,7 +4,7 @@ import { identifyAddressWith, lookUpMetadataOnChain } from './metadataUtils.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimulationRefresh, refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
+import { buildCurrentSimulationInput, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -42,7 +42,7 @@ import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecuti
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, type PopupVisualisationPreparationDependencies, updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
@@ -462,7 +462,13 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function removeTransactionOrSignedMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, params: RemoveTransaction) {
+// Every removal path refreshes through this one call, so a caller's refresh dependencies reach the Safe execution branch too.
+export async function removeTransactionOrSignedMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, params: RemoveTransaction, refreshDependencies: PopupVisualisationPreparationDependencies = {}) {
+	await removeTransactionOrSignedMessageFromStacks(params)
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true }, refreshDependencies)
+}
+
+async function removeTransactionOrSignedMessageFromStacks(params: RemoveTransaction) {
 	if (params.data.type === 'Transaction') {
 		const currentStack = await getInterceptorTransactionStack()
 		const transactionIdentifier = params.data.transactionIdentifier
@@ -489,7 +495,6 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 					},
 				}
 			})
-			await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 			return
 		}
 	}
@@ -538,8 +543,6 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 			default: assertNever(params.data)
 		}
 	})
-
-	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 type ConfirmTransactionMetadataDependencies = {
@@ -1058,7 +1061,7 @@ export async function changePreSimulationBlockTimeManipulation(ethereum: Ethereu
 	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
-export async function setTransactionOrMessageBlockTimeManipulator(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
+export async function setTransactionOrMessageBlockTimeManipulator(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: SetTransactionOrMessageBlockTimeManipulator, refreshDependencies: PopupVisualisationPreparationDependencies = {}) {
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const normalizedPrevStack = { operations: normalizeConsecutiveTimeManipulations(prevStack.operations) }
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
@@ -1085,7 +1088,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
 		return { operations: normalizeConsecutiveTimeManipulations([...normalizedPrevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...normalizedPrevStack.operations.slice(indexOfMaybeManipulator)]) }
 	})
-	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true }, refreshDependencies)
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
@@ -1318,7 +1321,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await buildCurrentSimulationInput()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {

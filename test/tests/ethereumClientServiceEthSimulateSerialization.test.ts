@@ -5,6 +5,7 @@ import { type EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { serialize, type EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const rpcEntry = {
 	name: 'Testnet',
@@ -192,7 +193,7 @@ describe('EthereumClientService eth_simulateV1 serialization', () => {
 			},
 			async () => undefined,
 			async () => undefined,
-			rpcEntry,
+			rpcEntry, alwaysLive,
 		)
 
 		for (const variant of getSignedTransactionVariants()) {
@@ -229,7 +230,7 @@ describe('EthereumClientService eth_call serialization', () => {
 		},
 		async () => undefined,
 		async () => undefined,
-		rpcEntry,
+		rpcEntry, alwaysLive,
 	)
 
 	test('forwards null recipients for contract creation calls', async () => {

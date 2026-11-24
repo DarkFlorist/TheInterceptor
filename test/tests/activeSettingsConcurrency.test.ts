@@ -223,7 +223,7 @@ describe('active settings concurrency', () => {
 		])
 	})
 
-	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
+	test.each(['signing preference', 'stack storage', 'settings broadcast'])('keeps committed selection visualization coherent when %s fails', async (failurePoint) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
 		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
@@ -262,8 +262,16 @@ describe('active settings concurrency', () => {
 				await assert.rejects(transition, error => error === failure)
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 			}
-			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
-			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
+			await waitForBackgroundTasks()
+			if (failurePoint === 'stack storage') {
+				// The committed chain change installed new services, so their background refresh invalidates the previous chain's view as after any network switch; the unrelated stack failure must not turn that into a failed publication.
+				const stored = await getPopupVisualisationState()
+				assert.deepEqual({ simulationId: stored.simulationId, simulationUpdatingState: stored.simulationUpdatingState, simulationResultState: stored.simulationResultState }, { simulationId: 43, simulationUpdatingState: 'updating', simulationResultState: 'invalid' })
+			} else {
+				// External-wallet signing shows no stack, so nothing refreshes and the cached view stays.
+				assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
+				assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
+			}
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })

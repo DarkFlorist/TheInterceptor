@@ -21,6 +21,7 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getCodeByteCode, getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { type Eip7702Authorization, getDelegateFromCode, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
 import { getAccountNonceAfterTransactions } from '../../app/ts/simulation/accountNonce.js'
 
@@ -316,7 +317,7 @@ class MockEthereumJSONRpcRequestHandler {
 }
 
 const requestHandler = new MockEthereumJSONRpcRequestHandler()
-const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 const createEthereumWithThrowingSimulationPreparation = () => {
 	let prepareCallCount = 0
 	const throwingEthereum = new Proxy(ethereum, {

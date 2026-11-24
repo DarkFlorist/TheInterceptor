@@ -1,4 +1,4 @@
-import type { Settings } from '../types/interceptor-messages.js'
+import type { SimulationSelection } from '../utils/simulationSelection.js'
 import type { BlockTimeManipulation, InterceptorTransactionStack, PreSimulationTransaction, SignedMessageTransaction, SimulationStateInput, SimulationStateInputBlock } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
@@ -23,12 +23,12 @@ type SimulationInputSources = {
 }
 
 // Builds the input without reading storage, so callers decide when every source was read.
-export function buildSimulationStateInput(settings: Settings, sources: SimulationInputSources, stack: InterceptorTransactionStack): SimulationStateInput {
+export function buildSimulationStateInput(selection: SimulationSelection, sources: SimulationInputSources, stack: InterceptorTransactionStack): SimulationStateInput {
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(sources.richAddresses)
-	let previousBlockTimeManipulation = settings.simulationMode ? sources.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
+	let previousBlockTimeManipulation = selection.simulationMode ? sources.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
@@ -44,14 +44,14 @@ export function buildSimulationStateInput(settings: Settings, sources: Simulatio
 		currentBlockTransactions = []
 	}
 
-	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
+	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(selection))
 	for (const operation of operations) {
 		switch(operation.type) {
 			case 'Transaction': {
 				const simulationOptions = operation.preSimulationTransaction.simulationOptions
 				if (
 					simulationOptions?.requiredChainId !== undefined
-					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
+					&& simulationOptions.requiredChainId !== selection.activeRpcNetwork.chainId
 				) break
 				currentBlockTransactions.push(operation.preSimulationTransaction)
 				break

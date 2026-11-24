@@ -14,6 +14,7 @@ import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
@@ -147,6 +148,13 @@ export function createBrowserMock() {
 			async setTitle() { return undefined },
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
+		},
+		// Website access updates after an active settings change reconcile blocking rules.
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
 		},
 	}
 	const installGlobals = () => {
@@ -517,7 +525,7 @@ export const fakeRequestHandler = {
 		}
 	},
 }
-export const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+export const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 export const simulator = {
 	ethereum,
 	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
@@ -557,7 +565,7 @@ export function createFeeValidatingSimulator(accountBalance: bigint, rpcNetwork 
 			}
 		},
 	}
-	const feeValidatingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
+	const feeValidatingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 	return {
 		ethereum: feeValidatingEthereum,
 		tokenPriceService: new modules.TokenPriceService(feeValidatingEthereum, 60_000),

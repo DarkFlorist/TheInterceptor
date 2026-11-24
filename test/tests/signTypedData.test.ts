@@ -11,6 +11,7 @@ import { serialize } from '../../app/ts/types/wire-types.js'
 import { getMessageAndDomainHash, verifyEip712Message } from '../../app/ts/utils/eip712.js'
 import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, permit2PermitBatchMessage, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
 import { jsonParserWithNumbersAsStringsConverter } from '../../app/ts/utils/json.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 
 // the fixture messages target Ethereum mainnet, where bundled address metadata applies
@@ -24,7 +25,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 // Identifies without reading or writing the address book in local storage.
 const identifyAddressWithoutAddressBook = async (address: bigint) => await identifyAddress(ethereum, undefined, address, false)
 

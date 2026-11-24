@@ -1,7 +1,6 @@
 import { buildSimulationStateInput } from './simulationInputBuilding.js'
 import type { IdentifyAddress, MetadataLookups } from '../types/metadataLookups.js'
 import type { Settings } from '../types/interceptor-messages.js'
-import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
 import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
@@ -38,7 +37,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext } from '../utils/activeStackContext.js'
+import type { SimulationSelection } from '../utils/simulationSelection.js'
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()
@@ -48,44 +47,50 @@ export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => 
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
-	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? getSettings(),
-		getPreSimulationBlockTimeManipulation()
-	])
-	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const stack = await getInterceptorTransactionStack()
-	return buildSimulationStateInput(settings, { richAddresses: await richListPromise, preSimulationBlockTimeManipulation }, stack)
+const readSimulationInput = async (richAddresses: readonly bigint[], selection: SimulationSelection): Promise<SimulationStateInput> => {
+	const [preSimulationBlockTimeManipulation, stack] = await Promise.all([getPreSimulationBlockTimeManipulation(), getInterceptorTransactionStack()])
+	return buildSimulationStateInput(selection, { richAddresses, preSimulationBlockTimeManipulation }, stack)
 }
 
-export type SimulationSnapshot = {
-	readonly activeRpcNetwork: RpcNetwork
-	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
+export const getCurrentSimulationInput = async () => {
+	const settings = await getSettings()
+	return await readSimulationInput(await getAddressesbeingMadeRich(settings), settings)
+}
+
+// What a refresh holds while it waits: the selection and rich addresses, fixed at capture. It has no input because the stack can change during any wait, so nothing can simulate a snapshot without calling buildSimulationInput first. It says nothing about the current selection either, so a refresh confirms with selectionChanged (utils/simulationSelection.ts) that it still applies before acting on it.
+export type SimulationSnapshot = SimulationSelection & {
+	// The addresses rather than their count, because building the input needs them for its balance overrides.
+	readonly richAddresses: readonly bigint[]
+}
+
+// The stack as read under a snapshot, and the only thing that can be simulated. Build it where it is used and never keep it across a wait; only the network is kept beside the input, because that decides whether it can be simulated at all.
+export type BuiltSimulationInput = Pick<SimulationSelection, 'activeRpcNetwork'> & {
 	readonly simulationStateInput: SimulationStateInput
-	readonly numberOfAddressesMadeRich: number
 }
 
-// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
 	const settings = await getSettings()
-	const richAddresses = await getAddressesbeingMadeRich(settings)
-	return {
-		activeRpcNetwork: settings.activeRpcNetwork,
-		activeStackContext: getActiveStackContext(settings),
-		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
-		numberOfAddressesMadeRich: richAddresses.length,
-	}
+	const { simulationMode, activeSigningSafeAddress, activeRpcNetwork } = settings
+	return { simulationMode, activeSigningSafeAddress, activeRpcNetwork, richAddresses: await getAddressesbeingMadeRich(settings) }
 }
 
-export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
+// Reads the stack stored now, under the snapshot's selection and rich addresses. An unreadable stack must abort before publishing any fallback.
+export async function buildSimulationInput(snapshot: SimulationSnapshot): Promise<BuiltSimulationInput> {
+	return { activeRpcNetwork: snapshot.activeRpcNetwork, simulationStateInput: await readSimulationInput(snapshot.richAddresses, snapshot) }
+}
+
+// For work that simulates straight away, with no wait for a snapshot to outlive.
+export const buildCurrentSimulationInput = async () => await buildSimulationInput(await captureSimulationSnapshot())
+
+export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: Pick<SimulationSelection, 'activeRpcNetwork'>) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum
 )
 
-export async function getUpdatedSimulationState(ethereum: EthereumClientService, snapshot: SimulationSnapshot) {
-	const provider = getSimulationProviderForSnapshot(ethereum, snapshot)
+export async function getUpdatedSimulationState(ethereum: EthereumClientService, builtInput: BuiltSimulationInput) {
+	const provider = getSimulationProviderForSnapshot(ethereum, builtInput)
 	if (provider === undefined) return PASSTHROUGH_STATE
 	try {
-		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(snapshot.simulationStateInput, provider))
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(builtInput.simulationStateInput, provider))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		await reportUnexpectedError(error, { code: 'simulation_state_refresh_failed' })
@@ -96,10 +101,10 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const snapshot = await captureSimulationSnapshot()
+	const builtInput = await buildCurrentSimulationInput()
 	return {
-		simulationInput: toResolvedSimulationInput(snapshot.simulationStateInput),
-		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
+		simulationInput: toResolvedSimulationInput(builtInput.simulationStateInput),
+		simulationState: await getUpdatedSimulationState(ethereum, builtInput),
 	}
 }
 
@@ -364,7 +369,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
-		const simulationState = await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
+		const simulationState = await getUpdatedSimulationState(ethereumClientService, await buildCurrentSimulationInput())
 		if (simulationState.kind === 'passthrough') throw new Error('Failed to fetch simulation state for Gnosis Safe transaction.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
 		const resolvedSimulationState = simulationState.value

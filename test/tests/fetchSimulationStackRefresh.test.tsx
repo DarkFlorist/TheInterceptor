@@ -1,8 +1,8 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { createSimulationServicesOwnerForServices } from '../../app/ts/simulation/serviceLifecycle.js'
 import { FetchSimulationStack } from '../../app/ts/components/pages/FetchSimulationStack.js'
 import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
 import { retainPreviousVisualisation } from '../../app/ts/utils/popupVisualisationLifecycle.js'
@@ -17,6 +17,7 @@ import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedS
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
 import { installDomMock } from './domMock.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => unknown
 
@@ -175,9 +176,9 @@ const requestHandler = {
 		}
 	},
 }
-const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
-const simulationServicesOwner = createSimulationServicesOwnerForServices(rpcNetwork, { ethereum, tokenPriceService }, () => {
+const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => {
 	throw new Error('Unexpected RPC replacement in the fixed-network simulation refresh fixture')
 })
 
@@ -263,7 +264,7 @@ async function setUpSimulationModeWithOpenConsumer() {
 
 describe('FetchSimulationStack simulation refreshes', () => {
 	test('opening next to a live simulation consumer simulates once and publishes once', async () => {
-		assert.equal(simulationServicesOwner.ensureNetwork(rpcNetwork), 'unchanged')
+		assert.equal(await simulationServicesOwner.update(async ({ ensureNetwork }) => ensureNetwork(rpcNetwork)), 'unchanged')
 		const harness = await setUpSimulationModeWithOpenConsumer()
 		try {
 			await harness.openFetchSimulationStack()

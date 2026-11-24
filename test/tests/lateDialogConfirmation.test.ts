@@ -139,7 +139,7 @@ describe('fetch simulation stack dialog late confirmations', () => {
 })
 
 describe('change chain dialog late confirmations', () => {
-	const simulationServicesOwner = createSimulationServicesOwner(requestedNetwork, async () => undefined, async (_ethereum, error) => { throw error })
+	const simulationServicesOwner = createSimulationServicesOwner(requestedNetwork, async () => undefined, async (_ethereum, error) => { throw error }, async () => undefined, async (error) => { await (await import('../../app/ts/utils/errors.js')).reportUnexpectedError(error, { code: 'simulation_services_refresh_failed' }) })
 	const chainConfirmation = (uniqueRequestIdentifier: UniqueRequestIdentifier, accept: boolean): ChainChangeConfirmation => ({
 		method: 'popup_changeChainDialog',
 		data: { rpcNetwork: requestedNetwork, uniqueRequestIdentifier, accept },

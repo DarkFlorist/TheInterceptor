@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { createSimulationServicesOwnerForServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwnerForServices, type SimulationServicesUpdateObserver, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -8,6 +8,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type Listener = () => void
 type StorageGetKeys = string | string[] | Record<string, unknown> | null | undefined
@@ -264,7 +265,7 @@ export function createEthereumWithGetBlockCounter(
 			new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc),
 			async () => undefined,
 			async () => undefined,
-			rpcEntry,
+			rpcEntry, alwaysLive,
 	),
 		{
 			get(target, property, receiver) {
@@ -304,6 +305,7 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }): SimulationServicesOwner {
-	return createSimulationServicesOwnerForServices(initial.ethereum.getRpcEntry(), initial, (_current, network) => reset === undefined ? initial : reset(network))
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, observe: SimulationServicesUpdateObserver = async (services, outcome) => await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome)): SimulationServicesOwner {
+	// The clients supply their own liveness when the test constructs them; this owner only swaps which pair it hands out.
+	return createSimulationServicesOwnerForServices(initial.ethereum.getRpcEntry(), initial, (current, network) => reset === undefined ? current : reset(network), observe, async (error) => { await (await import('../../app/ts/utils/errors.js')).reportUnexpectedError(error, { code: 'simulation_services_refresh_failed' }) })
 }

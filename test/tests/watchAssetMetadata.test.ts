@@ -4,6 +4,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { Erc1046ABI, Erc1155ABI, Erc20ABI, Erc721ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership } from '../../app/ts/background/watchAssetMetadata.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const rpcEntry = {
 	name: 'Ethereum',
@@ -30,7 +31,7 @@ class SequentialCallHandler {
 }
 
 function createEthereum(replies: (string | Error)[]) {
-	return new EthereumClientService(new SequentialCallHandler(replies), async () => undefined, async () => undefined, rpcEntry)
+	return new EthereumClientService(new SequentialCallHandler(replies), async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 }
 
 function metadataDataUri(value: unknown) {

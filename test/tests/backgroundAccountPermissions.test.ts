@@ -177,6 +177,8 @@ describe('background eth_accounts', () => {
 			signingAddressSelection: 'safe',
 			promptForAccessesIfNeeded: false,
 		})
+		// The transition's refresh starts after it settles and runs in the background.
+		await waitForBackgroundTasks()
 
 		assert.equal((await getSettings()).activeSigningSafeAddress, secondSafe)
 		assert.equal(messages.some((message) =>
@@ -215,6 +217,8 @@ describe('background eth_accounts', () => {
 			rpcNetwork: nextNetwork,
 			promptForAccessesIfNeeded: false,
 		})
+		// The transition's refresh starts after it settles and runs in the background.
+		await waitForBackgroundTasks()
 
 		assert.equal((await getSettings()).activeSigningSafeAddress, safeAddress)
 		assert.equal(messages.some((message) =>

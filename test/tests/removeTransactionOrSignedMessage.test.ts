@@ -80,10 +80,12 @@ async function loadModules() {
 		popupMessageHandlers,
 		simulationModeEthereumClientService,
 		storageVariables,
+		safeCore,
 	] = await Promise.all([
 		import('../../app/ts/background/popupMessageHandlers.js'),
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/background/storageVariables.js'),
+		import('../../app/ts/safe/safeCore.js'),
 	])
 
 	return {
@@ -91,6 +93,9 @@ async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
+		updateTransactionState: storageVariables.updateTransactionState,
+		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
+		createSafeTx: safeCore.createSafeTx,
 	}
 }
 
@@ -138,6 +143,9 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 	}
 }
 
+// These handlers receive a stand-in client that no owner installed, so the refresh preparation is told it is current rather than asking the client.
+const standInClientRefresh = { isClientCurrent: () => true }
+
 describe('removeTransactionOrSignedMessage', () => {
 	test('keeps later raw transactions unchanged when removing an earlier same-sender transaction', async () => {
 		const modules = await loadModules()
@@ -152,7 +160,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -174,7 +182,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -196,7 +204,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -218,7 +226,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
@@ -241,7 +249,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)
@@ -261,10 +269,40 @@ describe('removeTransactionOrSignedMessage', () => {
 		await modules.removeTransactionOrSignedMessage({}, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
-		})
+		}, standInClientRefresh)
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)
 		assert.deepEqual(remaining, [1n])
+	})
+
+	test('removing a Safe stack transaction refreshes with the caller\'s stand-in client dependencies', async () => {
+		const modules = await loadModules()
+		browserMock.reset()
+		const safeAddress = 0x3333333333333333333333333333333333333333n
+		const base = makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n })
+		const safeTransaction = {
+			safeTx: modules.createSafeTx(1n, safeAddress, { to: 0x2222222222222222222222222222222222222222n, value: 0n, input: new Uint8Array() }, 0n),
+			safeTxHash: 0x44n,
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			websiteOrigin: 'https://example.com',
+			transactionIdentifier: 1n,
+			signatures: [],
+		}
+		await modules.updateTransactionState(() => ({
+			interceptorTransactionStack: { operations: [{ type: 'Transaction' as const, preSimulationTransaction: { ...base, safeTransaction } }] },
+			safeTransactionStacks: [{ chainId: 1n, safeAddress, safeVersion: '1.3.0', baseNonce: 0n, threshold: 1n, transactions: [safeTransaction] }],
+		}))
+		let livenessChecks = 0
+
+		// A stand-in client has no isCurrent; the Safe branch must use the caller's check like every other removal.
+		await modules.removeTransactionOrSignedMessage({}, undefined, {
+			method: 'popup_removeTransactionOrSignedMessage',
+			data: { type: 'Transaction', transactionIdentifier: 1n },
+		}, { isClientCurrent: () => { livenessChecks++; return true } })
+
+		assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+		assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+		assert.ok(livenessChecks > 0)
 	})
 })

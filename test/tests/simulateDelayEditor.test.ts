@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
@@ -127,6 +128,8 @@ const ethereum = {
 	getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
 } as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[0]
 const tokenPriceService = {} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[1]
+// The stand-in client has no owner, so the refresh preparation is told it is current rather than asking the client.
+const standInClientRefresh = { isClientCurrent: () => true }
 
 const resetStack = async () => {
 	await updateInterceptorTransactionStack(() => ({
@@ -156,7 +159,7 @@ describe('simulate delay editor', () => {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
 				blockTimeManipulation: newDelay,
 			},
-		})
+		}, standInClientRefresh)
 
 		const stack = await getInterceptorTransactionStack()
 		assert.equal(stack.operations.length, 3)
@@ -176,7 +179,7 @@ describe('simulate delay editor', () => {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
 				blockTimeManipulation: newDelay,
 			},
-		})
+		}, standInClientRefresh)
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.equal(simulationInput.length, 2)
@@ -199,7 +202,7 @@ describe('simulate delay editor', () => {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
 				blockTimeManipulation: newDelay,
 			},
-		})
+		}, standInClientRefresh)
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.deepStrictEqual(simulationInput, [])
@@ -245,7 +248,7 @@ describe('eth_simulateV1 block timestamps', () => {
 		},
 		async () => undefined,
 		async () => undefined,
-		rpcEntry,
+		rpcEntry, alwaysLive
 	)
 
 	// Seconds each simulated block is ahead of its parent. Nodes reject the whole eth_simulateV1 request unless every step is positive.

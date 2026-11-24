@@ -463,10 +463,10 @@ describe('UI mutation completion', () => {
 		const release = createDeferredSignal()
 		const error = new Error('Superseded visualization failed unexpectedly')
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const refresh = updatePopupVisualisationState(ethereum, tokenPriceService, undefined, throwOnUnexpectedError, snapshot, {
-			getUpdatedState: async () => ({ kind: 'simulated', value: { ...pendingTransaction.popupVisualisation.data.simulationState, rpcNetwork: ethereum.getRpcEntry(), simulationStateInput: snapshot.simulationStateInput } }),
+		const refresh = updatePopupVisualisationState(ethereum, tokenPriceService, { throwOnUnexpectedError, snapshot, dependencies: {
+			getUpdatedState: async (_ethereum, builtInput) => ({ kind: 'simulated', value: { ...pendingTransaction.popupVisualisation.data.simulationState, rpcNetwork: ethereum.getRpcEntry(), simulationStateInput: builtInput.simulationStateInput } }),
 			visualize: async () => { started.resolve(); await release.promise; throw error },
-		}).then(() => undefined, caught => caught)
+		} }).then(() => undefined, caught => caught)
 		try {
 			await started.promise
 			await publishPendingPopupVisualisation(true)

@@ -358,7 +358,7 @@ describe('popup settings changes', () => {
 		const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
 		await setRpcList([other, selected])
 		await changeSimulationMode({ simulationMode: true, rpcNetwork: selected })
-		const owner = createSimulationServicesOwner(selected, async () => undefined, async (_ethereum, error) => { throw error })
+		const owner = createSimulationServicesOwner(selected, async () => undefined, async (_ethereum, error) => { throw error }, async (services, outcome) => await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome), async (error) => { throw error })
 		const captured = owner.getCurrent()
 		try {
 			const edited = { ...selected, minimized: !selected.minimized }
@@ -376,7 +376,7 @@ describe('popup settings changes', () => {
 		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
-		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
+		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error }, async (services, outcome) => await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome), async (error) => { throw error })
 		const captured = owner.getCurrent()
 		const edited = { ...settings.activeRpcNetwork, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
 		const otherPrimary = { ...settings.activeRpcNetwork, name: 'Existing endpoint alias', primary: true }
@@ -391,6 +391,8 @@ describe('popup settings changes', () => {
 					async entries => await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: entries }),
 					async rpcNetwork => await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork }))
 			} else await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, edited] })
+			// The replacement's refresh starts after the transition settles and runs in the background.
+			await waitForBackgroundTasks()
 			assert.deepEqual(owner.getCurrent().ethereum.getRpcEntry(), edited)
 			assert.deepEqual((await getSettings()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
 			assert.notEqual(owner.getCurrent(), captured)
@@ -399,6 +401,7 @@ describe('popup settings changes', () => {
 			const installed = owner.getCurrent()
 			const refreshed = refreshCount()
 			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, { ...edited, minimized: !edited.minimized }] })
+			await waitForBackgroundTasks()
 			assert.equal(owner.getCurrent(), installed, 'List preferences do not reinstall services')
 			assert.equal(refreshCount(), refreshed)
 		} finally { owner.getCurrent().ethereum.cleanup() }

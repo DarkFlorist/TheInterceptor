@@ -5,6 +5,7 @@ import { browserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransa
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 beforeEach(async () => {
 	await resetConfirmTransactionTestState()
@@ -20,7 +21,7 @@ test('confirmation reset restores its browser after another test installs a diff
 
 test('gas edits broadcast a JSON-transportable pending request that disables stale approval', async () => {
 	const { forceSetGasLimitForTransaction } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	try {
 		await forceSetGasLimitForTransaction(ethereum, tokenPriceService, {
@@ -43,7 +44,7 @@ test.each(['dialog view update', 'metadata refresh', 'gas edit'] as const)('%s s
 	const { forceSetGasLimitForTransaction, refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const { updateConfirmTransactionView } = await import('../../app/ts/background/windows/confirmTransaction.js')
 	const { UpdateConfirmTransactionDialog } = await import('../../app/ts/types/interceptor-messages.js')
-	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	try {
 		if (path === 'dialog view update') await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -69,7 +70,7 @@ test('the dialog state builder owns the passthrough rule and the block number so
 	const { buildConfirmTransactionDialogState } = await import('../../app/ts/background/windows/confirmTransaction.js')
 	const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 	const { getRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
-	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const visualisation = { ...createPassthroughCompleteVisualizedSimulation(9, 'done'), numberOfAddressesMadeRich: 3 }
 	let visualisationReads = 0
 	const getVisualisation = async () => { visualisationReads++; return visualisation }
@@ -112,7 +113,7 @@ test.each(['pending-state read', 'transaction construction', 'tab-state read'] a
 			}
 			return await fakeRequestHandler.jsonRpcRequest(request)
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	await setGasLimitForTransaction(pendingTransaction.transactionIdentifier, 30_000n)
 	if (pauseAt === 'tab-state read' || pauseAt === 'pending-state read') {
@@ -165,7 +166,7 @@ test.each(['Crafting', 'Simulating'] as const)('a no-op refresh leaves an initia
 			}
 			return await fakeRequestHandler.jsonRpcRequest(request)
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, transactionOrMessageCreationStatus: status }] })
 	const initial = refreshConfirmTransactionSimulation(ethereum, tokenPriceService, pendingTransaction.activeAddress, pendingTransaction.simulationMode, pendingTransaction.uniqueRequestIdentifier, pendingTransaction.transactionToSimulate)
@@ -179,7 +180,7 @@ test.each(['Crafting', 'Simulating'] as const)('a no-op refresh leaves an initia
 
 test.each(['resolved', 'replaced'] as const)('gas edit does not publish a request %s during dialog storage reads', async outcome => {
 	const { forceSetGasLimitForTransaction } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	let changed = false
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
