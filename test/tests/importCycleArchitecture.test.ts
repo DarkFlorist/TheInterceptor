@@ -140,3 +140,7 @@ test('content-script registration has no background or error-reporting module de
 	assert.deepEqual(imports.filter((module) => module.startsWith('background/')), [])
 	assert.equal(imports.includes('utils/errors.ts'), false)
 })
+
+test('website-access registration reporting stays outside storage module evaluation', () => {
+	assert.equal(importGraph.get('background/websiteAccessStorage.ts')?.includes('utils/errors.ts'), false)
+})
