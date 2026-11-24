@@ -16,43 +16,60 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import type { RpcEntries } from '../../types/rpc.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { useRuntimeMessageListener } from '../hooks/useRuntimeMessageListener.js'
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 
-const URL_HASH_KEY = 'origin'
-const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
-
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
 	websiteAccessList: Signal<WebsiteAccessArray>
 	addressAccessMetadata: Signal<AddressBookEntries>
-	selectedDomain: Signal<string | undefined>
+	selectedDomain: ReadonlySignal<string | undefined>
+	selectWebsite: SelectWebsite
+}
+
+type SelectWebsite = (websiteOrigin: string | undefined, options?: { readonly replace?: boolean }) => void
+
+const WEBSITE_ORIGIN_RADIO_NAME = 'origin'
+
+// The selected website is part of the management route: it is derived from the websiteOrigin prop and every change, including automatic ones, goes through selectWebsite so the shell's route stays authoritative.
+export type WebsiteAccessRouteProps = {
+	websiteOrigin: string | undefined
+	selectWebsite: SelectWebsite
 }
 
 const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
 
-const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
+const WebsiteAccessProvider = ({ children, websiteOrigin, selectWebsite }: WebsiteAccessRouteProps & { children: ComponentChildren }) => {
 	const websiteAccessList = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
 	const addressAccessMetadata = useSignal<AddressBookEntries>([])
-	const selectedDomain = useSignal<string | undefined>(undefined)
+	// Mirrors the websiteOrigin prop so children can subscribe to it; only this prop sync writes it, and the selection below is read-only.
+	const routeWebsiteOrigin = useSignal(websiteOrigin)
+	if (routeWebsiteOrigin.peek() !== websiteOrigin) routeWebsiteOrigin.value = websiteOrigin
+	const selectedDomain = useComputed(() => routeWebsiteOrigin.value)
+	const latestSelectWebsite = useRef(selectWebsite)
+	latestSelectWebsite.current = selectWebsite
+	const previousSearchQuery = useRef<string | undefined>(undefined)
 
 	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
 		const data = filter ? filter : { query: '' }
 		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data })
 	}
 
+	// A changed search clears the selection, but the first run keeps a website selected by the route.
 	const updateListOnSearch = () => {
-		selectedDomain.value = undefined
-		retrieveWebsiteAccess({ query: searchQuery.value })
+		const query = searchQuery.value
+		const searchChanged = previousSearchQuery.current !== undefined && previousSearchQuery.current !== query
+		previousSearchQuery.current = query
+		if (searchChanged && selectedDomain.peek() !== undefined) latestSelectWebsite.current(undefined, { replace: true })
+		retrieveWebsiteAccess({ query })
 	}
 
-  const listenForPopupMessages = () => {
-		const popupMessageListener = (msg: unknown): false => {
+	const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false// not a message we are interested in
 			const parsed = maybeParsed.value
@@ -62,38 +79,23 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 				case 'popup_websiteAccess_changed':
 					retrieveWebsiteAccess({ query: selectedDomain.value || '' })
 					break
-				case 'popup_retrieveWebsiteAccessReply':
+				case 'popup_retrieveWebsiteAccessReply': {
 					websiteAccessList.value = parsed.data.websiteAccess
 					addressAccessMetadata.value = parsed.data.addressAccessMetadata
 					if (selectedDomain.value !== undefined && parsed.data.websiteAccess.some((access) => access.website.websiteOrigin === selectedDomain.value)) break
-					selectedDomain.value = parsed.data.websiteAccess.length === 1 ? parsed.data.websiteAccess[0]?.website.websiteOrigin : undefined
+					const automaticSelection = parsed.data.websiteAccess.length === 1 ? parsed.data.websiteAccess[0]?.website.websiteOrigin : undefined
+					if (automaticSelection !== selectedDomain.value) latestSelectWebsite.current(automaticSelection, { replace: true })
 					break
+				}
 			}
 			return false
 		}
 
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	}
-
-	const listenForWindowHashChanges = () => {
-		const handleHashChange = () => {
-			const hash = window.location.hash
-			const domainInHash = hash.slice(URL_HASH_PREFIX.length)
-			selectedDomain.value = domainInHash || undefined
-		}
-
-		// initially set selectedDomain when the page loads/reloads
-		handleHashChange()
-		window.addEventListener('hashchange', handleHashChange)
-		return () => window.removeEventListener('hashchange', handleHashChange)
-	}
-
 	useSignalEffect(updateListOnSearch)
-	useEffect(listenForPopupMessages, [])
-	useEffect(listenForWindowHashChanges, [])
+	useRuntimeMessageListener(popupMessageListener)
 	useEffect(retrieveWebsiteAccess, [])
 
-	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain, selectWebsite } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
@@ -102,14 +104,9 @@ export function useWebsiteAccess() {
 	return context
 }
 
-export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>) {
-	selectedDomain.value = undefined
-	windowObject.location.hash = ''
-}
-
-export const WebsiteAccessView = () => {
+export const WebsiteAccessView = ({ websiteOrigin, selectWebsite }: WebsiteAccessRouteProps) => {
 	return (
-		<WebsiteAccessProvider>
+		<WebsiteAccessProvider websiteOrigin = { websiteOrigin } selectWebsite = { selectWebsite }>
 			<main>
 				<div class = 'layout'>
 					<header>
@@ -211,8 +208,9 @@ type WebsiteAccessOverviewProps = {
 }
 
 const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
+	const { selectWebsite } = useWebsiteAccess()
 	const handleChange = () => {
-		window.location.hash = `${ URL_HASH_KEY }:${ websiteAccess.website.websiteOrigin }`
+		selectWebsite(websiteAccess.website.websiteOrigin)
 	}
 
 	const getWebsiteStatus = () => {
@@ -225,7 +223,7 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 
 	return (
 		<li role = 'option'>
-			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
+			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { WEBSITE_ORIGIN_RADIO_NAME } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
 			<label for = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } }>
 				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
 					{ websiteIcon === undefined ? <span style = { { width: '1.5rem', aspectRatio: 1, display: 'block' } } /> : <img role = 'img' src = { websiteIcon } width = '24' height = '24' style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' /> }
@@ -262,33 +260,31 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 type Modals = { page: 'noModal' } | { page: 'ModifyAddress', state: Signal<ModifyAddressWindowState> }
 
 const WebsiteSettingsDetail = () => {
-	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
+	const { websiteAccessList, selectedDomain, selectWebsite } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
-	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
+	const closeDetails = () => { selectWebsite(undefined) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
+	function popupMessageListener(msg: unknown): false {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return false // not a message we are interested in
+		const parsed = maybeParsed.value
+		if (parsed.method === 'popup_settingsUpdated') {
+			sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 			return false
 		}
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	})
+		if (parsed.method === 'popup_requestSettingsReply') {
+			rpcEntries.value = parsed.data.rpcEntries
+			return false
+		}
+		return false
+	}
+	useRuntimeMessageListener(popupMessageListener)
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
@@ -337,7 +333,7 @@ const DetailsHeader = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websit
 }
 
 const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
-	const { selectedDomain } = useWebsiteAccess()
+	const { selectWebsite } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
 	// Only show the denied message for an explicit deny preference.
@@ -346,7 +342,7 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websi
 	const confirmOrRejectRemoval = async (returnValue: string) => {
 		if (returnValue !== 'confirm' || !websiteAccess.deepValue) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.deepValue.website.websiteOrigin } })
-		selectedDomain.value = undefined
+		selectWebsite(undefined, { replace: true })
 	}
 
 	return (
@@ -570,13 +566,13 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 }
 
 const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
-	const { selectedDomain } = useWebsiteAccess()
+	const { selectWebsite } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
 	const confirmOrRejectUpdate = async (response: 'confirm' | 'reject') => {
 		if (response !== 'confirm' || !websiteAccess.deepValue) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess', data: { websiteOrigin: websiteAccess.deepValue.website.websiteOrigin } })
-		selectedDomain.value = undefined
+		selectWebsite(undefined, { replace: true })
 	}
 
 	return (

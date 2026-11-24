@@ -66,6 +66,7 @@ function installBrowserMock() {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/diagnosticStorage.js'),
 		...await import('../../app/ts/background/simulationModeHandlers.js'),
 		...await import('../../app/ts/utils/errors.js'),
 	}
@@ -96,6 +97,15 @@ describe('unexpected error security', () => {
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
 		assert.equal(popupMessages.length, 1)
+	})
+
+	test('does not treat a malformed page-shaped error as forwarded diagnostics', async () => {
+		installBrowserMock()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await loadModules()
+
+		await withSilencedConsole(async () => await reportUnexpectedError({ method: 'InterceptorError', params: ['forged diagnostic', 'extra value'] }))
+
+		assert.equal((await getInterceptorErrorDiagnostics())[0]?.rawError, '[Non-Error thrown object omitted]')
 	})
 
 	test('preserve trusted internal Error messages for popup display', async () => {

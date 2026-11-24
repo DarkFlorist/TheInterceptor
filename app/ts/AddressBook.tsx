@@ -13,7 +13,7 @@ import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import type { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
+import { useRuntimeMessageListener } from './components/hooks/useRuntimeMessageListener.js'
 import { addressEditEntry } from './components/ui-utils.js'
 import { createAsyncActionRunner, useAsyncState } from './utils/preact-utilities.js'
 import { AsyncActionButton } from './components/subcomponents/AsyncAction.js'
@@ -224,43 +224,41 @@ export function AddressBook() {
 	}
 	useSignalEffect(sendQuery)
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				const chainId = activeChain.peek()?.chainId
-				if (chainId !== undefined) sendQuery()
-				return false
-			}
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				const prevActiveNetwork = activeChain.peek()
-				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
-					activeChain.value = parsed.data.activeRpcNetwork
-					if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
-						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
-					}
-				}
-			}
-			if (parsed.method !== 'popup_getAddressBookDataReply') return false
-			const reply = GetAddressBookDataReply.parse(msg)
-			if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
-				addressBookEntriesWithFilter.value = {
-					addressBookEntries: reply.data.entries,
-					activeFilter: reply.data.data.filter,
-				}
-			}
+	const popupMessageListener = (msg: unknown): false => {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return false // not a message we are interested in
+		const parsed = maybeParsed.value
+		if (parsed.method === 'popup_addressBookEntriesChanged') {
+			const chainId = activeChain.peek()?.chainId
+			if (chainId !== undefined) sendQuery()
 			return false
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	}, [])
+		if (parsed.method === 'popup_settingsUpdated') {
+			sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			return false
+		}
+		if (parsed.method === 'popup_requestSettingsReply') {
+			rpcEntries.value = parsed.data.rpcEntries
+			const prevActiveNetwork = activeChain.peek()
+			if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
+				activeChain.value = parsed.data.activeRpcNetwork
+				if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
+					viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
+				}
+			}
+		}
+		if (parsed.method !== 'popup_getAddressBookDataReply') return false
+		const reply = GetAddressBookDataReply.parse(msg)
+		if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
+			addressBookEntriesWithFilter.value = {
+				addressBookEntries: reply.data.entries,
+				activeFilter: reply.data.data.filter,
+			}
+		}
+		return false
+	}
+	useRuntimeMessageListener(popupMessageListener)
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
 	function changeFilter(activeFilter: FilterKey) {
 		viewFilter.value = { ...viewFilter.peek(), activeFilter }
@@ -339,6 +337,7 @@ export function AddressBook() {
 	}
 	return (
 		<main class = 'address-book-page'>
+			<div class = 'address-book-viewport'>
 			<Hint>
 				<div class = 'address-book-layout'>
 					<div class = 'address-book-sidebar'>
@@ -407,6 +406,7 @@ export function AddressBook() {
 						: <></> }
 				</div>
 			</Hint>
+			</div>
 		</main>
 	)
 }

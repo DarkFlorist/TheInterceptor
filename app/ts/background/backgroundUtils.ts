@@ -252,12 +252,18 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
-export function getHtmlFile(file: HTMLFile) {
+type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'managementView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
+// Current destinations and the retired settings filename share the manifest-specific path construction.
+function extensionHtmlPath(file: HTMLFile | 'settingsView') {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) return `/html/${ file }.html`
 	return `/html3/${ file }V3.html`
 }
+
+export const getHtmlFile = (file: HTMLFile) => extensionHtmlPath(file)
+
+// Recognition only: a migrated settings tab is navigated to managementView, never opened at this retired destination.
+export const getLegacySettingsPagePath = () => extensionHtmlPath('settingsView')
 
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
 	const manifest = browser.runtime.getManifest()

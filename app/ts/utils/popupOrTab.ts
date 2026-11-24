@@ -13,9 +13,9 @@ export type PopupOrTab = {
 	id: number
 }
 
-export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }): Promise<PopupOrTab | undefined> {
+export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }, openTab: (url: string) => Promise<browser.tabs.Tab | undefined> = async (url) => await browser.tabs.create({ url })): Promise<PopupOrTab | undefined> {
 	if (await getUseTabsInsteadOfPopup()) {
-		const tab = await browser.tabs.create({ url: createData.url })
+		const tab = await openTab(createData.url)
 		if (tab === undefined || tab.id === undefined) return undefined
 		return { type: 'tab', id: tab.id, tab }
 	}

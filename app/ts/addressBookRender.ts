@@ -1,9 +1,5 @@
-import * as preact from 'preact'
-import { AddressBook } from './AddressBook.js'
-import { ErrorBoundary } from './components/subcomponents/Error.js'
+import { getHtmlFile } from './background/backgroundUtils.js'
+import { redirectStandalonePageToManagementShell } from './utils/managementLocation.js'
 
-function rerender() {
-	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(AddressBook, {})), document.body)
-}
-
-rerender()
+// Pre-shell standalone URL kept only so saved links keep working; the page itself renders only inside the management shell.
+redirectStandalonePageToManagementShell('address-book', getHtmlFile('managementView'))

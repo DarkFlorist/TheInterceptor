@@ -58,3 +58,24 @@ describe('stored value repository', () => {
 		assert.equal(storedValue, 10)
 	})
 })
+
+
+test('recovery eligibility is explicit and cannot turn a storage failure into a default or write', async () => {
+	const corrupt = new Error('corrupt value')
+	const storageFailure = new Error('storage unavailable')
+	let failure = corrupt
+	let recoveries = 0
+	let writes = 0
+	const repository = createStoredValueRepository({
+		read: async () => { throw failure },
+		write: async () => { writes += 1 },
+		getDefault: () => 4,
+		canRecover: (error) => error === corrupt,
+		recover: async () => { recoveries += 1 },
+	})
+	assert.equal(await repository.get(), 4)
+	failure = storageFailure
+	await assert.rejects(repository.update(() => 5), (error) => error === storageFailure)
+	assert.equal(recoveries, 1)
+	assert.equal(writes, 0)
+})

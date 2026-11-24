@@ -1,8 +1,9 @@
+import * as funtypes from 'funtypes'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type IdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -17,7 +18,6 @@ import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
-import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -29,14 +29,17 @@ const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(error)
 }
 
-const idsOfOpenedTabsRepository = createStoredValueRepository({
+// Legacy per-page tab IDs are rewritten to managementTabId by migrateManagementTabId at startup.
+const idsOfOpenedTabsRepository = createStoredValueRepository<IdsOfOpenedTabs>({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
 	write: async (idsOfOpenedTabs) => { await browserStorageLocalSet({ idsOfOpenedTabs }) },
-	getDefault: () => ({ settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }),
+	getDefault: () => ({}),
+	canRecover: (error) => error instanceof funtypes.ValidationError,
+	recover: reportCorruptStoredValue('Opened tab IDs'),
 })
 
-export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
-export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
+export const getManagementTabId = async () => (await idsOfOpenedTabsRepository.get()).managementTabId
+export const setManagementTabId = async (managementTabId: number) => { await idsOfOpenedTabsRepository.set({ managementTabId }) }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
@@ -372,33 +375,6 @@ export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured
 	console.warn(rawError)
 	await browserStorageLocalRemove('latestUnexpectedError')
 	return undefined
-}
-
-const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS = 50
-const interceptorErrorDiagnosticsSemaphore = new Semaphore(1)
-
-export async function getInterceptorErrorDiagnostics(): Promise<readonly InterceptorErrorDiagnostic[]> {
-	try {
-		return (await browserStorageLocalGet('interceptorErrorDiagnostics'))?.interceptorErrorDiagnostics ?? []
-	} catch (error) {
-		console.warn('interceptorErrorDiagnostics were corrupt:')
-		console.warn(error)
-		await browserStorageLocalRemove('interceptorErrorDiagnostics')
-		return []
-	}
-}
-
-export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic) {
-	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
-		const diagnostics = await getInterceptorErrorDiagnostics()
-		await browserStorageLocalSet({
-			interceptorErrorDiagnostics: [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS),
-		})
-	})
-}
-
-export async function clearInterceptorErrorDiagnostics() {
-	await browserStorageLocalRemove('interceptorErrorDiagnostics')
 }
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []

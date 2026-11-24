@@ -253,7 +253,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 export default function Container(props: Props) {
 	const { setContainerElement, hint } = useHintContainer(props.attribute, props.template, true)
 	return (
-		<div ref = { setContainerElement } style = 'position: relative; overflow-x: hidden;'>
+		<div ref = { setContainerElement } style = 'position: relative; overflow-x: clip;'>
 			{ hint }
 			{ props.children }
 		</div>

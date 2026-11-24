@@ -9,8 +9,6 @@ export type PageDefinition = {
 	title: string
 	htmlStyle: string
 	bodyStyle?: string
-	rootMarkup?: string
-	manifestV3HtmlStyle?: string
 	manifestV3PolyfillPosition?: PolyfillPosition
 }
 
@@ -24,12 +22,13 @@ export const stylesheetFilenames = [
 	'interceptor-pages.css',
 ] as const
 
+// addressBook, simulationStack and websiteAccess only redirect saved pre-shell links into the managementView shell, which is the single place those pages render.
 export const pageDefinitions: readonly PageDefinition[] = [
 	{
 		name: 'addressBook',
 		entryName: 'addressBookRender',
 		title: 'Address Book - The Interceptor',
-		htmlStyle: 'background-color: var(--bg-color); overflow-x: hidden; overflow-y: auto;',
+		htmlStyle: 'background-color: var(--bg-color);',
 	},
 	{
 		name: 'changeChain',
@@ -60,21 +59,19 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		bodyStyle: 'width: 520px; height: 600px; background-color: var(--bg-color); min-width: 520px; margin: auto;',
 	},
 	{
-		name: 'settingsView',
-		title: 'Import settings - The Interceptor',
+		name: 'managementView',
+		title: 'Manage The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
 	},
 	{
 		name: 'simulationStack',
 		title: 'Simulation Stack - The Interceptor',
-		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
-		rootMarkup: `<div id = 'simulation-stack-root'>Loading...</div>`,
+		htmlStyle: 'background-color: var(--bg-color);',
 	},
 	{
 		name: 'websiteAccess',
 		title: 'Website Access - The Interceptor',
-		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
-		manifestV3HtmlStyle: 'background-color: var(--bg-color); overflow-y: scroll;',
+		htmlStyle: 'background-color: var(--bg-color);',
 	},
 	{
 		name: 'watchAsset',
@@ -86,12 +83,11 @@ export const pageDefinitions: readonly PageDefinition[] = [
 const polyfillScript = `<script src = '../vendor/webextension-polyfill/dist/browser-polyfill.js'></script>`
 
 export function renderExtensionPage(definition: PageDefinition, manifestVersion: 2 | 3) {
-	const htmlStyle = manifestVersion === 3 ? definition.manifestV3HtmlStyle ?? definition.htmlStyle : definition.htmlStyle
+	const htmlStyle = definition.htmlStyle
 	const bodyStyle = definition.bodyStyle ?? 'background-color: var(--bg-color); margin: auto;'
 	const stylesheets = stylesheetFilenames.map((filename) => `<link rel = 'stylesheet' type = 'text/css' href = '../css/${ filename }' />`)
 	const manifestV3PolyfillPosition = definition.manifestV3PolyfillPosition ?? 'after-root'
 	const polyfillBeforeRoot = manifestVersion === 2 || manifestV3PolyfillPosition === 'before-root'
-	const rootMarkup = definition.rootMarkup ?? '<main>Loading...</main>'
 	const entryName = definition.entryName ?? definition.name
 	return [
 		'<!DOCTYPE html>',
@@ -105,7 +101,7 @@ export function renderExtensionPage(definition: PageDefinition, manifestVersion:
 		`\t\t<meta name = 'viewport' content = 'width = device-width, initial-scale = 1' />`,
 		...stylesheets.map((stylesheet) => `\t\t${ stylesheet }`),
 		...(polyfillBeforeRoot ? [`\t\t${ polyfillScript }`] : []),
-		`\t\t${ rootMarkup }`,
+		'\t\t<main>Loading...</main>',
 		'',
 		...(!polyfillBeforeRoot ? [`\t\t${ polyfillScript }`] : []),
 		`\t\t<script type = 'module' src = '../js/${ entryName }.js'></script>`,

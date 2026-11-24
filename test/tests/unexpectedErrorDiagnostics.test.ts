@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
+import type { InterceptorErrorDiagnostic } from '../../app/ts/types/errorDiagnostics.js'
 import { installDateMock, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
@@ -67,6 +68,7 @@ async function captureConsoleCalls<T>(run: () => Promise<T>) {
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	let onMessageListener: ((message: unknown) => unknown) | undefined
 	const defaultSendMessage = async (message: RuntimeMessage) => {
 		sentMessages.push(message)
 		return undefined
@@ -74,27 +76,32 @@ function createBrowserMock() {
 	const defaultSetStorage = async (items: Record<string, unknown>) => {
 		Object.assign(storageState, items)
 	}
+	const removedStorageKeys: string[] = []
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 		if (typeof keys === 'string') return { [keys]: storageState[keys] }
 		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
+	const defaultGetStorage = async (keys?: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> => getStorageItems(keys)
 
 	const browserMock = {
 		runtime: {
 			lastError: null,
 			sendMessage: defaultSendMessage,
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
+			onMessage: { addListener(listener: (message: unknown) => unknown) { onMessageListener = listener }, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getStorageItems(keys) },
+				get: defaultGetStorage,
 				set: defaultSetStorage,
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) {
+						removedStorageKeys.push(key)
+						delete storageState[key]
+					}
 				},
 			},
 		},
@@ -128,9 +135,13 @@ function createBrowserMock() {
 
 	return {
 		sentMessages,
+		removedStorageKeys,
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
+			removedStorageKeys.length = 0
+			browserMock.storage.local.get = defaultGetStorage
 			sentMessages.length = 0
+			onMessageListener = undefined
 			browserMock.runtime.lastError = null
 			browserMock.runtime.sendMessage = defaultSendMessage
 			browserMock.storage.local.set = defaultSetStorage
@@ -140,6 +151,15 @@ function createBrowserMock() {
 		},
 		setStorageSet(set: (items: Record<string, unknown>) => Promise<void>) {
 			browserMock.storage.local.set = set
+		},
+		setStorageGet(get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>) {
+			browserMock.storage.local.get = get
+		},
+		async writeStorage(items: Record<string, unknown>) {
+			await defaultSetStorage(items)
+		},
+		emitRuntimeMessage(message: unknown) {
+			onMessageListener?.(message)
 		},
 	}
 }
@@ -151,13 +171,239 @@ async function loadModules() {
 		...await import('../../app/ts/utils/errors.js'),
 		...await import('../../app/ts/utils/requests.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/diagnosticStorage.js'),
 		...await import('../../app/ts/components/subcomponents/Error.js'),
 	}
 }
 
 const modulesPromise = loadModules()
 
+const storageDiagnostic = (index: number, rawError: string): InterceptorErrorDiagnostic => ({
+	timestamp: new Date(`2026-01-0${ index }T00:00:00.000Z`),
+	source: 'test',
+	code: `storage_${ index }`,
+	category: 'unexpected',
+	severity: 'error',
+	message: `Storage diagnostic ${ index }`,
+	cause: undefined,
+	rawError,
+	userVisible: true,
+	debugId: `storage-${ index }`,
+	details: undefined,
+})
+
 describe('unexpected error diagnostics', () => {
+	test('preserves diagnostics stored before raw errors were recorded', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		await browserMock.writeStorage({ interceptorErrorDiagnostics: [{
+			timestamp: '0x6955b900',
+			source: 'background',
+			code: 'legacy_failure',
+			category: 'unexpected',
+			severity: 'error',
+			message: 'Previously recorded failure',
+			userVisible: true,
+		}] })
+
+		const legacy = await getInterceptorErrorDiagnostics()
+		assert.equal(legacy.length, 1)
+		assert.equal(legacy[0]?.message, 'Previously recorded failure')
+		assert.equal(legacy[0]?.rawError, undefined)
+
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'new raw error'))
+		assert.deepEqual((await getInterceptorErrorDiagnostics()).map((record) => record.code), ['legacy_failure', 'storage_2'])
+	})
+
+	test('preserves the latest unexpected error stored without raw details', async () => {
+		browserMock.reset()
+		const { getLatestUnexpectedError } = await modulesPromise
+		await browserMock.writeStorage({ latestUnexpectedError: {
+			method: 'popup_UnexpectedErrorOccured',
+			data: {
+				timestamp: '0x6955b900',
+				message: 'Previously recorded popup failure',
+				source: 'popup',
+				code: 'legacy_popup_failure',
+			},
+		} })
+
+		const latest = await getLatestUnexpectedError()
+		assert.equal(latest?.data.message, 'Previously recorded popup failure')
+		assert.equal(latest?.data.rawError, undefined)
+	})
+
+	test('returns and clears stored diagnostics for the management page', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/diagnosticStorage.js')
+		const { clearDiagnostics, requestDiagnostics } = await import('../../app/ts/background/popupMessageHandlers.js')
+		await appendInterceptorErrorDiagnostic({
+			timestamp: new Date('2026-01-01T00:00:00.000Z'),
+			source: 'test',
+			code: 'test_diagnostic',
+			category: 'unexpected',
+			severity: 'error',
+			message: 'Test diagnostic',
+			cause: 'root failure',
+			userVisible: true,
+			debugId: 'debug-1',
+			details: undefined,
+		})
+
+		const requestReply = await requestDiagnostics()
+		assert.equal(requestReply.method, 'popup_requestDiagnostics')
+		assert.equal(requestReply.diagnostics.length, 1)
+		assert.equal(requestReply.diagnostics[0]?.code, 'test_diagnostic')
+
+		const clearReply = await clearDiagnostics()
+		assert.deepEqual(clearReply, { method: 'popup_clearDiagnostics', diagnostics: [] })
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+	})
+
+	test('discards stored diagnostics that fail schema validation', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics } = await modulesPromise
+		await browserMock.writeStorage({ interceptorErrorDiagnostics: 'not a diagnostic list' })
+
+		assert.deepEqual(await withSilencedConsole(async () => await getInterceptorErrorDiagnostics()), [])
+		assert.deepEqual(browserMock.removedStorageKeys, ['interceptorErrorDiagnostics'])
+	})
+
+	test('propagates a rejected diagnostics read without deleting the stored diagnostics', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics } = await modulesPromise
+		await browserMock.writeStorage({ interceptorErrorDiagnostics: [] })
+		const storageFailure = new Error('storage unavailable')
+		browserMock.setStorageGet(async () => { throw storageFailure })
+
+		await assert.rejects(getInterceptorErrorDiagnostics(), storageFailure)
+		assert.deepEqual(browserMock.removedStorageKeys, [])
+	})
+
+	test('clearing diagnostics waits for an earlier append and removes its completed result', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/diagnosticStorage.js')
+		const { clearDiagnostics } = await import('../../app/ts/background/popupMessageHandlers.js')
+		let releaseStorageWrite = () => undefined
+		const storageWriteGate = new Promise<void>((resolve) => { releaseStorageWrite = resolve })
+		let reportStorageWriteStarted = () => undefined
+		const storageWriteStarted = new Promise<void>((resolve) => { reportStorageWriteStarted = resolve })
+		browserMock.setStorageSet(async (items) => {
+			reportStorageWriteStarted()
+			await storageWriteGate
+			await browserMock.writeStorage(items)
+		})
+
+		const appendPromise = appendInterceptorErrorDiagnostic({
+			timestamp: new Date('2026-01-01T00:00:00.000Z'),
+			source: 'test',
+			code: 'concurrent_diagnostic',
+			category: 'unexpected',
+			severity: 'error',
+			message: 'Concurrent diagnostic',
+			cause: undefined,
+			userVisible: false,
+			debugId: undefined,
+			details: undefined,
+		})
+		await storageWriteStarted
+		let clearSettled = false
+		const clearPromise = clearDiagnostics().then((reply) => {
+			clearSettled = true
+			return reply
+		})
+		await Promise.resolve()
+		assert.equal(clearSettled, false)
+
+		releaseStorageWrite()
+		await appendPromise
+		assert.deepEqual(await clearPromise, { method: 'popup_clearDiagnostics', diagnostics: [] })
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+	})
+
+	test('retains complete recent records within the diagnostic storage budget', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		for (let index = 1; index <= 3; index++) await appendInterceptorErrorDiagnostic(storageDiagnostic(index, 'x'.repeat(220_000)))
+
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.deepEqual(diagnostics.map((diagnostic) => diagnostic.code), ['storage_2', 'storage_3'])
+		assert.equal(diagnostics[0]?.rawError?.length, 220_000)
+		assert.equal(diagnostics[1]?.rawError?.length, 220_000)
+	})
+
+	test('shows a storage-budget record instead of writing one oversized raw error', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(1, 'earlier error'))
+		let largestWrite = 0
+		browserMock.setStorageSet(async (items) => {
+			largestWrite = Math.max(largestWrite, JSON.stringify(items).length)
+			await browserMock.writeStorage(items)
+		})
+
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'x'.repeat(600_000)))
+		const retained = await getInterceptorErrorDiagnostics()
+		assert.deepEqual(retained.map((record) => record.code), ['storage_1', 'storage_2'])
+		const fallback = retained.at(-1)
+		assert.equal(fallback?.code, 'storage_2')
+		assert.match(fallback?.rawError ?? '', /diagnostic storage budget/u)
+		assert.equal(largestWrite < 512_000, true)
+
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(3, 'next error'))
+		assert.equal((await getInterceptorErrorDiagnostics()).at(-1)?.rawError, 'next error')
+	})
+
+	test('recovers from storage quota errors and marks an oversized raw record', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		browserMock.setStorageSet(async (items) => {
+			if (JSON.stringify(items).length > 1_500) throw new Error('QUOTA_BYTES quota exceeded')
+			await browserMock.writeStorage(items)
+		})
+		for (let index = 1; index <= 3; index++) await appendInterceptorErrorDiagnostic(storageDiagnostic(index, 'x'.repeat(500)))
+		assert.deepEqual((await getInterceptorErrorDiagnostics()).map((diagnostic) => diagnostic.code), ['storage_2', 'storage_3'])
+
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(4, 'x'.repeat(2_000)))
+		const retained = await getInterceptorErrorDiagnostics()
+		assert.deepEqual(retained.map((record) => record.code), ['storage_3', 'storage_4'])
+		const fallback = retained.at(-1)
+		assert.match(fallback?.message ?? '', /could not be stored/u)
+		assert.match(fallback?.rawError ?? '', /storage quota/u)
+
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(5, 'next error'))
+		assert.equal((await getInterceptorErrorDiagnostics()).at(-1)?.rawError, 'next error')
+	})
+
+	test('keeps recording after both fallback paths encounter a full storage quota', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		let storageIsFull = true
+		browserMock.setStorageSet(async (items) => {
+			if (storageIsFull) throw new Error('QUOTA_BYTES quota exceeded')
+			await browserMock.writeStorage(items)
+		})
+
+		assert.equal(await appendInterceptorErrorDiagnostic(storageDiagnostic(1, 'x'.repeat(600_000))), 'storage-full')
+		assert.equal(await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'small error')), 'storage-full')
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+
+		storageIsFull = false
+		assert.equal(await appendInterceptorErrorDiagnostic(storageDiagnostic(3, 'recovered error')), 'stored')
+		assert.equal((await getInterceptorErrorDiagnostics())[0]?.rawError, 'recovered error')
+	})
+
+	test('logs the raw diagnostic when storage is full without rejecting error reporting', async () => {
+		browserMock.reset()
+		browserMock.setStorageSet(async () => { throw new Error('QUOTA_BYTES quota exceeded') })
+		const { reportUnexpectedError } = await modulesPromise
+		const { consoleErrors } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
+		const storageFailure = consoleErrors.find((args) => args[0] === 'Failed to persist interceptor error diagnostic because extension storage is full.')
+		const loggedDiagnostic: unknown = storageFailure?.[1]
+		assert.ok(typeof loggedDiagnostic === 'object' && loggedDiagnostic !== null && 'rawError' in loggedDiagnostic && typeof loggedDiagnostic.rawError === 'string')
+		assert.match(loggedDiagnostic.rawError, /plain error/u)
+	})
+
 	test('recognizes expected infrastructure errors from unknown thrown values', async () => {
 		const { classifyCaughtError, createInterceptorInternalError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } = await modulesPromise
 
@@ -206,6 +452,28 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
 		assert.equal(browserMock.sentMessages.length, 0)
+	})
+
+	test('records errors whose internal classification getters throw', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const codeError = new Error('unreadable code')
+		Object.defineProperty(codeError, 'interceptorErrorCode', { get: () => { throw new Error('code getter failed') } })
+		const classificationError = new Error('unreadable classification')
+		Object.defineProperty(classificationError, 'interceptorErrorCode', { value: 'classification_failure' })
+		Object.defineProperty(classificationError, 'interceptorErrorClassification', { get: () => { throw new Error('classification getter failed') } })
+
+		await withSilencedConsole(async () => {
+			await reportUnexpectedError(codeError)
+			await reportUnexpectedError(classificationError)
+		})
+
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.deepEqual(diagnostics.map((diagnostic) => diagnostic.message), ['unreadable code', 'unreadable classification'])
+		assert.doesNotMatch(diagnostics[0]?.rawError ?? '', /code getter failed/u)
+		assert.doesNotMatch(diagnostics[1]?.rawError ?? '', /classification getter failed/u)
+		assert.match(diagnostics[0]?.rawError ?? '', /"stack":/u)
+		assert.match(diagnostics[1]?.rawError ?? '', /"stack":/u)
 	})
 
 	test('reports explicit expected-infrastructure diagnostics when suppression is disabled', async () => {
@@ -287,9 +555,9 @@ describe('unexpected error diagnostics', () => {
 		}
 	})
 
-	test('keeps forwarded InterceptorError diagnostics out of the popup message', async () => {
+	test('keeps forwarded InterceptorError diagnostics out of the popup message while preserving them in Diagnostics', async () => {
 		browserMock.reset()
-		const { reportUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
 		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
 
 		await withSilencedConsole(async () => await reportUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] }))
@@ -300,13 +568,17 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
 		assert.equal(browserMock.sentMessages.length, 1)
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics[0]?.rawError, diagnosticsMessage)
 	})
 
-	test('keeps plain unexpected errors unchanged', async () => {
+	test('preserves an unexpected error stack and cause without custom data in Diagnostics', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+		const error = Object.assign(new Error('plain error'), { cause: new Error('root failure'), code: 'E_RENDER', data: { requestId: 17 } })
+		error.stack = 'Error: plain error\n    at render (app.js:12:3)'
 
-		await withSilencedConsole(async () => await reportUnexpectedError(new Error('plain error')))
+		await withSilencedConsole(async () => await reportUnexpectedError(error))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'plain error')
@@ -324,6 +596,12 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.source, 'internal')
 		assert.equal(diagnostic?.code, 'unexpected_error')
 		assert.equal(typeof diagnostic?.debugId, 'string')
+		if (diagnostic?.rawError === undefined) throw new Error('missing raw error')
+		const rawError = JSON.parse(diagnostic.rawError)
+		assert.equal(rawError.stack, error.stack)
+		assert.equal(rawError.cause.message, 'root failure')
+		assert.equal(rawError.code, undefined)
+		assert.equal(rawError.data, undefined)
 	})
 
 	test('logs user-facing unexpected errors to the extension console with their diagnostic metadata and cause', async () => {
@@ -390,6 +668,261 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.details, '{"address":"0xabc"}')
 	})
 
+	test('preserves full diagnostic context beyond the previous length limit', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const context = 'x'.repeat(2500)
+
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure'), { details: context }))
+
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics[0]?.details, context)
+	})
+
+	test('records deeply nested causes without letting diagnostic inspection fail', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		let error = new Error('root failure')
+		for (let index = 0; index < 500; index++) error = Object.assign(new Error(`cause ${ index }`), { cause: error })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(error))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostic?.message, 'cause 499')
+		assert.match(diagnostic?.rawError ?? '', /Maximum error cause depth reached/u)
+	})
+
+	test('omits oversized custom error data and truncates details', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const error = Object.assign(new Error('large error'), { data: 'x'.repeat(100_000) })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(error, { details: 'y'.repeat(100_000) }))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.ok((diagnostic?.rawError?.length ?? 0) <= 64_000)
+		assert.equal(diagnostic?.details?.length, 16_000)
+		assert.doesNotMatch(diagnostic?.rawError ?? '', /"data":/u)
+		assert.match(diagnostic?.details ?? '', /\[Diagnostic text truncated\]$/u)
+	})
+
+	test('records the class, inherited name and message, and stack of native errors', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const error = new TypeError('bad input')
+
+		const rawError = JSON.parse(stringifyDiagnosticDetails(error) ?? '')
+
+		assert.equal(rawError.className, 'TypeError')
+		assert.equal(rawError.name, 'TypeError')
+		assert.equal(rawError.message, 'bad input')
+		assert.match(rawError.stack, /TypeError: bad input/u)
+	})
+
+	test('records the subclass of a custom error that keeps the inherited name', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		class RpcTimeoutError extends TypeError {}
+		const error = new RpcTimeoutError('rpc timed out')
+
+		const rawError = JSON.parse(stringifyDiagnosticDetails(error) ?? '')
+
+		assert.equal(rawError.className, 'RpcTimeoutError')
+		assert.equal(rawError.name, 'TypeError')
+		assert.equal(rawError.message, 'rpc timed out')
+		assert.equal(typeof rawError.stack, 'string')
+		assert.notEqual(rawError.stack, '')
+	})
+
+	test('reads an accessor-defined stack, as V8 defines it, and replaces throwing getters with a placeholder', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const accessorStack = new Error('accessor stack')
+		Object.defineProperty(accessorStack, 'stack', { configurable: true, get: () => 'Error: accessor stack\n    at v8Frame (app.js:1:1)' })
+		const throwingStack = new Error('throwing stack')
+		Object.defineProperty(throwingStack, 'stack', { configurable: true, get: () => { throw new Error('stack getter failed') } })
+
+		assert.equal(JSON.parse(stringifyDiagnosticDetails(accessorStack) ?? '').stack, 'Error: accessor stack\n    at v8Frame (app.js:1:1)')
+		const throwingSnapshot = JSON.parse(stringifyDiagnosticDetails(throwingStack) ?? '')
+		assert.equal(throwingSnapshot.message, 'throwing stack')
+		assert.equal(throwingSnapshot.stack, '[Error field could not be read]')
+	})
+
+	test('uses a fixed fallback when a value prevents inspection', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const unreadable = new Proxy({}, { getPrototypeOf: () => { throw new Error('prototype inaccessible') } })
+		assert.equal(stringifyDiagnosticDetails(unreadable), '[Error details could not be inspected]')
+	})
+
+	test('bounds deep and repeated nested context without invoking getters', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let leafReads = 0
+		let branch: unknown = { get value() { leafReads += 1; return 'leaf' } }
+		for (let depth = 0; depth < 8; depth++) branch = { first: branch, second: branch, third: branch, fourth: branch, fifth: branch }
+
+		const diagnostic = stringifyDiagnosticDetails(branch) ?? ''
+
+		assert.equal(leafReads, 0)
+		assert.ok(diagnostic.length <= 16_000)
+		assert.match(diagnostic, /Maximum context depth reached/u)
+		assert.match(diagnostic, /Repeated or circular context reference/u)
+	})
+
+	test('keeps the context that existing callers pass, omitting only getters and unserializable values', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let getterReads = 0
+		const lifecycleContext = {
+			callbackName: 'onRequestFailed',
+			request: { method: 'eth_call', params: [{ to: '0x1111111111111111111111111111111111111111', value: 10n }, 'latest'] },
+			get secret() { getterReads += 1; return 'never read' },
+			callback: () => undefined,
+		}
+
+		const lifecycleDiagnostic = JSON.parse(stringifyDiagnosticDetails(lifecycleContext) ?? '')
+
+		assert.deepEqual(lifecycleDiagnostic, {
+			callbackName: 'onRequestFailed',
+			request: { method: 'eth_call', params: [{ to: '0x1111111111111111111111111111111111111111', value: '10' }, 'latest'] },
+			secret: '[Getter omitted]',
+			callback: '[function omitted]',
+		})
+		assert.equal(getterReads, 0)
+	})
+
+	test('serializes dates through the native Date methods without running overridden accessors', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let overriddenCalls = 0
+		const recordedAt = new Date('2026-01-02T03:04:05.000Z')
+		Object.defineProperty(recordedAt, 'getTime', { get: () => { overriddenCalls += 1; return () => Number.NaN } })
+		Object.defineProperty(recordedAt, 'toISOString', { get: () => { overriddenCalls += 1; return () => 'forged' } })
+		const invalidDate = new Date(Number.NaN)
+		Object.defineProperty(invalidDate, 'getTime', { value: () => { overriddenCalls += 1; return 0 } })
+
+		assert.equal(stringifyDiagnosticDetails({ recordedAt, invalidDate }), '{"recordedAt":"2026-01-02T03:04:05.000Z","invalidDate":"[Invalid Date]"}')
+		assert.equal(overriddenCalls, 0)
+	})
+
+	test('marks own properties and entries whose value is undefined instead of dropping them', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+
+		assert.equal(stringifyDiagnosticDetails({ debugId: undefined, params: [undefined, 1] }), '{"debugId":"[undefined]","params":["[undefined]",1]}')
+	})
+
+	test('keeps a caller property named like the truncation marker when an object exceeds the entry limit', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const context: Record<string, unknown> = { '[omitted]': 'caller value', '[omitted]2': 'second caller value' }
+		for (let index = 0; index < 50; index++) context[`field${ index }`] = index
+
+		const diagnostic = JSON.parse(stringifyDiagnosticDetails(context) ?? '')
+
+		assert.equal(diagnostic['[omitted]'], 'caller value')
+		assert.equal(diagnostic['[omitted]2'], 'second caller value')
+		assert.equal(diagnostic['[omitted]3'], '2 more properties omitted')
+	})
+
+	test('keeps a caller-supplied __proto__ field instead of dropping it through the prototype setter', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+
+		assert.equal(stringifyDiagnosticDetails(JSON.parse('{"__proto__":{"context":1},"ok":2}')), '{"__proto__":{"context":1},"ok":2}')
+	})
+
+	test('serializes Map and Set context through native iteration with bounded entries', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let overriddenCalls = 0
+		const pending = new Map<string, bigint>([['0xabc', 1n]])
+		Object.defineProperty(pending, 'entries', { value: () => { overriddenCalls += 1; return [].values() } })
+		const many = new Set(Array.from({ length: 60 }, (_, index) => index))
+
+		const diagnostic = JSON.parse(stringifyDiagnosticDetails({ pending, many }) ?? '')
+
+		assert.deepEqual(diagnostic.pending, [['0xabc', '1']])
+		assert.equal(diagnostic.many.length, 51)
+		assert.equal(diagnostic.many[50], '[More entries omitted]')
+		assert.equal(overriddenCalls, 0)
+	})
+
+	test('stores caller context such as an explorer API URL with the reported error', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('explorer lookup failed'), { details: { address: '0xabc', apiUrl: 'https://api.etherscan.io/api' } }))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostic?.details, '{"address":"0xabc","apiUrl":"https://api.etherscan.io/api"}')
+	})
+
+	test('bounds repeated and distinct AggregateError children before serializing them', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let descriptorReads = 0
+		let shared: Error = new Proxy(new Error('shared leaf'), {
+			getOwnPropertyDescriptor(target, key) {
+				descriptorReads += 1
+				return Reflect.getOwnPropertyDescriptor(target, key)
+			},
+		})
+		for (let depth = 0; depth < 4; depth++) shared = new AggregateError(Array(10).fill(shared), `level ${ depth }`)
+
+		const sharedText = stringifyDiagnosticDetails(shared)
+		assert.ok(descriptorReads < 20)
+		assert.ok((sharedText?.length ?? 0) <= 16_000)
+		assert.match(sharedText ?? '', /Repeated or circular error reference/u)
+
+		const manyErrors = new AggregateError(Array.from({ length: 10 }, (_, branch) =>
+			new AggregateError(Array.from({ length: 10 }, (_, index) => new Error(`${ branch }-${ index }: ${ 'x'.repeat(8_000) }`)), 'branch')), 'root')
+		const distinctText = stringifyDiagnosticDetails(manyErrors)
+		assert.ok((distinctText?.length ?? 0) <= 16_000)
+		assert.match(distinctText ?? '', /Remaining errors omitted/u)
+	})
+
+	test('persists a report when the original error cannot be inspected for console details', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const unreadable = new Proxy({}, { getPrototypeOf: () => { throw new Error('prototype inaccessible') } })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(unreadable))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostic?.rawError, '[Error details could not be inspected]')
+		assert.equal(diagnostic?.code, 'unexpected_error')
+	})
+
+	test('keeps standard AggregateError fields without inspecting hidden or custom fields', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const error = new AggregateError([new Error('first failure')], 'batch failed')
+		let getterReads = 0
+		Object.defineProperty(error, 'hiddenCode', { value: 'E_BATCH' })
+		Object.defineProperty(error, 'unreadable', { enumerable: true, get: () => { getterReads += 1; throw new Error('getter failed') } })
+		Object.defineProperty(error, 'data', { value: { value: 'kept', toJSON: () => { throw new Error('toJSON failed') } } })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(error))
+
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		if (diagnostics[0]?.rawError === undefined) throw new Error('missing raw error')
+		const rawError = JSON.parse(diagnostics[0].rawError)
+		assert.equal(rawError.message, 'batch failed')
+		assert.match(rawError.stack, /AggregateError: batch failed/u)
+		assert.equal(rawError.errors[0].message, 'first failure')
+		assert.equal(rawError.hiddenCode, undefined)
+		assert.equal(rawError.unreadable, undefined)
+		assert.equal(rawError.data, undefined)
+		assert.equal(getterReads, 0)
+	})
+
+	test('records a raw error even when its message getter throws', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
+		const error = new Error('initial message')
+		error.stack = 'Error: initial message\n    at render (app.js:12:3)'
+		Object.defineProperty(error, 'message', { get: () => { throw new Error('message getter failed') } })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(error))
+
+		const diagnostic = (await getInterceptorErrorDiagnostics())[0]
+		if (diagnostic?.rawError === undefined) throw new Error('missing raw error')
+		const rawError = JSON.parse(diagnostic.rawError)
+		assert.equal(rawError.message, '[Error field could not be read]')
+		assert.equal(rawError.stack, error.stack)
+		assert.equal((await getLatestUnexpectedError())?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
+	})
+
 	test('keeps forwarded popup error message as diagnostic cause', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await modulesPromise
@@ -420,6 +953,45 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.source, 'popup')
 		assert.equal(diagnostic?.code, 'render_error')
 		assert.equal(diagnostic?.debugId, 'popup-1234')
+	})
+
+	test('forwards popup listener stack and cause without custom fields', async () => {
+		browserMock.reset()
+		const { noReplyExpectingBrowserRuntimeOnMessageListener } = await import('../../app/ts/utils/browser.js')
+		const { UnexpectedErrorOccured } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const { reportUnexpectedErrorInWindow } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { getInterceptorErrorDiagnostics } = await modulesPromise
+		const error = Object.assign(new Error('Popup listener failed'), { cause: new Error('root failure'), code: 'E_POPUP' })
+		error.stack = 'Error: Popup listener failed\n    at listener (popup.js:12:3)'
+		noReplyExpectingBrowserRuntimeOnMessageListener(async () => { throw error })
+
+		browserMock.emitRuntimeMessage({ method: 'test_message' })
+		for (let index = 0; index < 10 && browserMock.sentMessages.length === 0; index++) await Promise.resolve()
+		const forwarded = UnexpectedErrorOccured.parse(browserMock.sentMessages[0])
+		await withSilencedConsole(async () => await reportUnexpectedErrorInWindow(forwarded))
+
+		const diagnostic = (await getInterceptorErrorDiagnostics())[0]
+		if (diagnostic?.rawError === undefined) throw new Error('missing forwarded raw error')
+		const rawError = JSON.parse(diagnostic.rawError)
+		assert.equal(rawError.stack, error.stack)
+		assert.equal(rawError.cause.message, 'root failure')
+		assert.equal(rawError.code, undefined)
+		assert.equal(diagnostic.cause, 'Popup listener failed')
+	})
+
+	test('logs the original popup error if forwarding its raw diagnostic fails', async () => {
+		browserMock.reset()
+		const { noReplyExpectingBrowserRuntimeOnMessageListener } = await import('../../app/ts/utils/browser.js')
+		const error = new Error('Popup listener failed')
+		browserMock.setSendMessage(async () => { throw new Error('transport failed') })
+		noReplyExpectingBrowserRuntimeOnMessageListener(async () => { throw error })
+
+		const { consoleErrors } = await captureConsoleCalls(async () => {
+			browserMock.emitRuntimeMessage({ method: 'test_message' })
+			for (let index = 0; index < 20; index++) await Promise.resolve()
+		})
+		assert.equal(consoleErrors.some((args) => args.includes(error)), true)
+		assert.equal(consoleErrors.some((args) => args[0] === 'Failed to forward popup listener error:'), true)
 	})
 
 	test('records local recovery diagnostics without notifying the popup', async () => {
