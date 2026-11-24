@@ -6,8 +6,10 @@ export type ContentScriptRegistrationDependencies = {
 }
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
+type DisabledSiteOrigin = { readonly url: URL, readonly hasExplicitScheme: boolean }
+
 // A disabled site's origin as a URL, or 'file' for local files, or undefined for a stored origin that is not a plain http(s) or file origin.
-function parseDisabledSiteOrigin(origin: string): { readonly url: URL, readonly hasExplicitScheme: boolean } | 'file' | undefined {
+function parseDisabledSiteOrigin(origin: string): DisabledSiteOrigin | 'file' | undefined {
 	if (origin === '') return 'file'
 	try {
 		const hasExplicitScheme = origin.includes('://')
@@ -24,18 +26,30 @@ function parseDisabledSiteOrigin(origin: string): { readonly url: URL, readonly 
 	}
 }
 
+// A URL omits its scheme's default port. A stored host with port 80 therefore comes from https, and one with port 443 from http; neither should disable the other scheme's portless host.
+function getDisabledSiteUrls(origin: string, parsed: DisabledSiteOrigin) {
+	if (parsed.hasExplicitScheme) return [parsed.url]
+	const hasPort = /:\d+$/.test(origin)
+	return ['http', 'https'].flatMap((scheme) => {
+		const url = new URL(`${ scheme }://${ origin }`)
+		return hasPort && url.port === '' ? [] : [url]
+	})
+}
+
+function formatManifestV3ExcludeMatch(url: URL, scheme: string) {
+	const hostname = url.hostname
+	const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
+	const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
+	return `${ scheme }://${ hostPattern }/*`
+}
+
 // MV3 excludes a disabled site's subdomains too (#1701), and a pattern without a port covers every port of its host.
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	const parsed = parseDisabledSiteOrigin(origin)
 	if (parsed === undefined) return []
 	if (parsed === 'file') return ['file:///*']
-	const { url, hasExplicitScheme } = parsed
-	const hostname = url.hostname
-	const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-	const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-	if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-	if (url.port === '') return [`*://${ hostPattern }/*`]
-	return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
+	if (!parsed.hasExplicitScheme && !/:\d+$/.test(origin)) return [formatManifestV3ExcludeMatch(parsed.url, '*')]
+	return getDisabledSiteUrls(origin, parsed).map((url) => formatManifestV3ExcludeMatch(url, url.protocol.slice(0, -1)))
 }
 
 // Before it moved to a registration, MV2 compared a navigation's exact host and port with the disabled sites. Match patterns cannot keep that scope, since a pattern without a port matches every port of its host, so MV2 excludes each disabled site with globs on the URL text, where a default port is absent and any other port follows the host.
@@ -43,13 +57,7 @@ function getManifestV2ExcludeGlobsForOrigin(origin: string) {
 	const parsed = parseDisabledSiteOrigin(origin)
 	if (parsed === undefined) return []
 	if (parsed === 'file') return ['file:///*']
-	if (parsed.hasExplicitScheme) return [`${ parsed.url.protocol.slice(0, -1) }://${ parsed.url.host }/*`]
-	// A URL never shows its scheme's default port, so a stored host with port 80 comes from an https URL and one with port 443 from an http URL.
-	const hasPort = /:\d+$/.test(origin)
-	return ['http', 'https'].flatMap((scheme) => {
-		const url = new URL(`${ scheme }://${ origin }`)
-		return hasPort && url.port === '' ? [] : [`${ scheme }://${ url.host }/*`]
-	})
+	return getDisabledSiteUrls(origin, parsed).map((url) => `${ url.protocol.slice(0, -1) }://${ url.host }/*`)
 }
 
 export const getManifestV3ExcludeMatches = (origins: readonly string[]) => [...new Set(origins.flatMap(getManifestV3ExcludeMatchesForOrigin))]
