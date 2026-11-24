@@ -26,7 +26,7 @@ export function useRpcConnectionsList(): ReadonlySignal<RpcEntries> {
 				if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, rpcListUpdateVersion.current)) entries.value = initialEntries
 			} catch(error: unknown) {
 				await reportUnexpectedError(error, {
-					source: 'settingsView',
+					source: 'rpcConnectionsList',
 					code: 'rpc_list_initial_load_failed',
 					displayMessage: 'Failed to load RPC connections.',
 					suppressExpectedHandledErrors: false,
