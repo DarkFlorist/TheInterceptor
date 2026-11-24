@@ -35,7 +35,7 @@ import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
-import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from './rpcParseFailureReply.js'
+import { getInvalidRpcParamsReply } from './rpcParseFailureReply.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -103,8 +103,8 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		const methodSpecificReply = getMethodSpecificParseFailureReply(request)
-		if (methodSpecificReply !== undefined) return replyWithoutFollowUp(methodSpecificReply)
+		// Preserve the existing pre-policy rejection of these non-signing wallet methods; all other malformed requests pass through Safe policy first.
+		if (request.method === 'wallet_watchAsset' || request.method === 'wallet_getCapabilities') return replyWithoutFollowUp(getInvalidRpcParamsReply(request))
 		const safePolicyReply = getSafeModeRpcPolicyReply({
 			rawRequest: request,
 			confirmation,
@@ -118,7 +118,7 @@ async function handleRPCRequest(
 		if (safePolicyReply !== undefined) return replyWithoutFollowUp(safePolicyReply)
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
-		// Return stable parameter guidance after applying the Safe signing policy.
+		// Return the stable invalid-params reply after applying the Safe signing policy.
 		if (requestCodec !== undefined) return replyWithoutFollowUp(getInvalidRpcParamsReply(request))
 		// Without a method codec the method is not supported here (wallet_revokePermissions is handled before handleRPCRequest), so forward it to the wallet if a signer is available
 		if (forwardToSigner) return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })

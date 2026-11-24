@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { test, spyOn } from 'bun:test'
-import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from '../../app/ts/background/rpcParseFailureReply.js'
+import { getInvalidRpcParamsReply } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumJsonRpcRequest, findEthereumJsonRpcRequestCodec } from '../../app/ts/types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 
@@ -12,7 +12,7 @@ const createRequest = (method: string, params?: unknown[]): InterceptedRequest =
 	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 })
 
-test('returns owned parameter guidance without validating the request again', () => {
+test('returns a stable method-specific error without validating the request again', () => {
 	const request = createRequest('eth_getBalance', ['0x1234', 'latest'])
 	const codec = findEthereumJsonRpcRequestCodec(request.method)
 	if (codec === undefined) throw new Error('Missing balance codec')
@@ -22,13 +22,13 @@ test('returns owned parameter guidance without validating the request again', ()
 	try {
 		assert.deepEqual(getInvalidRpcParamsReply(request), {
 			type: 'result', method: request.method,
-			error: { code: -32602, message: 'Invalid eth_getBalance parameters: Expected [address, block tag].' },
+			error: { code: -32602, message: 'Invalid eth_getBalance parameters.' },
 		})
 		assert.equal(parseSpy.mock.calls.length, 0)
 	} finally { parseSpy.mockRestore() }
 })
 
-test('uses a stable generic message for methods without parameter guidance', () => {
+test('uses stable messages for other method names', () => {
 	const reply = getInvalidRpcParamsReply(createRequest('eth_getCode'))
 	assert.deepEqual(reply, { type: 'result', method: 'eth_getCode', error: { code: -32602, message: 'Invalid eth_getCode parameters.' } })
 	assert.equal(getInvalidRpcParamsReply(createRequest('constructor')).error?.message, 'Invalid constructor parameters.')
@@ -45,9 +45,8 @@ test('dispatch map selects the original union member for every method', () => {
 
 test('keeps existing method-specific errors', () => {
 	for (const method of ['wallet_watchAsset', 'wallet_getCapabilities']) {
-		assert.deepEqual(getMethodSpecificParseFailureReply(createRequest(method, [1])), {
+		assert.deepEqual(getInvalidRpcParamsReply(createRequest(method, [1])), {
 			type: 'result', method, error: { code: -32602, message: `Invalid ${ method } parameters.` },
 		})
 	}
-	assert.equal(getMethodSpecificParseFailureReply(createRequest('eth_unknown')), undefined)
 })

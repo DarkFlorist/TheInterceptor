@@ -578,10 +578,10 @@ describe('background eth_accounts', () => {
 		const requestUnionParse = spyOn(EthereumJsonRpcRequest, 'safeParse')
 		try {
 			for (const [requestId, method, params, message] of [
-				[1, 'eth_getBalance', [address, 'latest', '0x1'], 'Invalid eth_getBalance parameters: Expected [address, block tag].'],
-				[2, 'eth_sendTransaction', [{ from: address, to: '0x1234', value: '0x1' }], 'Invalid eth_sendTransaction parameters: Expected [transaction] with valid transaction fields and addresses.'],
-				[3, 'eth_getBlockByNumber', ['newest', false], 'Invalid eth_getBlockByNumber parameters: Expected [block tag, include transactions boolean].'],
-				[4, 'eth_subscribe', ['newBlocks'], 'Invalid eth_subscribe parameters: Expected one subscription type: newHeads, logs, newPendingTransactions, or syncing.'],
+				[1, 'eth_getBalance', [address, 'latest', '0x1'], 'Invalid eth_getBalance parameters.'],
+				[2, 'eth_sendTransaction', [{ from: address, to: '0x1234', value: '0x1' }], 'Invalid eth_sendTransaction parameters.'],
+				[3, 'eth_getBlockByNumber', ['newest', false], 'Invalid eth_getBlockByNumber parameters.'],
+				[4, 'eth_subscribe', ['newBlocks'], 'Invalid eth_subscribe parameters.'],
 			] as const) {
 				const warnings = await captureConsoleWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,

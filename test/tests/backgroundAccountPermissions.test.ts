@@ -2832,11 +2832,11 @@ describe('background eth_accounts', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const unsupportedParams: [unknown[], string][] = [
-			[[], 'Invalid wallet_revokePermissions parameters: Expected [{ eth_accounts: {} }] with no additional permissions or fields.'],
-			[[{ wallet_switchEthereumChain: {} }], 'Invalid wallet_revokePermissions parameters: Expected [{ eth_accounts: {} }] with no additional permissions or fields.'],
-			[[{ wallet_snap: {} }], 'Invalid wallet_revokePermissions parameters: Expected [{ eth_accounts: {} }] with no additional permissions or fields.'],
-			[[{ eth_accounts: {}, wallet_snap: {} }], 'Invalid wallet_revokePermissions parameters: Expected [{ eth_accounts: {} }] with no additional permissions or fields.'],
-			[[{ eth_accounts: { foo: 1 } }], 'Invalid wallet_revokePermissions parameters: Expected [{ eth_accounts: {} }] with no additional permissions or fields.'],
+			[[], 'Invalid wallet_revokePermissions parameters.'],
+			[[{ wallet_switchEthereumChain: {} }], 'Invalid wallet_revokePermissions parameters.'],
+			[[{ wallet_snap: {} }], 'Invalid wallet_revokePermissions parameters.'],
+			[[{ eth_accounts: {}, wallet_snap: {} }], 'Invalid wallet_revokePermissions parameters.'],
+			[[{ eth_accounts: { foo: 1 } }], 'Invalid wallet_revokePermissions parameters.'],
 		]
 		for (const [index, [params, expectedMessage]] of unsupportedParams.entries()) {
 			const requestId = 13 + index
