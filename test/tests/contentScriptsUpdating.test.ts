@@ -145,6 +145,19 @@ describe('content script injection strategy', () => {
 		])
 	})
 
+	test('keeps default-numbered stored ports scoped to their non-default scheme', async () => {
+		const { getManifestV3ExcludeMatches } = await import('../../app/ts/utils/contentScriptsRegistration.js')
+		for (const { origin, expected } of [
+			{ origin: 'example.com:80', expected: ['https://*.example.com:80/*'] },
+			{ origin: 'example.com:443', expected: ['http://*.example.com:443/*'] },
+			{ origin: 'localhost:80', expected: ['https://localhost:80/*'] },
+			{ origin: 'localhost:443', expected: ['http://localhost:443/*'] },
+			{ origin: '127.0.0.1:80', expected: ['https://127.0.0.1:80/*'] },
+			{ origin: '[::1]:443', expected: ['http://[::1]:443/*'] },
+			{ origin: 'example.com:8443', expected: ['http://*.example.com:8443/*', 'https://*.example.com:8443/*'] },
+		]) assert.deepEqual(getManifestV3ExcludeMatches([origin]), expected, origin)
+	})
+
 	test('rejects wildcard hostnames in manifest v3 exclusions', async () => {
 		await installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
