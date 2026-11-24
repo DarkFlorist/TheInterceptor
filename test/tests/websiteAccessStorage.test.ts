@@ -13,10 +13,11 @@ test('settings and access getters share corruption repair and preserve valid acc
 		await mock.browser.storage.local.set({ websiteAccess: 'corrupt' })
 		assert.deepEqual(await withSilencedConsole(read), [])
 		assert.deepEqual(await mock.browser.storage.local.get('websiteAccess'), { websiteAccess: [] })
-		await mock.browser.storage.local.set({ websiteAccess: [{ website: { websiteOrigin: 'example.test' }, interceptorDisabled: true }] })
+		await mock.browser.storage.local.set({ websiteAccess: [{ website: { websiteOrigin: 'example.test', icon: 'https://unsafe.test/icon.png' }, interceptorDisabled: true }] })
 		const entries = await read()
 		assert.equal(entries[0]?.website.websiteOrigin, 'example.test')
 		assert.equal(entries[0]?.interceptorDisabled, true)
+		assert.equal(entries[0]?.website.icon, undefined)
 	}
 })
 
