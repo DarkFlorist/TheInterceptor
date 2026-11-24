@@ -6,8 +6,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from '../storageVariables.js'
-import { getSettings } from '../settings.js'
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { syncWebsiteApprovalsWithSettings } from '../websiteAccessReconciliation.js'
 
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from '../safeStackHandlers.js'
 
@@ -72,7 +71,7 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await syncWebsiteApprovalsWithSettings(websiteTabConnections, { promptForAccessesIfNeeded: true })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }

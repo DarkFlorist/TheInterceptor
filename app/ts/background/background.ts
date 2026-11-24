@@ -1,16 +1,19 @@
+import { withSettingsTransitionLock } from './settingsTransitionLock.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings } from './settings.js'
-import { updateWebsiteAccess } from './websiteAccessStorage.js'
+import { getWebsiteAccess, updateWebsiteAccess } from './websiteAccessStorage.js'
+import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser, type ReplayInterceptedRequest } from './windows/interceptorAccess.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
+import { clearWebsiteConnectionIntent, refuseAccess, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { finalizeWebsiteAccessChange, persistWebsiteAccessChange } from './websiteAccessReconciliation.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -24,7 +27,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -60,6 +63,7 @@ const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.s
 
 async function handleRPCRequest(
 	simulationServicesOwner: SimulationServicesOwner,
+	services: SimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -71,8 +75,8 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Select one execution pair after admission; lazy simulation preparation uses this same pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+	// Admission pins this pair before asynchronous Safe preparation; execution never reads a newer owner pair.
+	const { ethereum, tokenPriceService } = services
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
@@ -291,24 +295,24 @@ function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabC
 }
 
 async function persistApprovedAccountsForAccountRequest(
-	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	request: InterceptedRequest,
 	website: Website,
+	requestSettings: Settings,
 	resolved: RPCReply,
 	activeAddress: bigint | undefined,
 ): Promise<void> {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
 
-	const settings = await getSettings()
+	// Entries come from the chain the request ran on; approvals are re-read so a grant stored while the request ran is not written twice.
+	const websiteAccess = await getWebsiteAccess()
 	for (const account of accounts) {
-		const addressEntry = await getActiveAddressEntryForChain(account, settings.activeRpcNetwork.chainId)
-		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
+		const addressEntry = await getActiveAddressEntryForChain(account, requestSettings.activeRpcNetwork.chainId)
+		const existingApprovalState = getWebsiteAddressAccessApprovalState(websiteAccess, website.websiteOrigin, addressEntry)
 		if (addressEntry.askForAddressAccess === false) continue
 		if (existingApprovalState === 'hasAccess') continue
 		await persistWebsiteAccessChange(
-			simulationServicesOwner,
 			websiteTabConnections,
 			website,
 			true,
@@ -319,7 +323,6 @@ async function persistApprovedAccountsForAccountRequest(
 }
 
 async function revokeWebsitePermissions(
-	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	websiteOrigin: string,
 ) {
@@ -333,7 +336,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettings(), false)
+	await finalizeWebsiteAccessChange(websiteTabConnections, false)
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
@@ -356,25 +359,53 @@ async function getActiveAddressForRequest(settings: Settings, websiteTabConnecti
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
+// Resolves a request's active address entry from settings. A context keeps the resolver that produced its address, so a request that waited reads the same entry again rather than another entry for the same address.
+type ReadActiveAddress = (settings: Settings) => Promise<AddressBookEntry | undefined>
+
+// Access is decided on one settings/address context. After metadata and Safe preparation, final admission rechecks that context under the settings transition lock and redecides access if it changed.
+type InterceptedRequestContext = {
+	readonly settings: Settings
+	readonly activeAddress: AddressBookEntry | undefined
+	readonly readActiveAddress: ReadActiveAddress
+}
+
+async function readInterceptedRequestContext(websiteTabConnections: WebsiteTabConnections, tabId: number): Promise<InterceptedRequestContext> {
+	const readActiveAddress: ReadActiveAddress = async (settings) => await getActiveAddressForRequest(settings, websiteTabConnections, tabId)
+	const settings = await getSettings()
+	return { settings, activeAddress: await readActiveAddress(settings), readActiveAddress }
+}
+
+// The wallet entry of the signer's first account; Safes are left out, as they are for any wallet-selected address.
+const getFirstSignerAddress = async (firstSignerAccount: bigint, settings: Settings) => await getWalletActiveAddressEntryForChain(firstSignerAccount, settings.activeRpcNetwork.chainId)
+
+// Resolves the first signer account the tab has now, so a request that waited follows a wallet account switch. The account came from the signer, so it only counts while the signer's state is confirmed, in every mode; otherwise nothing resolves and the request decides again.
+const readCurrentFirstSignerAddress = (websiteTabConnections: WebsiteTabConnections, tabId: number): ReadActiveAddress => async (settings) => {
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	if (signerStateToken === undefined) return undefined
+	const firstSignerAccount = (await getTabState(tabId)).signerAccounts[0]
+	const firstSignerAddress = firstSignerAccount === undefined ? undefined : await getFirstSignerAddress(firstSignerAccount, settings)
+	return isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) ? firstSignerAddress : undefined
+}
+
 async function discoverAccountRequestAddressContext(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	websiteOrigin: string,
+	initialContext: InterceptedRequestContext,
 ) {
-	const settings = await getSettings()
-	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
-	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
-	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
-	const websiteAccess = getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin)
-	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	const withoutSignerRequest = { requestContext: initialContext, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (initialContext.activeAddress !== undefined) return withoutSignerRequest
+	if (!isAccountConnectionMethod(request.method)) return withoutSignerRequest
+	const websiteAccess = getWebsiteAccessApprovalState(initialContext.settings.websiteAccess, websiteOrigin)
+	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return withoutSignerRequest
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
-	const refreshedSettings = await getSettings()
-	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
-	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
-	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getWalletActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
-	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	const refreshedContext = await readInterceptedRequestContext(websiteTabConnections, socket.tabId)
+	if (refreshedContext.activeAddress !== undefined) return { requestContext: refreshedContext, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	const firstSignerAccount = signerAccountsResult.accounts[0]
+	if (firstSignerAccount === undefined) return { requestContext: refreshedContext, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	return { requestContext: { settings: refreshedContext.settings, activeAddress: await getFirstSignerAddress(firstSignerAccount, refreshedContext.settings), readActiveAddress: readCurrentFirstSignerAddress(websiteTabConnections, socket.tabId) }, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 }
 
 const isSignerProviderDisconnectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_PROVIDER_DISCONNECTED
@@ -396,14 +427,13 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 }
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
-	const initialSettings = await getSettings()
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
-		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
+		const result = await revokeWebsitePermissions(websiteTabConnections, websiteOrigin)
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
-	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
+	const initialContext = await readInterceptedRequestContext(websiteTabConnections, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
@@ -411,16 +441,17 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (port === undefined) return
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
-			: getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin)
-		const providerCallbackActiveAddress = initialActiveAddress !== undefined && getWebsiteAddressAccessApprovalState(initialSettings.websiteAccess, websiteOrigin, initialActiveAddress) === 'hasAccess'
-			? initialActiveAddress.address
+			: getWebsiteAccessApprovalState(initialContext.settings.websiteAccess, websiteOrigin)
+		const providerCallbackActiveAddress = initialContext.activeAddress !== undefined && getWebsiteAddressAccessApprovalState(initialContext.settings.websiteAccess, websiteOrigin, initialContext.activeAddress) === 'hasAccess'
+			? initialContext.activeAddress.address
 			: undefined
 		const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	const { requestContext, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialContext)
+	const { settings, activeAddress } = requestContext
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
@@ -460,19 +491,25 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (signerAccounts.length === 0) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedSettings = await getSettings()
-		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
+		// The signer round trip can change settings and the active address; continue on a fresh context.
+		const refreshedContext = await readInterceptedRequestContext(websiteTabConnections, socket.tabId)
+		const refreshedSettings = refreshedContext.settings
+		let refreshedActiveAddress = refreshedContext.activeAddress
+		let readRefreshedActiveAddress = refreshedContext.readActiveAddress
 		if (refreshedActiveAddress === undefined) {
 			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 			if (signerStateToken !== undefined) {
-				const firstSignerAddress = await getWalletActiveAddressEntryForChain(firstSignerAccount, refreshedSettings.activeRpcNetwork.chainId)
-				if (isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) refreshedActiveAddress = firstSignerAddress
+				const firstSignerAddress = await getFirstSignerAddress(firstSignerAccount, refreshedSettings)
+				if (isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) {
+					refreshedActiveAddress = firstSignerAddress
+					readRefreshedActiveAddress = readCurrentFirstSignerAddress(websiteTabConnections, socket.tabId)
+				}
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
-		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus)
+		return await executeOnceWebsiteLoads(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus, { settings: refreshedSettings, activeAddress: refreshedActiveAddress, readActiveAddress: readRefreshedActiveAddress })
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
@@ -489,48 +526,87 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	switch (access) {
 		case 'askAccess': {
 			const website = await websitePromise
-			const currentSettings = await getSettings()
-			return await gateKeepRequestBehindAccessDialog(simulationServicesOwner, websiteTabConnections, socket, request, website, activeAddress, currentSettings, publishRpcConnectionStatus)
+			return await requestAccessFromUser(websiteTabConnections, socket, website, request, activeAddress, settings, activeAddress, createInterceptedRequestReplay(simulationServicesOwner, websiteTabConnections, publishRpcConnectionStatus))
 		}
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
-			const website = await websitePromise
-			return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+			return await executeOnceWebsiteLoads(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus, { ...requestContext, activeAddress })
 		}
 		default: assertNever(access)
 	}
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+// What a request was decided and executes on: the network, the mode and the active addresses it executes with, and the access policy's answers for this website and the request's address entry. Comparing the policy's answers rather than the fields it reads keeps every policy input in, including the address's own askForAddressAccess. The execution selection is resolved by the same helper before preparation and admission, so Safe ownership and wallet signer changes are compared through their actual policy results. The popup's open page and other websites' entries are left out, so changes to them do not make a waiting request decide again.
+function getRequestDecisionFingerprint(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry, selection: RequestExecutionSelection) {
+	return stringifyJSONWithBigInts([
+		settings.activeRpcNetwork,
+		settings.simulationMode,
+		settings.activeSimulationAddress,
+		settings.activeSigningSafeAddress,
+		settings.useSignersAddressAsActiveAddress,
+		activeAddress.address,
+		selection,
+		getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin),
+		getWebsiteAddressAccessApprovalState(settings.websiteAccess, websiteOrigin, activeAddress),
+	])
+}
+
+type RequestExecutionSelection = {
+	readonly safeSigningMode: boolean
+	readonly simulationOverlayEnabled: boolean
+	readonly walletSelectedSafeSigner: bigint | undefined
+}
+
+// Resolve the same execution selection before preparation and at final admission. Compare policy results rather than duplicating the Safe/owner eligibility inputs in the fingerprint.
+async function readRequestExecutionSelection(settings: Settings, activeAddress: AddressBookEntry, tabId: number): Promise<RequestExecutionSelection> {
+	const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
+	const signerTabState = await getTabState(tabId)
+	const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+	return {
+		safeSigningMode,
+		simulationOverlayEnabled: settings.simulationMode || safeSigningMode,
+		walletSelectedSafeSigner: safeSigningMode ? getWalletSelectedAccount(signerTabState) : undefined,
+	}
+}
+
+// Metadata and Safe preparation may outlive a settings transition. Final admission rechecks the decision under the transition lock, then starts execution with the same services used during preparation.
+async function executeOnceWebsiteLoads(port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus, context: InterceptedRequestContext & { readonly activeAddress: AddressBookEntry }) {
+	const website = await websitePromise
+	const retryRequest = async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+	return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, context, publishRpcConnectionStatus, retryRequest)
+}
+
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, { settings, activeAddress, readActiveAddress }: InterceptedRequestContext & { readonly activeAddress: AddressBookEntry }, publishRpcConnectionStatus: PublishRpcConnectionStatus, retryRequest: () => Promise<unknown>): Promise<unknown> {
 	try {
+		const services = simulationServicesOwner.getCurrent()
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const settings = await getSettings()
-		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
-		let rpcContext: RpcRequestContext = { request }
-		if (request.method === 'safe_apps_request') {
-			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
-			if (admission.kind === 'reply') return replyToInterceptedRequest(websiteTabConnections, admission.reply)
-			rpcContext = admission.context
-		}
-		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
-		// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
-		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
-		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
-		const resolved = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
-		// Permission persistence carries the owner through any follow-up access prompts.
-		await persistApprovedAccountsForAccountRequest(
-			simulationServicesOwner,
-			websiteTabConnections,
-			request,
-			website,
-			resolved,
-			activeAddress.address,
-		)
-		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+		const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
+		const selection = await readRequestExecutionSelection(settings, activeAddress, tabId)
+		const { safeSigningMode, simulationOverlayEnabled, walletSelectedSafeSigner } = selection
+		const admission = request.method === 'safe_apps_request'
+			? await prepareSafeAppsRequest(services.ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+			: { kind: 'execute' as const, context: { request } }
+		const execution = await withSettingsTransitionLock(async (lock) => {
+			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+			const currentSettings = (await lock.readSettings()).settings
+			const currentActiveAddress = await readActiveAddress(currentSettings)
+			if (currentActiveAddress === undefined) return undefined
+			const currentSelection = await readRequestExecutionSelection(currentSettings, currentActiveAddress, tabId)
+			if (getRequestDecisionFingerprint(currentSettings, website.websiteOrigin, currentActiveAddress, currentSelection) !== getRequestDecisionFingerprint(settings, website.websiteOrigin, activeAddress, selection)
+				|| simulationServicesOwner.getCurrent() !== services
+				|| signerStateToken !== undefined && !isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return undefined
+			// Start synchronously, but return the promise in an object: the lock must be released before awaiting execution, which may itself switch networks or wait for a user confirmation.
+			return { result: (async () => {
+				if (admission.kind === 'reply') return await replyToInterceptedRequest(websiteTabConnections, admission.reply)
+				const resolved = await handleRPCRequest(simulationServicesOwner, services, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, admission.context, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+				await persistApprovedAccountsForAccountRequest(websiteTabConnections, request, website, settings, resolved, activeAddress.address)
+				replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
+				return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+			})() }
+		})
+		if (execution === undefined) return await retryRequest()
+		return await execution.result
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
@@ -550,17 +626,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 	}
 }
 
-export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	return replyToInterceptedRequest(websiteTabConnections, {
-		type: 'result',
-		...request,
-		error: {
-			code: METAMASK_ERROR_NOT_AUTHORIZED,
-			message: 'The requested method and/or account has not been authorized by the user.'
-		},
-	})
-}
-
-async function gateKeepRequestBehindAccessDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry | undefined, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
-	return await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, activeAddress, settings, activeAddress, publishRpcConnectionStatus)
+// Replays a request that waited for website access back through this router.
+export function createInterceptedRequestReplay(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): ReplayInterceptedRequest {
+	return async ({ website, socket, request }) => await handleInterceptedRequest(undefined, website.websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 }
