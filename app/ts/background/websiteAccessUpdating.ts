@@ -1,15 +1,2 @@
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { refreshContentScriptInjectionAfterAccessChange } from '../utils/contentScriptsUpdating.js'
-import { updateWebsiteAccess } from './websiteAccessStorage.js'
-
-export async function updateWebsiteAccessAndContentScriptInjectionStrategy(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
-	let previousAccess: WebsiteAccessArray = []
-	let nextAccess: WebsiteAccessArray = []
-	await updateWebsiteAccess((previousWebsiteAccess) => {
-		const nextWebsiteAccess = update(previousWebsiteAccess)
-		previousAccess = previousWebsiteAccess
-		nextAccess = nextWebsiteAccess
-		return nextWebsiteAccess
-	})
-	return await refreshContentScriptInjectionAfterAccessChange(previousAccess, nextAccess)
-}
+// Compatibility name for callers that need the disabled-sites-changed result; every access update now enforces registration refresh.
+export { updateWebsiteAccess as updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessStorage.js'
