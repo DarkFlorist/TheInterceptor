@@ -76,7 +76,20 @@ replaceGlobal('location', { origin: '' })
 // Reassigned by every reset; importers see the current mock through the live ES module binding.
 export let browserMock: BrowserMock = installConfirmTransactionBrowserMock()
 
+const activeBrowserOverrides = new Set<() => void>()
+
+// An override belongs to one installed mock. Refuse mid-test replacement instead of silently patching a discarded instance; per-test reset restores overrides first.
+function trackBrowserOverride(restore: () => void) {
+	const restoreOnce = () => {
+		if (!activeBrowserOverrides.delete(restoreOnce)) return
+		restore()
+	}
+	activeBrowserOverrides.add(restoreOnce)
+	return restoreOnce
+}
+
 function reinstallBrowserMock(options: ConfirmTransactionBrowserOptions = {}) {
+	if (activeBrowserOverrides.size !== 0) throw new Error('Restore browser overrides before reopening browser targets.')
 	browserMock.restore()
 	browserMock = installConfirmTransactionBrowserMock(options)
 }
@@ -95,7 +108,7 @@ export function interceptStorageGet(interceptor: StorageGetInterceptor) {
 	const storageArea = browserMock.browser.storage.local
 	const readStoredItems = storageArea.get
 	storageArea.get = async (keys) => await interceptor(keys, async () => await readStoredItems(keys))
-	return () => { storageArea.get = readStoredItems }
+	return trackBrowserOverride(() => { storageArea.get = readStoredItems })
 }
 
 type StorageSetInterceptor = (items: Readonly<StoredItems>, writeStoredItems: () => Promise<void>) => Promise<void>
@@ -105,7 +118,7 @@ export function interceptStorageSet(interceptor: StorageSetInterceptor) {
 	const storageArea = browserMock.browser.storage.local
 	const writeStoredItems = storageArea.set
 	storageArea.set = async (items) => await interceptor(items, async () => await writeStoredItems(items))
-	return () => { storageArea.set = writeStoredItems }
+	return trackBrowserOverride(() => { storageArea.set = writeStoredItems })
 }
 
 // Makes browser.runtime.getManifest() report another manifest version; returns a function that restores the installed one.
@@ -113,7 +126,7 @@ export function useManifestVersion(manifestVersion: 2 | 3) {
 	const runtime = browserMock.browser.runtime
 	const getManifest = runtime.getManifest
 	runtime.getManifest = () => ({ manifest_version: manifestVersion })
-	return () => { runtime.getManifest = getManifest }
+	return trackBrowserOverride(() => { runtime.getManifest = getManifest })
 }
 
 // Answers browser.tabs.sendMessage with handler instead of Chrome's "no content script" rejection; returns a function that restores the rejection.
@@ -121,7 +134,7 @@ export function answerTabMessages(handler: (tabId: number, message: unknown) => 
 	const handlers = browserMock.handlers
 	const previousHandler = handlers.tabMessage
 	handlers.tabMessage = handler
-	return () => { handlers.tabMessage = previousHandler }
+	return trackBrowserOverride(() => { handlers.tabMessage = previousHandler })
 }
 
 const parseSentRuntimeMessages =<T>(codec: funtypes.Codec<T>): T[] => browserMock.calls.runtimeSendMessage.flatMap((message) => {
@@ -812,6 +825,7 @@ export async function openTransactionConfirmation(parameters: SendTransactionPar
 export const acceptConfirmation = { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } } as const
 
 export async function resetConfirmTransactionTestState() {
+	for (const restore of [...activeBrowserOverrides].reverse()) restore()
 	reinstallBrowserMock()
 	resetFakeSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
