@@ -2,6 +2,7 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -132,7 +133,7 @@ async function loadModules() {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...storageVariables,
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await importAllPopupMessageHandlers(),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
 		...await import('../../app/ts/simulation/services/priceEstimator.js'),

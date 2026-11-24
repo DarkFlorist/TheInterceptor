@@ -1,6 +1,7 @@
 import { interceptorAccessMetadataRefresh } from '../windows/interceptorAccess.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, changeInterceptorAccess, confirmRequestAccess, disableInterceptor, interceptorAccessChangeAddressOrRefresh, openNewTab, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from '../popupMessageHandlers.js'
+import { openNewTab } from '../popupMessageHandlers/navigation.js'
+import { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, changeInterceptorAccess, confirmRequestAccess, disableInterceptor, interceptorAccessChangeAddressOrRefresh, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from '../popupMessageHandlers/websiteAccess.js'
 
 export const websiteAccessPopupMessageHandlers = {
 	popup_interceptorAccess: popupMessageHandler('popup_interceptorAccess', async (context, request) => await confirmRequestAccess(context.simulationServicesOwner, context.websiteTabConnections, request, context.publishRpcConnectionStatus)),

@@ -9,6 +9,7 @@ import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -176,7 +177,7 @@ const browserMock = createBrowserMock()
 async function loadModules() {
 	const popupVisualisationUpdater = await import('../../app/ts/background/popupVisualisationUpdater.js')
 	const popupSimulationFingerprint = await import('../../app/ts/background/popupSimulationFingerprint.js')
-	const popupMessageHandlers = await import('../../app/ts/background/popupMessageHandlers.js')
+	const popupMessageHandlers = await importAllPopupMessageHandlers()
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const settings = await import('../../app/ts/background/settings.js')
 	const background = await import('../../app/ts/background/background.js')
@@ -446,7 +447,7 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
 		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
-		const { requestCompleteVisualizedSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { requestCompleteVisualizedSimulation } = await importAllPopupMessageHandlers()
 		const { Future } = await import('../../app/ts/utils/future.js')
 		const started = new Future<void>()
 		const release = new Future<void>()

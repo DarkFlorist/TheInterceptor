@@ -9,6 +9,7 @@ import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
@@ -539,7 +540,7 @@ describe('ConfirmTransaction', () => {
 		const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 		const { updateInterceptorTransactionStack, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
-		const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { refreshPopupConfirmTransactionSimulation } = await importAllPopupMessageHandlers()
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 
 		const fakeRpcNetwork = {

@@ -1,5 +1,5 @@
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
+import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, ChangeInterceptorAccess, DisableInterceptor, InterceptorAccess, InterceptorAccessChangeAddress, InterceptorAccessRefresh, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
@@ -11,7 +11,8 @@ import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { getSettings } from '../settings.js'
 import { updateWebsiteAccess } from '../websiteAccessStorage.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
+import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from '../windows/interceptorAccess.js'
+import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
 
 const isMissingTabReloadError = (error: unknown) => {
@@ -99,4 +100,28 @@ export async function removeWebsiteAccess(simulationServicesOwner: SimulationSer
 	await updateWebsiteAccess((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+}
+
+export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
+	const disabledSitesChanged = await updateWebsiteAccess((previousAccess) => {
+		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
+		return withEntriesRemoved.map((entry) => {
+			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
+			if (changeForEntry === undefined) return entry
+			return changeForEntry.newEntry
+		})
+	})
+
+	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
+
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
+}
+
+export async function confirmRequestAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, confirmation.data, publishRpcConnectionStatus)
+}
+
+export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
+	await requestAddressChange(websiteTabConnections, params)
 }
