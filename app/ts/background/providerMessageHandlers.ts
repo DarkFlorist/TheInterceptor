@@ -259,7 +259,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
 			if (connection !== undefined) {
-				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
+				await verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
 			}
 		}
 		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.

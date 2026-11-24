@@ -1,3 +1,4 @@
+import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
@@ -9,7 +10,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
-import { withSuppressedUnscopedConnectionEventsForSocket } from './websiteConnectionEvents.js'
+import { withSuppressedUnscopedConnectionEventsForSocketAsync } from './websiteConnectionEvents.js'
 import { clearWebsiteConnectionIntent, reconcileCommittedAccessChangeOrFailClosed, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
@@ -396,14 +397,31 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 	})
 }
 
+function replyWithUnavailableRpcConfiguration(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, message: string) {
+	return replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result',
+		...getRequestWithDefinedParams(request),
+		error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message },
+	})
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
-	const initialSettings = await getSettings()
+	try {
+		return await handleInterceptedRequestWithSettings(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+	} catch (error: unknown) {
+		if (!isRpcConfigurationUnavailableError(error)) throw error
+		return replyWithUnavailableRpcConfiguration(websiteTabConnections, request, error.message)
+	}
+}
+
+const handleInterceptedRequestWithSettings = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
 		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
+	const initialSettings = await getSettings()
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
@@ -440,7 +458,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			ignoreConnectionApproval: accountIdentityRequest,
 		},
 	)
-	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
+	const access = await (accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocketAsync(socket, verifyRequestAccess) : verifyRequestAccess())
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
@@ -471,7 +489,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
+		const refreshedAccess = await verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
 		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus)
 	}
@@ -588,6 +606,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 		}
 		return refuseModeChange()
 	} catch (error: unknown) {
+		if (isRpcConfigurationUnavailableError(error)) return replyDeliveredWithoutFollowUp(replyWithUnavailableRpcConfiguration(websiteTabConnections, request, error.message))
 		if (isFailedToFetchError(error)) {
 			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))
 		}

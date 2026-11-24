@@ -60,7 +60,7 @@ function createSafeAppsCompatibilityCoordinator() {
 		// Reconcile cached Safe consent within the publication generation so any newer refresh also retries it.
 		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (!settings.simulationMode && safe !== undefined && connection !== undefined && !connection.approved && isTopFramePort(connection.port) && signer?.socket.connectionName === socket.connectionName) {
-			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
+			await verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
 		}
 		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
 			&& connection?.approved === true

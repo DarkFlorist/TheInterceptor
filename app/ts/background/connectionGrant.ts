@@ -1,7 +1,7 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import { type AdmittedRpcNetworkNoLongerLive, type CapturedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type ReadyRpcSettings } from './settings.js'
 
-// Reconciliation reads settings again immediately before its synchronous grant. Other grant entry points retain their ordinary Settings signatures until the admission layer migrates them.
+// Connection grants read ready settings immediately before approving a connection.
 export type LiveSettings = ReadyRpcSettings
 
 // A result that is not a promise: a grant that returns one would continue after an await, when the live settings may no longer hold.

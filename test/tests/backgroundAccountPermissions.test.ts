@@ -3242,6 +3242,59 @@ describe('background eth_accounts', () => {
 		assert.equal(unrelatedMessages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
 	})
 
+	test('settles a provider request during unreadable RPC settings and accepts later requests on the same port', async () => await withSilencedConsole(async () => {
+		installBrowserMock()
+		const { getSettings, handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } = await import('../../app/ts/utils/rpcConfigurationError.js')
+		const { METAMASK_ERROR_PROVIDER_DISCONNECTED } = await import('../../app/ts/utils/constants.js')
+		await getSettings()
+		const stored = await browser.storage.local.get('activeRpcNetwork')
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteOrigin = 'https://rpc-unavailable.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const requestChainId = async (requestId: number) => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId, requestSocket: socket },
+			method: 'eth_chainId',
+			params: [],
+		}, connections, noopPublishRpcConnectionStatus)
+
+		await requestChainId(1)
+		assert.equal(messages[0]?.requestId, 1)
+		assert.equal(messages[0]?.bridgeRequestSettled, true)
+		assert.deepEqual(messages[0]?.error, { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE })
+
+		await browser.storage.local.set(stored)
+		await requestChainId(2)
+		assert.equal(messages[1]?.requestId, 2)
+		assert.equal(messages[1]?.bridgeRequestSettled, true)
+		assert.equal(messages[1]?.result, '0x1')
+	}))
+
+	test('verifyAccess cannot grant from a previously readable snapshot after RPC configuration becomes unusable', async () => {
+		installBrowserMock()
+		const { getSettings, updateWebsiteAccess, verifyAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://stale-grant.test'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+		const settings = await getSettings()
+		await browser.storage.local.set({ rpcEntries: [] })
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		assert.equal(await verifyAccess(connections, socket, true, websiteOrigin, undefined, settings), 'noAccess')
+		assert.equal(connection.approved, false)
+		assert.deepEqual(messages, [])
+	})
+
 	test('verifyAccess requires an address decision despite website approval', async () => {
 		installBrowserMock()
 		const { getSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
@@ -3253,9 +3306,9 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
 		const settings = await getSettings()
 
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings), 'askAccess')
+		assert.equal(await verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings), 'askAccess')
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
+		assert.equal(await verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
 	})
 })

@@ -5,7 +5,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
-import { getSettingsSnapshot, updateWebsiteAccess, updateWebsiteAccessWithSnapshots, settingsIfRpcConfigurationReady } from './settings.js'
+import { getSettingsSnapshot, updateWebsiteAccess, updateWebsiteAccessWithSnapshots, settingsIfRpcConfigurationReady, type ReadyRpcSettings } from './settings.js'
 import { getWebsiteApprovalChangedOrigins, type CommittedWebsiteAccessChange } from './websiteAccessState.js'
 import { grantWithLiveSettings } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
@@ -59,28 +59,33 @@ type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
-// Legacy access entry point: accepts ordinary settings. Reconciliation grants use grantWithLiveSettings; typed enforcement at all entry points belongs to the later admission layer.
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
+export async function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): Promise<ApprovalState> {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
-	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') {
-		const popupRefreshGeneration = bumpPopupRefreshGeneration()
-		const grantFollowUps = connectToPort(
-			websiteTabConnections,
-			socket,
-			settings,
-			requestAccessForAddress?.address,
-		)
-		// No caller waits for these, so their failures are reported here; the icon follows the reconciled blocks whether or not the follow-ups failed.
-		void (async () => {
-			const failures = await runEachIndependently([async () => await grantFollowUps, async () => await updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)], async (step) => await step())
-			await surfaceFailures(failures, reportAsUnexpectedError, { throwFirst: false })
-		})()
-		return 'hasAccess'
-	}
+	const getAccess = (current: Settings) => requestAccessForAddress !== undefined
+		? hasAddressAccess(current.websiteAccess, websiteOrigin, requestAccessForAddress)
+		: hasAccess(current.websiteAccess, websiteOrigin)
+	const access = getAccess(settings)
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
-	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
+	if (access === 'askAccess') return askAccessIfUnknown ? 'askAccess' : 'noAccess'
+
+	const grant = await grantWithLiveSettings(settings, (liveSettings) => {
+		if (getWebsiteSocketConnection(websiteTabConnections, socket) !== connection) return { access: 'noAccess' as const }
+		const liveAccess = getAccess(liveSettings)
+		if (liveAccess !== 'hasAccess') return { access: liveAccess }
+		return { access: liveAccess, followUpFailures: connectToPort(websiteTabConnections, socket, liveSettings, requestAccessForAddress?.address) }
+	})
+	if (grant.kind !== 'granted') return 'noAccess'
+	const { access: liveAccess, followUpFailures } = grant.result
+	if (followUpFailures !== undefined) {
+		const popupRefreshGeneration = bumpPopupRefreshGeneration()
+		backgroundTaskSupervisor.start({ source: 'website_connection_grant' }, async () => {
+			const failures = await followUpFailures
+			const iconFailures = await runEachIndependently([socket.tabId], async (tabId) => await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration))
+			await surfaceFailures([...failures, ...iconFailures], reportAsUnexpectedError, { throwFirst: false })
+		})
+	}
+	return liveAccess === 'askAccess' && !askAccessIfUnknown ? 'noAccess' : liveAccess
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -127,20 +132,20 @@ const collectFailure = (step: () => void): readonly unknown[] => {
 	}
 }
 
-// The only code that approves a connection. The grant is synchronous, and so are its notifications, which the page must see before any reply. A newly approved tab can also need a block that no update installed yet. Neither follow-up can skip the other: the returned promise settles once request blocks are reconciled, and rejects with the first failure after reporting the rest.
+// The only code that approves a connection. The grant is synchronous, and so are its notifications, which the page must see before any reply. A newly approved tab can also need a block that no update installed yet. Neither follow-up can skip the other: the returned promise settles once request blocks are reconciled, and returns any failures for the caller to handle.
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	settings: Settings,
+	settings: ReadyRpcSettings,
 	connectWithActiveAddress: bigint | undefined,
-): Promise<void> {
+): Promise<readonly unknown[]> {
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
 	const notificationFailures = collectFailure(() => { if (shouldSendUnscopedConnectionEvents(socket)) sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress]) })
 	return (async () => {
 		const blockFailures = await runEachIndependently([async () => { if (!wasApproved) await updateDeclarativeNetRequestBlocks(websiteTabConnections) }], async (step) => await step())
-		await surfaceFailures([...notificationFailures, ...blockFailures], reportAsUnexpectedError)
+		return [...notificationFailures, ...blockFailures]
 	})()
 }
 
@@ -257,11 +262,15 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 	try {
 		// The active-address lookup and the connections before this one awaited, so the grant is decided on a fresh read. connectToPort approves synchronously; its request-block update is returned and awaited after the grant.
 		const grant = await grantWithLiveSettings(inputs.settings, (liveSettings) => {
+			if (getWebsiteSocketConnection(websiteTabConnections, connection.socket) !== connection) return undefined
 			if (connection.approved || getConnectionAccessForAddress(liveSettings.websiteAccess, connection, activeAddress) !== 'hasAccess') return undefined
 			newlyGranted.add(connection)
-			return { blocksUpdated: connectToPort(websiteTabConnections, connection.socket, liveSettings, activeAddress?.address) }
+			return { followUpFailures: connectToPort(websiteTabConnections, connection.socket, liveSettings, activeAddress?.address) }
 		})
-		if (grant.kind === 'granted' && grant.result !== undefined) await grant.result.blocksUpdated
+		if (grant.kind === 'granted' && grant.result !== undefined) {
+			const failures = await grant.result.followUpFailures
+			if (failures.length > 0) return [...failures, ...disconnectIfApproved(websiteTabConnections, connection)]
+		}
 		return []
 	} catch (error: unknown) {
 		return [error, ...disconnectIfApproved(websiteTabConnections, connection)]

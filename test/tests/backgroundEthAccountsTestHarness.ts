@@ -19,7 +19,7 @@ type StorageHooks = {
 	// Runs after a write is applied and before it resolves, so a hook can expose the written values while withholding write completion.
 	readonly afterSet?: (items: Record<string, unknown>) => Promise<void>
 }
-export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+export type PortMessage = { bridgeRequestSettled?: unknown, walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 export function createDeferredSignal() {

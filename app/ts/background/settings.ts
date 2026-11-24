@@ -190,7 +190,7 @@ export function settingsEvenIfRpcConfigurationUnusable(snapshot: SettingsSnapsho
 }
 
 const readyRpcConfigurationMarker = Symbol('readyRpcConfiguration')
-// Settings read while the RPC configuration was ready. Reconciliation grants and request blocking require this branded projection; legacy verifyAccess/connectToPort still accept ordinary Settings until the successor admission migration.
+// Settings read while the RPC configuration was ready. Connection grants and request blocking require this branded projection.
 export type ReadyRpcSettings = Settings & { readonly [readyRpcConfigurationMarker]: true }
 
 // Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
@@ -218,7 +218,7 @@ export type LiveSettingsOnAdmittedRpcNetwork =
 	| { readonly kind: 'ready', readonly settings: ReadyRpcSettings }
 	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
 
-// Reconciliation re-reads one live snapshot immediately before its synchronous grant. Metadata-only changes retain the admitted endpoint; chain or endpoint changes invalidate its service pair. This helper is not yet used by legacy verifyAccess/connectToPort or general request admission.
+// Connection grants re-read one live snapshot immediately before approval. Metadata-only changes retain the admitted endpoint; chain or endpoint changes invalidate its service pair.
 export async function getLiveSettingsOnAdmittedRpcNetwork(admitted: Settings | CapturedRpcNetwork): Promise<LiveSettingsOnAdmittedRpcNetwork> {
 	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 	if (liveSettings === undefined) return { kind: 'unavailable' }

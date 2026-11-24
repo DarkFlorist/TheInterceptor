@@ -98,6 +98,36 @@ afterEach(() => {
 	mock.restore()
 })
 
+test('reports grant notification and block failures after reconciliation releases its lock', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { reconcileWebsiteApprovalAccesses } = await importAccessManagement()
+	const websiteOrigin = 'https://grant-failure.test'
+	await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+	const notificationFailure = new Error('Connection notification failed')
+	const blockFailure = new Error('Grant block lookup failed')
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port } = createPort(socket.tabId, (message) => { if (message.method === 'connect') throw notificationFailure })
+	const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+	let reconciled = false
+	const connections = Object.assign(new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]]), {
+		lifecycle: { accessReconciled: () => { reconciled = true } },
+	})
+	const readSessionRules = browser.declarativeNetRequest.getSessionRules.bind(browser.declarativeNetRequest)
+	spyOn(browser.declarativeNetRequest, 'getSessionRules').mockImplementation(async () => {
+		if (connection.approved) throw blockFailure
+		return await readSessionRules()
+	})
+	const reports: unknown[] = []
+	spyOn(errors, 'reportAsUnexpectedError').mockImplementation(async (error) => {
+		assert.equal(reconciled, true)
+		reports.push(error)
+	})
+	await reconcileWebsiteApprovalAccesses(connections, await modules.getSettings())
+	assert.deepEqual(reports, [notificationFailure, blockFailure])
+	assert.equal(connection.approved, false)
+})
+
 describe('removeWebsiteAddressAccess', () => {
 	test('de-approves the connection and reloads connected tabs when the current tab lookup fails', async () => {
 		const { modules, reloadedTabIds, connectedTabIds, handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab({ browserMockOptions: { firstCurrentTabIdReadError: new Error('current tab lookup failed') } })
