@@ -57,6 +57,7 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 
 export type WatchAssetSignerRequest = funtypes.Static<typeof WatchAssetSignerRequest>
 export const WatchAssetSignerRequest = funtypes.ReadonlyObject({
+	signerReplyMode: funtypes.Union(funtypes.Literal('notify'), funtypes.Literal('request')),
 	parameters: funtypes.Unknown,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	signerIdentity: funtypes.ReadonlyObject({
