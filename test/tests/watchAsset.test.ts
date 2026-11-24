@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
 import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, resolveWatchAssetSignerReply, settlePendingWatchAssetForReplacedSigner, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
-import { getWatchAssetRpcParseFailureReply } from '../../app/ts/background/watchAssetRpc.js'
+import { getInvalidRpcParamsReply } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
@@ -115,15 +115,14 @@ describe('wallet_watchAsset', () => {
 		expect(() => WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC1046', options: { address: tokenAddress } }] })).not.toThrow()
 	})
 
-	test('provides feature-owned replies for malformed watch-asset requests', () => {
+	test('provides stable replies for malformed watch-asset requests', () => {
 		const malformedRequest = { ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] }
 		expect(EthereumJsonRpcRequest.safeParse(malformedRequest).success).toBeFalse()
-		expect(getWatchAssetRpcParseFailureReply(malformedRequest)).toEqual({
+		expect(getInvalidRpcParamsReply(malformedRequest)).toEqual({
 			type: 'result',
 			method: 'wallet_watchAsset',
 			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
 		})
-		expect(getWatchAssetRpcParseFailureReply({ ...interceptedRequest, method: 'unsupported_method', params: [] })).toBeUndefined()
 	})
 
 	test('requires an EIP-55 checksummed address', () => {

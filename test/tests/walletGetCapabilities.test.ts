@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { getWalletGetCapabilitiesParseFailureReply } from '../../app/ts/background/walletGetCapabilitiesRpc.js'
+import { getInvalidRpcParamsReply } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumJsonRpcRequest, WalletGetCapabilities } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import { CanonicalEthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
@@ -46,7 +46,7 @@ describe('wallet_getCapabilities', () => {
 				params,
 			}
 			expect(EthereumJsonRpcRequest.safeParse(request).success).toBeFalse()
-			expect(getWalletGetCapabilitiesParseFailureReply(request)).toEqual({
+			expect(getInvalidRpcParamsReply(request)).toEqual({
 				type: 'result',
 				method: 'wallet_getCapabilities',
 				error: { code: -32602, message: 'Invalid wallet_getCapabilities parameters.' },
