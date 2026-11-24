@@ -1,5 +1,4 @@
 import * as assert from 'assert'
-import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
 
@@ -8,13 +7,10 @@ type RuntimeMessage = {
 	readonly data?: { readonly message?: string, readonly code?: string }
 }
 
+// The manifest v2 registration is covered by contentScriptsRegistrationManifestV2.test.ts.
 type BrowserMockOptions = {
 	readonly registerError?: Error
 	readonly updateError?: Error
-	readonly executeScriptError?: Error
-	readonly tabUrl?: string
-	readonly hasVisibleTabUrl?: boolean
-	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
 }
 
@@ -23,16 +19,12 @@ type RegisteredContentScript = {
 	readonly excludeMatches?: readonly string[]
 }
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
+function installBrowserMock({ registerError, updateError, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
-	const executedScriptFiles: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
-	let executeScriptCalls = 0
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
-	let currentTabUrl = tabUrl
-	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
@@ -56,11 +48,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 			},
 			storage: {
 				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) {
-						const storageItems = getStorageItems(keys)
-						currentTabUrl = tabUrlAfterStorageRead ?? currentTabUrl
-						return storageItems
-					},
+					async get(keys?: string | string[] | Record<string, unknown> | null) { return getStorageItems(keys) },
 					async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
 					async remove(keys: string | string[]) {
 						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -87,29 +75,15 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 				},
 			},
 			tabs: {
-				async query() { return [{ id: 42, url: currentTabUrl }] },
-				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
+				async query() { return [{ id: 42, url: 'https://example.com/' }] },
+				async get() { return { id: 42, url: 'https://example.com/' } },
 				async update() { return undefined },
-				async executeScript(_tabId: number, injection: { readonly file?: string }) {
-					executeScriptCalls++
-					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
-					if (executeScriptError !== undefined) throw executeScriptError
-					return undefined
-				},
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			},
 			windows: {
 				async get() { return undefined },
 				async update() { return undefined },
-			},
-			webNavigation: {
-				onCommitted: {
-					addListener(listener: (details: browser.webNavigation._OnCommittedDetails) => unknown) {
-						committedListener = listener
-					},
-					removeListener: () => undefined,
-				},
 			},
 			action: {
 				async setIcon() { return undefined },
@@ -129,27 +103,10 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 
 	return {
 		sentMessages,
-		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+		getRegisteredContentScripts(): readonly RegisteredContentScript[] { return [...registeredContentScripts.values()] },
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
-		getExecuteScriptCalls() { return executeScriptCalls },
-		getExecutedScriptFiles() { return [...executedScriptFiles] },
-		getCommittedListener() {
-			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
-			return committedListener
-		},
 	}
-}
-
-const committedDetails: browser.webNavigation._OnCommittedDetails = {
-	tabId: 42,
-	url: 'https://example.com/',
-	frameId: 0,
-	parentFrameId: -1,
-	processId: 1,
-	timeStamp: 1,
-	transitionQualifiers: [],
-	transitionType: 'link',
 }
 
 async function loadModules() {
@@ -157,14 +114,6 @@ async function loadModules() {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
-}
-
-function getManifestV2WebAccessibleResources() {
-	const manifest: unknown = JSON.parse(fs.readFileSync('app/manifestV2.json', 'utf8'))
-	if (typeof manifest !== 'object' || manifest === null || !('web_accessible_resources' in manifest)) throw new Error('Manifest V2 must declare web-accessible resources')
-	const resources = manifest.web_accessible_resources
-	if (!Array.isArray(resources) || !resources.every((resource) => typeof resource === 'string')) throw new Error('Manifest V2 web-accessible resources must be strings')
-	return resources
 }
 
 describe('content script injection strategy', () => {
@@ -195,23 +144,44 @@ describe('content script injection strategy', () => {
 		])
 	})
 
-	test('exposes every manifest v2 injected file to Firefox', async () => {
-		const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+	test('keeps default-numbered stored ports scoped to their non-default scheme', async () => {
+		const { getManifestV3ExcludeMatches } = await import('../../app/ts/utils/contentScriptsRegistration.js')
+		for (const { origin, expected } of [
+			{ origin: 'example.com:80', expected: ['https://*.example.com:80/*'] },
+			{ origin: 'example.com:443', expected: ['http://*.example.com:443/*'] },
+			{ origin: 'localhost:80', expected: ['https://localhost:80/*'] },
+			{ origin: 'localhost:443', expected: ['http://localhost:443/*'] },
+			{ origin: '127.0.0.1:80', expected: ['https://127.0.0.1:80/*'] },
+			{ origin: '[::1]:443', expected: ['http://[::1]:443/*'] },
+			{ origin: 'example.com:8443', expected: ['http://*.example.com:8443/*', 'https://*.example.com:8443/*'] },
+		]) assert.deepEqual(getManifestV3ExcludeMatches([origin]), expected, origin)
+	})
 
-		await updateContentScriptInjectionStrategyManifestV2()
-		await getCommittedListener()(committedDetails)
+	test('rejects wildcard hostnames in manifest v3 exclusions', async () => {
+		await installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		assert.deepEqual(getManifestV3ExcludeMatches(['*', '*.example.test', 'https://*', 'https://%2A.example.test']), [])
+	})
 
-		const injectedFiles = [
-			'/vendor/webextension-polyfill/dist/browser-polyfill.js',
-			'/inpage/js/listenContentScript.js',
-			'/inpage/js/document_start.js',
-		]
-		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
-		assert.deepEqual(getManifestV2WebAccessibleResources(), [
-			...injectedFiles.map((file) => file.slice(1)),
-			'inpage/js/inpage.js',
-		])
+	test('a direct storage update refreshes manifest v3 exclusions', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations } = await installBrowserMock()
+		const { updateWebsiteAccess } = await import('../../app/ts/background/websiteAccessStorage.js')
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'direct-write.test' }, interceptorDisabled: true }])
+		assert.deepEqual(getRegisteredContentScripts().map(({ excludeMatches }) => excludeMatches), [['*://*.direct-write.test/*'], ['*://*.direct-write.test/*']])
+		await updateWebsiteAccess((previous) => previous)
+		assert.deepEqual(getScriptingOperations(), ['register'])
+		await updateWebsiteAccess(() => [])
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+	})
+
+	test('propagates reporter failures after a manifest v3 registration error', async () => {
+		await installBrowserMock({ registerError: new Error('registration failed') })
+		const { updateManifestV3ContentScripts } = await import('../../app/ts/utils/contentScriptsRegistration.js')
+		const reporterFailure = new Error('reporter unavailable')
+		await assert.rejects(updateManifestV3ContentScripts({
+			readDisabledSites: async () => [],
+			reportError: async () => { throw reporterFailure },
+		}), reporterFailure)
 	})
 
 	test('records manifest v3 registration failures as unexpected errors', async () => {
@@ -250,179 +220,5 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getScriptingOperations(), ['update'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2', 'obsolete-inpage'])
-	})
-
-	test('keeps missing-tab manifest v2 injection failures ignored', async () => {
-		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('No tab with id: 42.') })
-		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(await getLatestUnexpectedError(), undefined)
-	})
-
-	test('keeps invalid-tab manifest v2 injection failures ignored', async () => {
-		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('Invalid tab ID: 42') })
-		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(await getLatestUnexpectedError(), undefined)
-	})
-
-	test('skips manifest v2 injection after navigation reaches another extension page', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
-			tabUrl: 'chrome-extension://another-extension-id/home.html',
-			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
-		})
-		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(getExecuteScriptCalls(), 0)
-		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
-	})
-
-	test('skips manifest v2 injection for extension galleries', async () => {
-		for (const extensionGalleryUrl of [
-			'https://chromewebstore.google.com/detail/an-extension-id',
-			'https://chrome.google.com/webstore/category/extensions',
-			'https://chrome.google.com/webstore?hl=en',
-			'https://chrome.google.com/webstore#extensions',
-		]) {
-			const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
-				tabUrl: extensionGalleryUrl,
-				executeScriptError: new Error('The extensions gallery cannot be scripted.'),
-			})
-			const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-			await updateContentScriptInjectionStrategyManifestV2()
-			await withSilencedConsole(async () => {
-				await getCommittedListener()({ ...committedDetails, url: extensionGalleryUrl })
-			})
-
-			assert.equal(getExecuteScriptCalls(), 0)
-			assert.equal(await getLatestUnexpectedError(), undefined)
-			assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
-		}
-	})
-
-	test('skips manifest v2 injection when the tab URL is unavailable', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
-			hasVisibleTabUrl: false,
-			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
-		})
-		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(getExecuteScriptCalls(), 0)
-		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
-	})
-
-	test('rechecks the current tab URL after loading manifest v2 settings', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
-			tabUrlAfterStorageRead: 'chrome-extension://another-extension-id/home.html',
-			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
-		})
-		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(getExecuteScriptCalls(), 0)
-		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
-	})
-
-	test('ignores a different extension target that appears after the final tab URL check', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
-			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
-		})
-		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(getExecuteScriptCalls(), 1)
-		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
-	})
-
-	test('ignores an extension gallery target that appears after the final tab URL check', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
-			executeScriptError: new Error('The extensions gallery cannot be scripted.'),
-		})
-		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		assert.equal(getExecuteScriptCalls(), 1)
-		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
-	})
-
-	test('records non-exact restricted-target errors as local recovery', async () => {
-		for (const errorMessage of [
-			'Unexpected executeScript failure: Cannot access a chrome-extension:// URL of different extension',
-			'Cannot access a chrome-extension:// URL of different extension after navigation',
-			'Unexpected executeScript failure: The extensions gallery cannot be scripted.',
-			'The extensions gallery cannot be scripted. after navigation',
-		]) {
-			const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error(errorMessage) })
-			const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-			await updateContentScriptInjectionStrategyManifestV2()
-			await withSilencedConsole(async () => {
-				await getCommittedListener()(committedDetails)
-			})
-
-			for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
-			assert.equal(await getLatestUnexpectedError(), undefined)
-			const diagnostics = await getInterceptorErrorDiagnostics()
-			assert.equal(diagnostics.length, 1)
-			assert.equal(diagnostics[0]?.cause, errorMessage)
-			assert.equal(diagnostics[0]?.code, 'manifest_v2_content_script_injection_failed')
-		}
-	})
-
-	test('records manifest v2 injection failures as local recovery diagnostics', async () => {
-		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('executeScript failed') })
-		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
-
-		await updateContentScriptInjectionStrategyManifestV2()
-		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
-		})
-
-		for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
-		assert.equal(await getLatestUnexpectedError(), undefined)
-		const diagnostics = await getInterceptorErrorDiagnostics()
-		assert.equal(diagnostics.length, 1)
-		assert.equal(diagnostics[0]?.message, 'Leaving this navigation without early injection.')
-		assert.equal(diagnostics[0]?.cause, 'executeScript failed')
-		assert.equal(diagnostics[0]?.code, 'manifest_v2_content_script_injection_failed')
-		assert.equal(diagnostics[0]?.category, 'local_recovery')
 	})
 })
