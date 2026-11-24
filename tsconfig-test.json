@@ -1,6 +1,8 @@
 {
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
+		// Tests run under Bun, so they need Bun's globals next to the WebExtension globals that tsconfig.json limits the app to.
+		"types": ["bun", "firefox-webext-browser"],
 		"rootDir": ".",
 		"outDir": "test/js",
 	},

@@ -5,7 +5,7 @@ import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { InterceptedRequest, WebsiteSocket } from '../../app/ts/utils/requests.js'
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../../app/ts/utils/constants.js'
-import { addressString, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { addressString, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const ACTIVE_ACCOUNT = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 const REQUESTING_WEBSITE = { websiteOrigin: 'https://requesting.example.test', icon: undefined, title: undefined }
@@ -23,7 +23,7 @@ const createRequest = (socket: WebsiteSocket, requestId: number, method: string)
 })
 
 async function setupTwoWebsites() {
-	const browserMock = installBrowserMock()
+	const browserMock = installLegacyBackgroundBrowserMock()
 	const modules = await loadModules()
 	const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 	await modules.setUseSignersAddressAsActiveAddress(false)

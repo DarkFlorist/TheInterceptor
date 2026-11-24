@@ -10,7 +10,7 @@ import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry, EntrySource } from '..
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
 import { getOnChainTokenWarning, ON_CHAIN_TOKEN_IDENTITY_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
 import { getUnverifiedOnChainTokenLabel, requiresOnChainTokenMetadataConfirmation } from '../../app/ts/utils/onChainTokenMetadata.js'
-import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { installLegacyBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -67,7 +67,7 @@ const createTokenEditWindowState = (type: 'ERC20' | 'ERC1155', entrySource: Entr
 })
 
 async function renderEditDialogText(type: 'ERC20' | 'ERC1155', entrySource: EntrySource) {
-	installBrowserMock()
+	installLegacyBackgroundBrowserMock()
 	const dom = installDomMock()
 	try {
 		await act(() => {

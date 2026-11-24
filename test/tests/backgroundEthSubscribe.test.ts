@@ -2,11 +2,11 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { PASSTHROUGH_STATE } from '../../app/ts/types/visualizer-types.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../app/ts/utils/constants.js'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, type PortMessage } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus, type PortMessage } from './backgroundEthAccountsTestHarness.js'
 
 // `onPostMessage` runs after each post attempt is recorded in `messages`; throwing from it makes that post fail.
 async function createApprovedSubscriberHarness({ onPostMessage }: { readonly onPostMessage?: (message: PortMessage) => void } = {}) {
-	installBrowserMock()
+	installLegacyBackgroundBrowserMock()
 	const modules = await loadModules()
 	const { sendSubscriptionMessagesForNewBlock } = await import('../../app/ts/simulation/services/EthereumSubscriptionService.js')
 	const websiteOrigin = 'https://subscriber.example'

@@ -1,21 +1,9 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import type { OpenWebPage } from '../../app/ts/types/interceptor-messages.js'
-
-type TabRecord = {
-	readonly id: number
-	readonly url?: string
-}
-
-type TabCreateDetails = {
-	readonly url: string
-	readonly active: boolean
-}
-
-type TabUpdateDetails = {
-	readonly tabId: number
-	readonly update: TabCreateDetails
-}
+import type { MockTabSeed } from '../harness/browserMock.js'
+import { replaceProperty } from '../harness/globals.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
 function createOpenWebPageRequest(tabId: number, url: string): OpenWebPage {
 	return {
@@ -30,36 +18,12 @@ function createOpenWebPageRequest(tabId: number, url: string): OpenWebPage {
 	}
 }
 
-function installBrowserMock(tabs: readonly TabRecord[], updateShouldFail = false) {
-	const createdTabs: TabCreateDetails[] = []
-	const updatedTabs: TabUpdateDetails[] = []
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: null,
-			},
-			tabs: {
-				async query() {
-					return [...tabs]
-				},
-				async create(details: TabCreateDetails) {
-					createdTabs.push(details)
-				},
-				async update(tabId: number, update: TabCreateDetails) {
-					if (updateShouldFail) throw new Error('tab update failed')
-					updatedTabs.push({ tabId, update })
-				},
-			},
-		},
-	})
-	Object.defineProperty(globalThis, 'chrome', {
-		configurable: true,
-		writable: true,
-		value: { runtime: { id: 'test-extension' } },
-	})
-	return { createdTabs, updatedTabs }
+const installBrowserMock = createPerTestBrowserMockInstaller()
+
+function installTabsBrowserMock(tabs: readonly MockTabSeed[], updateShouldFail = false) {
+	const browserMock = installBrowserMock({ extensionId: 'test-extension', tabs })
+	if (updateShouldFail) browserMock.browser.tabs.update = async () => { throw new Error('tab update failed') }
+	return browserMock
 }
 
 async function loadOpenWebPage() {
@@ -68,38 +32,37 @@ async function loadOpenWebPage() {
 
 describe('openWebPage', () => {
 	test('updates the existing website tab without opening a duplicate', async () => {
-		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42 }])
+		const { calls } = installTabsBrowserMock([{ id: 42 }])
 		const openWebPage = await loadOpenWebPage()
 
 		await openWebPage(createOpenWebPageRequest(42, 'https://example.test/next'))
 
-		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { url: 'https://example.test/next', active: true } }])
-		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(calls.tabsUpdate, [{ tabId: 42, updateProperties: { url: 'https://example.test/next', active: true } }])
+		assert.deepEqual(calls.tabsCreate, [])
 	})
 
 	test('creates a new tab when the original tab is gone', async () => {
-		const { createdTabs, updatedTabs } = installBrowserMock([])
+		const { calls } = installTabsBrowserMock([])
 		const openWebPage = await loadOpenWebPage()
 
 		await openWebPage(createOpenWebPageRequest(42, 'https://example.test/next'))
 
-		assert.deepEqual(updatedTabs, [])
-		assert.deepEqual(createdTabs, [{ url: 'https://example.test/next', active: true }])
+		assert.deepEqual(calls.tabsUpdate, [])
+		assert.deepEqual(calls.tabsCreate, [{ url: 'https://example.test/next', active: true }])
 	})
 
 	test('creates a fallback tab when updating the original tab fails', async () => {
-		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42 }], true)
+		const { calls } = installTabsBrowserMock([{ id: 42 }], true)
 		const openWebPage = await loadOpenWebPage()
-		const originalWarn = console.warn
-		console.warn = () => undefined
+		const restoreWarn = replaceProperty(console, 'warn', () => undefined)
 
 		try {
 			await openWebPage(createOpenWebPageRequest(42, 'https://example.test/next'))
 		} finally {
-			console.warn = originalWarn
+			restoreWarn()
 		}
 
-		assert.deepEqual(updatedTabs, [])
-		assert.deepEqual(createdTabs, [{ url: 'https://example.test/next', active: true }])
+		assert.deepEqual(calls.tabsUpdate, [])
+		assert.deepEqual(calls.tabsCreate, [{ url: 'https://example.test/next', active: true }])
 	})
 })

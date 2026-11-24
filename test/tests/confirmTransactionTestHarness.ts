@@ -1,3 +1,4 @@
+import { isRecord } from '../harness/assertions.js'
 import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
@@ -28,9 +29,7 @@ export type RuntimeMessage = {
 
 export type StorageKeys = string | string[] | Record<string, unknown> | null | undefined
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null
-}
+export { isRecord } from '../harness/assertions.js'
 
 export const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
 
@@ -46,7 +45,8 @@ export function createSafeAddressBookEntry(overrides: Partial<SafeEntry> = {}): 
 	}
 }
 
-export function createBrowserMock() {
+// Legacy fixture-backed confirmation mock; new tests should use the generic browser mock rather than copying its simplified API behavior.
+export function installLegacyConfirmationBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 	const liveTabIds = new Set<number>()
@@ -383,7 +383,7 @@ export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi
 	}
 }
 
-export const browserMock = createBrowserMock()
+export const browserMock = installLegacyConfirmationBrowserMock()
 export const modules = await loadModules()
 
 export const fakeRpcNetwork = {

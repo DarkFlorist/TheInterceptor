@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { beforeEach, test } from 'bun:test'
-import { createDeferredSignal, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredSignal, installLegacyBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { browserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
@@ -11,7 +11,7 @@ beforeEach(async () => {
 })
 
 test('confirmation reset restores its browser after another test installs a different mock', async () => {
-	installBrowserMock()
+	installLegacyBackgroundBrowserMock()
 	await resetConfirmTransactionTestState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
