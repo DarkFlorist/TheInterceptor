@@ -259,6 +259,7 @@ describe('pages that show RPC connections follow popup_update_rpc_list', () => {
 		const originalRequestParameters: OriginalSendRequestParameters = { method: 'eth_sendTransaction', params: [{ from: knownAddress.address, to: 0x2222222222222222222222222222222222222222n, value: 0n, input: new Uint8Array() }] }
 		const transactionToSimulate: FailedToCreateWebsiteCreatedEthereumTransaction = { website, created, originalRequestParameters, transactionIdentifier: 1n, success: false, error: { code: -32000, message: 'simulation failed' } }
 		const failedTransaction: PendingTransaction = {
+			instanceId: 'rpc-list-fixture',
 			type: 'Transaction',
 			transactionOrMessageCreationStatus: 'FailedToSimulate',
 			popupOrTabId: { type: 'popup', id: 1 },

@@ -304,9 +304,9 @@ export const Erc1155ABI = [
 		type: 'event',
 		name: 'TransferSingle',
 		inputs: [
-			{ name: 'operator', type: 'address' },
-			{ name: 'from', type: 'address' },
-			{ name: 'to', type: 'address' },
+			{ name: 'operator', type: 'address', indexed: true },
+			{ name: 'from', type: 'address', indexed: true },
+			{ name: 'to', type: 'address', indexed: true },
 			{ name: 'id', type: 'uint256' },
 			{ name: 'value', type: 'uint256' },
 		],
@@ -492,6 +492,24 @@ export const CompoundTimeLock = [
 			{ name: 'eta', type: 'uint256' },
 		],
 		outputs: [],
+	},
+] as const satisfies Abi
+
+// How a timelock names who may queue on it: Compound's Timelock has one admin(), OpenZeppelin's TimelockController grants proposers a role.
+export const GovernanceTimelockReadsAbi = [
+	{
+		type: 'function',
+		name: 'admin',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ type: 'address' }],
+	},
+	{
+		type: 'function',
+		name: 'hasRole',
+		stateMutability: 'view',
+		inputs: [{ name: 'role', type: 'bytes32' }, { name: 'account', type: 'address' }],
+		outputs: [{ type: 'bool' }],
 	},
 ] as const satisfies Abi
 

@@ -1,0 +1,35 @@
+import { getPreparedSimulationPrefix, type SimulationPrefixPosition } from './services/preparedSimulationPrefix.js'
+import type { EthereumClientService, PreparedEthSimulateV1Input } from './services/EthereumClientService.js'
+import type { BlockCalls } from '../types/ethSimulate-types.js'
+import { EthereumData, type EthereumBlockHeader } from '../types/wire-types.js'
+import { addressString, stringToUint8Array } from '../utils/bigint.js'
+import { decodeFunctionOutput, encodeFunctionCall } from '../utils/abiRuntime.js'
+import type { Abi } from '../utils/ethereumPrimitives.js'
+import { getCodeByteCode } from '../utils/ethereumByteCodes.js'
+import { MOCK_ADDRESS } from '../utils/constants.js'
+import { JsonRpcResponseError } from '../utils/errors.js'
+import { getAppendedSimulationBlockOverrides } from './services/simulationBlockParameters.js'
+
+export type SimulatedCodeResult = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure', readonly getCodeReturn?: undefined }
+const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const getCodeAbi = [{ type: 'function', name: 'at', stateMutability: 'view', inputs: [{ name: 'target', type: 'address' }], outputs: [{ name: 'code', type: 'bytes' }] }] as const satisfies Abi
+
+// This module can submit already-prepared RPC blocks, but has no nonce-calculation or simulated-call capability. Its synthetic sender nonce is seeded only in the appended probe block.
+export const probeSimulatedCode = async (client: Pick<EthereumClientService, 'ethSimulateV1' | 'getChainId'>, requestAbortController: AbortController | undefined, prepared: PreparedEthSimulateV1Input, parentBlock: NonNullable<EthereumBlockHeader>, position: SimulationPrefixPosition, address: bigint): Promise<SimulatedCodeResult> => {
+	const { prefix, previousBlockOverride } = getPreparedSimulationPrefix(prepared, position)
+	const probeBlock: BlockCalls = {
+		calls: [{ type: '1559', from: MOCK_ADDRESS, nonce: 0n, chainId: client.getChainId(), maxPriorityFeePerGas: 0n, to: GET_CODE_CONTRACT, value: 0n, input: stringToUint8Array(encodeFunctionCall(getCodeAbi, 'at', [addressString(address)])), accessList: [] }],
+		blockOverrides: getAppendedSimulationBlockOverrides(parentBlock, previousBlockOverride),
+		stateOverrides: { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() }, [addressString(MOCK_ADDRESS)]: { nonce: 0n } },
+	}
+	try {
+		const blocks = await client.ethSimulateV1([...prefix, probeBlock], parentBlock.number, requestAbortController)
+		const result = blocks[blocks.length - 1]?.calls[0]
+		if (result === undefined) throw new Error('Missing simulated code probe result')
+		if (result.status === 'failure') return { statusCode: 'failure' }
+		return { statusCode: 'success', getCodeReturn: EthereumData.parse(decodeFunctionOutput(getCodeAbi, 'at', result.returnData)) }
+	} catch (error: unknown) {
+		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' }
+		throw error
+	}
+}

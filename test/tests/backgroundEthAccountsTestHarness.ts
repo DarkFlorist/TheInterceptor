@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwnerForServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -240,14 +240,16 @@ export function createEthereumWithGetBlockCounter(
 		getCodeResult,
 		getStorageAtResult,
 		getBlockNumberResult,
+		rpcNetwork,
 	}: {
+		readonly rpcNetwork?: RpcEntry
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
 		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
+	const rpcEntry: RpcEntry = rpcNetwork ?? {
 		name: 'Test RPC',
 		chainId: 1n,
 		httpsRpc: 'http://127.0.0.1:8545',
@@ -268,7 +270,10 @@ export function createEthereumWithGetBlockCounter(
 			get(target, property, receiver) {
 				if (property === 'isBlockPolling') return () => blockPolling
 				if (property === 'setBlockPolling') return (enabled: boolean) => {
+					// Like the real client, a retired one refuses to poll again.
+					if (enabled && target.isRetired()) return false
 					blockPolling = enabled
+					return enabled
 				}
 				if (property === 'getBlock') {
 					return async () => {
@@ -299,10 +304,6 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
-	let current = initial
-	return {
-		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
-	}
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }): SimulationServicesOwner {
+	return createSimulationServicesOwnerForServices(initial.ethereum.getRpcEntry(), initial, (_current, network) => reset === undefined ? initial : reset(network))
 }

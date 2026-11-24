@@ -17,7 +17,7 @@ import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, type EthGetStorageAtParams, findEthereumJsonRpcRequestCodec, type SendRawTransactionParams, type SendTransactionParams, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
@@ -32,14 +32,12 @@ import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest } from './windows/watchAsset.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
-import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
-import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
+import { getInvalidRpcParamsReply } from './rpcParseFailureReply.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
-const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
@@ -91,8 +89,10 @@ async function handleRPCRequest(
 		return await executionSimulationStatePromise
 	}
 	const { request, confirmation } = context
+	// Supported methods parse with their own codec, so a malformed request does not build validation failures for every other EthereumJsonRpcRequest member.
+	const requestCodec = findEthereumJsonRpcRequestCodec(request.method)
 	const maybeParsedRequest = confirmation === undefined
-		? EthereumJsonRpcRequest.safeParse(request)
+		? (requestCodec ?? EthereumJsonRpcRequest).safeParse(request)
 		: { success: true as const, value: confirmation.parameters }
 	const requestRoutingState = { simulationMode: settings.simulationMode, signerAvailable: !request.usingInterceptorWithoutSigner }
 	const forwardToSigner = isForwardingRequestsToSigner(requestRoutingState)
@@ -103,10 +103,8 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
-			const methodSpecificReply = getMethodSpecificReply(request)
-			if (methodSpecificReply !== undefined) return replyWithoutFollowUp(methodSpecificReply)
-		}
+		// Preserve the existing pre-policy rejection of these non-signing wallet methods; all other malformed requests pass through Safe policy first.
+		if (request.method === 'wallet_watchAsset' || request.method === 'wallet_getCapabilities') return replyWithoutFollowUp(getInvalidRpcParamsReply(request))
 		const safePolicyReply = getSafeModeRpcPolicyReply({
 			rawRequest: request,
 			confirmation,
@@ -120,9 +118,10 @@ async function handleRPCRequest(
 		if (safePolicyReply !== undefined) return replyWithoutFollowUp(safePolicyReply)
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
-		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
-		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })
+		// Return the stable invalid-params reply after applying the Safe signing policy.
+		if (requestCodec !== undefined) return replyWithoutFollowUp(getInvalidRpcParamsReply(request))
+		// Without a method codec the method is not supported here (wallet_revokePermissions is handled before handleRPCRequest), so forward it to the wallet if a signer is available
+		if (forwardToSigner) return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })
 		return replyWithoutFollowUp({
 			type: 'result' as const,
 			method: request.method,
@@ -348,15 +347,9 @@ async function revokeWebsitePermissions(
 function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	const maybeParsedRequest = WalletRevokePermissions.safeParse(request)
 	if (maybeParsedRequest.success) return maybeParsedRequest.value
-	replyToInterceptedRequest(websiteTabConnections, {
-		type: 'result',
-		method: request.method,
-		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-		error: {
-			message: `Failed to parse RPC request: ${ JSON.stringify(serialize(InterceptedRequest, request)) }`,
-			code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-		},
-	})
+	console.warn(maybeParsedRequest.fullError)
+	// Any page may revoke its own permissions, so this runs before the access check; the readable error only describes wallet_revokePermissions, whose parameters are the public EIP-2255 shape.
+	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	return undefined
 }
 

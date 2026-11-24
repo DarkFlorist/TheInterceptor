@@ -1,10 +1,8 @@
-import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createPort, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
-import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 import { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
@@ -115,17 +113,24 @@ Reflect.set(globalThis, 'browser', {
 
 const [
 	{ dispatchPopupMessage },
-	{ getLatestUnexpectedError },
-	{ EthereumClientService: EthereumClientServiceConstructor },
+	{ getLatestUnexpectedError, updateInterceptorTransactionStack, getInterceptorTransactionStack },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
+	{ createSimulationServicesOwner },
+	{ mockSignTransaction },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
 	import('../../app/ts/background/storageVariables.js'),
-	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
+	import('../../app/ts/simulation/serviceLifecycle.js'),
+	import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 ])
+
+const getPopupMessages = () => sentMessages.flatMap((message) => {
+	const parsed = MessageToPopup.safeParse(message)
+	return parsed.success ? [parsed.value] : []
+})
 
 const settings: Settings = {
 	activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
@@ -158,8 +163,8 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 }
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
-	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
-	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
+	const ethereum = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async () => undefined).getCurrent().ethereum
+	const tokenPriceService = new TokenPriceServiceConstructor(ethereum, 60000)
 	return {
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
@@ -169,6 +174,12 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 		confirmTransactionAbortController: new AbortController(),
 		resetSimulationState,
 	}
+}
+
+// Settings import compares the imported network with the installed services, so these contexts need real services that report their endpoint.
+function createDispatcherContextWithInstalledServices(): PopupMessageDispatcherContext {
+	const simulationServicesOwner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async () => undefined)
+	return { ...createDispatcherContext(async () => undefined), simulationServicesOwner }
 }
 
 beforeEach(() => {
@@ -256,16 +267,20 @@ describe('popup message dispatcher seams', () => {
 			observed.push(snapshot.services)
 		})
 		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
-		context.simulationServicesOwner.reset(network)
+		context.simulationServicesOwner.ensureNetwork(network)
 		const pending = handler(context, { method: 'popup_requestSimulationMetadata' })
 		await entered.promise
 		next = last
-		context.simulationServicesOwner.reset(network)
+		context.simulationServicesOwner.ensureNetwork({ ...network, httpsRpc: 'https://last-snapshot.example' })
 		release.resolve(undefined)
 		await pending
 		await handler(context, { method: 'popup_requestSimulationMetadata' })
 		assert.equal(observed.length, 4)
-		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
+		assert.strictEqual(observed[0], observed[1])
+		assert.strictEqual(observed[2], observed[3])
+		assert.notStrictEqual(observed[0], observed[2])
+		assert.strictEqual(observed[0]?.tokenPriceService, replacement.tokenPriceService)
+		assert.strictEqual(observed[2]?.tokenPriceService, last.tokenPriceService)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {
@@ -438,11 +453,11 @@ describe('popup message dispatcher seams', () => {
 			declarativeNetRequestBlockMode: 'block-all',
 		}]
 		await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
+			createDispatcherContextWithInstalledServices(),
 			{ method: 'popup_import_settings', data: { fileContents: 'not json' } },
 		)
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages().filter((message) => message.method === 'popup_initiate_export_settings_reply')
 		assert.equal(messages.length, 1)
 		const importFailure = messages[0]
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
@@ -483,14 +498,14 @@ describe('popup message dispatcher seams', () => {
 			},
 		})
 
-		const context = createDispatcherContext(async () => undefined)
+		const context = createDispatcherContextWithInstalledServices()
 		context.websiteTabConnections.set(42, { connections: {} })
 		await dispatchPopupMessage(
 			context,
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages().filter((message) => message.method === 'popup_initiate_export_settings_reply' || message.method === 'popup_settingsUpdated')
 		assert.equal(messages.length, 2)
 		const importSuccess = messages[0]
 		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
@@ -516,7 +531,7 @@ describe('popup message dispatcher seams', () => {
 		const dynamicRuleEventIndex = dispatcherEvents.findIndex((event) => event.type === 'dynamicRuleUpdate')
 		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
 		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
-		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
+		assert.ok(settingsUpdatedEventIndex < dynamicRuleEventIndex)
 
 		const registrationOperationCount = contentScriptRegistrationOperations.length
 		reloadedTabs.splice(0, reloadedTabs.length)
@@ -570,11 +585,11 @@ describe('popup message dispatcher seams', () => {
 		})
 
 		await withSilencedConsole(async () => await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
+			createDispatcherContextWithInstalledServices(),
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		))
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages()
 		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected import broadcast.')
@@ -631,11 +646,11 @@ describe('popup message dispatcher seams', () => {
 		})
 
 		await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
+			createDispatcherContextWithInstalledServices(),
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages()
 		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
@@ -671,7 +686,7 @@ describe('popup message dispatcher seams', () => {
 			},
 		})
 
-		const context = createDispatcherContext(async () => undefined)
+		const context = createDispatcherContextWithInstalledServices()
 		context.websiteTabConnections.set(43, { connections: {} })
 		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
 
@@ -679,5 +694,184 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['http://legacy-disabled.test:80/*', 'https://legacy-disabled.test:443/*'])
 		assert.deepEqual(reloadedTabs, [43])
+	})
+})
+
+describe('settings import installs the imported network', () => {
+	const importedSepoliaNetwork = {
+		name: 'Imported Sepolia',
+		chainId: '0xaa36a7',
+		httpsRpc: 'https://sepolia.example.test/rpc',
+		currencyName: 'Sepolia Ether',
+		currencyTicker: 'SEETH',
+		primary: true,
+		minimized: true,
+	}
+	const buildImportFile = (rpcNetwork: Record<string, unknown>, websiteAccess: WebsiteAccessArray = []) => JSON.stringify({
+		name: 'InterceptorSettingsAndAddressBook',
+		version: '1.4',
+		exportedDate: '2026-11-08',
+		settings: {
+			activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+			rpcNetwork,
+			openedPage: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess,
+			simulationMode: true,
+			addressBookEntries: [],
+			useTabsInsteadOfPopup: false,
+			metamaskCompatibilityMode: false,
+		},
+	})
+
+	const getImportedSettingsBroadcast = () => {
+		const importedSettings = getPopupMessages().find((message) => message.method === 'popup_settingsUpdated')
+		if (importedSettings?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
+		return importedSettings
+	}
+
+	for (const scenario of ['different chain', 'same chain', 'failed import'] as const) {
+		test(`settings import handles the existing simulation stack: ${ scenario }`, async () => {
+			const context = createDispatcherContextWithInstalledServices()
+			const originalStack = await updateInterceptorTransactionStack(() => ({ operations: [{
+				type: 'Transaction',
+				preSimulationTransaction: {
+					signedTransaction: mockSignTransaction({ type: '1559', from: 1n, to: 2n, nonce: 0n, chainId: 1n, gas: 21000n, value: 0n, maxFeePerGas: 2n, maxPriorityFeePerGas: 1n, input: new Uint8Array(), accessList: [] }),
+					website: { websiteOrigin: 'https://stack.example' },
+					created: new Date('2026-01-01T00:00:00Z'),
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+					transactionIdentifier: 1n,
+				},
+			}] }))
+			const network = scenario === 'same chain' ? { ...importedSepoliaNetwork, chainId: '0x1' } : importedSepoliaNetwork
+			const fileContents = scenario === 'failed import' ? 'invalid settings' : buildImportFile(network)
+			await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents } })
+			assert.deepEqual((await getInterceptorTransactionStack()).operations, scenario === 'different chain' ? [] : originalStack.operations)
+		})
+	}
+
+	test('notifies approved connections and popup clients when an import changes chains', async () => {
+		const context = createDispatcherContextWithInstalledServices()
+		const { websiteSocketToString } = await import('../../app/ts/background/backgroundUtils.js')
+		const { port, messages } = createPort(1)
+		const socket = { tabId: 1, connectionName: 0n }
+		const websiteOrigin = 'https://imported-chain.example'
+		context.websiteTabConnections.set(1, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } })
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork, [{ website: { websiteOrigin }, access: true, addressAccess: undefined }]) } })
+		assert.ok(messages.some((message) => message.method === 'chainChanged' && message.result === '0xaa36a7'))
+		assert.ok(getPopupMessages().some((message) => message.method === 'popup_chain_update'))
+	})
+
+	for (const entryPoint of ['popup', 'direct', 'import', 'rpc list', 'direct list'] as const) {
+		test(`an import excludes overlapping ${ entryPoint } network changes until its transition completes`, async () => {
+			const context = createDispatcherContextWithInstalledServices()
+			const entered = createDeferredValue<void>()
+			const release = createDeferredValue<void>()
+			const originalSet = browser.storage.local.set.bind(browser.storage.local)
+			let paused = false
+			browser.storage.local.set = async (items) => {
+				await originalSet(items)
+				if (!paused && 'activeRpcNetwork' in items) {
+					paused = true
+					entered.resolve(undefined)
+					await release.promise
+				}
+			}
+			const importing = dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork) } })
+			await entered.promise
+			const nextNetwork = { ...settings.activeRpcNetwork, chainId: entryPoint === 'direct list' ? 11155111n : settings.activeRpcNetwork.chainId, httpsRpc: 'https://later.example' }
+			if (entryPoint !== 'direct' && entryPoint !== 'direct list') {
+				try {
+					if (entryPoint === 'popup' || entryPoint === 'rpc list') {
+						const result = entryPoint === 'popup'
+							? await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: nextNetwork })
+							: await dispatchPopupMessage(context, { method: 'popup_set_rpc_list', data: [nextNetwork] })
+						assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
+					} else {
+						await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile({ ...importedSepoliaNetwork, httpsRpc: 'https://rejected.example' }) } })
+						const rejection = getPopupMessages().find((message) => message.method === 'popup_initiate_export_settings_reply')
+						if (rejection?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected an import rejection broadcast')
+						assert.deepEqual(rejection.data, { success: false, errorMessage: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
+					}
+				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
+				await importing
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, importedSepoliaNetwork.httpsRpc)
+			} else {
+				const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+				let finished = false
+				const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+				const changing = (entryPoint === 'direct list'
+					? setNewRpcList(context.simulationServicesOwner, context.websiteTabConnections, { method: 'popup_set_rpc_list', data: [nextNetwork] })
+					: changeActiveAddressAndChain(context.simulationServicesOwner, context.websiteTabConnections, { simulationMode: true, rpcNetwork: nextNetwork })).then(() => { finished = true })
+				try {
+					await new Promise((resolve) => setTimeout(resolve, 0))
+					assert.equal(finished, false)
+				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
+				await Promise.all([importing, changing])
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, entryPoint === 'direct list' ? importedSepoliaNetwork.httpsRpc : nextNetwork.httpsRpc)
+			}
+		})
+	}
+
+	test('replaces the installed services when the import selects another endpoint', async () => {
+		const context = createDispatcherContextWithInstalledServices()
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork) } })
+		const installedRpc = context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry()
+		assert.equal(installedRpc.httpsRpc, importedSepoliaNetwork.httpsRpc)
+		assert.equal(installedRpc.chainId, 11155111n)
+	})
+
+	for (const selection of ['custom', 'same endpoint', 'signer-only'] as const) test(`unrelated list edits preserve an imported ${ selection } selection and its installed services`, async () => {
+		const { getRpcList } = await import('../../app/ts/background/rpcListStorage.js')
+		const { setRpcListAndNotifyPages } = await import('../../app/ts/background/rpcList.js')
+		const { getSettings } = await import('../../app/ts/background/settings.js')
+		const context = createDispatcherContextWithInstalledServices()
+		const configured = settings.activeRpcNetwork
+		if (configured.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		await setRpcListAndNotifyPages([configured])
+		const importedNetwork = selection === 'signer-only'
+			? { name: 'Independent signer-only selection', chainId: '0x1', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+			: { ...importedSepoliaNetwork, name: 'Independent imported selection', chainId: '0x1', httpsRpc: selection === 'same endpoint' ? configured.httpsRpc : 'https://imported.example' }
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedNetwork) } })
+		const active = (await getSettings()).activeRpcNetwork
+		const installed = context.simulationServicesOwner.getCurrent()
+		const extra = { ...configured, name: 'Unrelated added entry', httpsRpc: 'https://added.example' }
+		for (const entries of [[configured, extra], [{ ...configured, name: 'Edited entry' }, extra], [extra]]) {
+			const refreshCount = getPopupMessages().filter(message => message.method === 'popup_isSimulationVisualizerOpen').length
+			assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_set_rpc_list', data: entries }), { type: 'PopupSettingsChangeReply', ok: true })
+			assert.deepEqual(await getRpcList(), entries)
+			assert.deepEqual((await getSettings()).activeRpcNetwork, active)
+			assert.equal(context.simulationServicesOwner.getCurrent(), installed)
+			assert.equal(getPopupMessages().filter(message => message.method === 'popup_isSimulationVisualizerOpen').length, refreshCount)
+		}
+	})
+
+	test('a later popup selection of the imported network keeps the imported services installed', async () => {
+		const context = createDispatcherContextWithInstalledServices()
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork) } })
+		const importedSettings = getImportedSettingsBroadcast()
+		await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: importedSettings.data.activeRpcNetwork })
+		assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, importedSepoliaNetwork.httpsRpc)
+	})
+
+	test('keeps the installed services when the import selects the installed endpoint', async () => {
+		const context = createDispatcherContextWithInstalledServices()
+		const servicesBeforeImport = context.simulationServicesOwner.getCurrent()
+		const renamedInstalledNetwork = { ...importedSepoliaNetwork, name: 'Renamed mainnet', chainId: '0x1', httpsRpc: settings.activeRpcNetwork.httpsRpc }
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(renamedInstalledNetwork) } })
+		const importedSettings = getImportedSettingsBroadcast()
+		assert.equal(importedSettings.data.activeRpcNetwork.name, renamedInstalledNetwork.name)
+		assert.equal(context.simulationServicesOwner.getCurrent(), servicesBeforeImport)
+	})
+
+	test('keeps the installed services when the import selects a signer-only network', async () => {
+		const context = createDispatcherContextWithInstalledServices()
+		const servicesBeforeImport = context.simulationServicesOwner.getCurrent()
+		const signerOnlyNetwork = { name: 'Imported signer-only Sepolia', chainId: '0xaa36a7', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(signerOnlyNetwork) } })
+		const importedSettings = getImportedSettingsBroadcast()
+		assert.equal(importedSettings.data.activeRpcNetwork.name, signerOnlyNetwork.name)
+		assert.equal(importedSettings.data.activeRpcNetwork.httpsRpc, undefined)
+		assert.equal(context.simulationServicesOwner.getCurrent(), servicesBeforeImport)
 	})
 })

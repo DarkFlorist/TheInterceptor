@@ -67,7 +67,7 @@ describe('typed data nested past the call stack limit', () => {
 		assert.equal(EIP712Message.safeParse(shallowTypedDataJson).success, true)
 	})
 
-	test('a deep document gets the parse failure reply instead of an unknown error', async () => {
+	test('a deep document gets the invalid params reply instead of an unknown error', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://deep-typed-data.example'
@@ -93,8 +93,9 @@ describe('typed data nested past the call stack limit', () => {
 		await withSilencedConsole(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus))
 
 		const reply = messages.find((message) => message.requestId === 7)
-		assert.equal(reply?.error?.code, -32700)
-		assert.ok(reply?.error?.message.startsWith('Failed to parse RPC request: '))
+		// Invalid params of a supported method get the readable invalid-params reply, which names the method without exposing validator diagnostics.
+		assert.equal(reply?.error?.code, -32602)
+		assert.equal(reply?.error?.message, 'Invalid eth_signTypedData_v4 parameters.')
 	})
 
 	test('a deep Safe typed message within the 100000 character limit is rejected as invalid', () => {

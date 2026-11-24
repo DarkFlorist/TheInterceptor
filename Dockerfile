@@ -9,6 +9,7 @@ RUN bun install --frozen-lockfile
 
 COPY ./package.json /workspace/package.json
 COPY ./bun.lock /workspace/bun.lock
+COPY ./patches/ /workspace/patches/
 WORKDIR /workspace
 RUN bun install --frozen-lockfile
 
