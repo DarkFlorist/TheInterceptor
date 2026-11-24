@@ -56,10 +56,12 @@ function parseExactMajorMinor(version: string) {
 }
 
 describe('package scripts', () => {
-	test('test script compiles Solidity contracts and uses the CI-safe timeout before starting the test runner', () => {
+	test('test script checks recovery dependencies, compiles contracts and uses the CI-safe timeout', () => {
 		const scripts = getPackageScripts()
 
+		assert.equal(getScript(scripts, 'typecheck').split(' && ')[0], 'bun run check:recovery-dependency')
 		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
+			'bun run check:recovery-dependency',
 			'bun run compile-contracts',
 			'bun test --timeout 60000',
 		])
@@ -149,7 +151,7 @@ describe('package scripts', () => {
 		}
 	})
 
-	test('app compilation builds Solidity contracts and keeps declaration output enabled', () => {
+	test('app compilation checks recovery dependencies, builds contracts and keeps declarations', () => {
 		const scripts = getPackageScripts()
 		const configFile = ts.readConfigFile(path.join(repositoryRoot, 'tsconfig.json'), ts.sys.readFile)
 		assert.equal(configFile.error, undefined)
@@ -158,6 +160,7 @@ describe('package scripts', () => {
 		assert.ok(isRecord(compilerOptions))
 
 		assert.deepEqual(getScript(scripts, 'compile-app').split(' && '), [
+			'bun run check:recovery-dependency',
 			'bun run compile-contracts',
 			'bun run clean-js-output',
 			'bun --bun tsc --project tsconfig.json',

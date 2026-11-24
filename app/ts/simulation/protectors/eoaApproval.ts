@@ -1,10 +1,9 @@
+import type { ProtectorContext } from '../protectorTypes.js'
 import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import type { ProtectorChainReads } from '../protectorChainReads.js'
-import type { IdentifyAddress } from '../../types/metadataLookups.js'
-import { getCodeOrError } from './commonTokenOops.js'
+import { getCodeOrError } from './codeVerification.js'
 
-export async function eoaApproval(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, chainReads: ProtectorChainReads, identify: IdentifyAddress) {
+export async function eoaApproval(transaction: EthereumUnsignedTransaction, { chainReads, identify }: Pick<ProtectorContext, 'chainReads' | 'identify'>) {
 	const approvalInfo = parseTransaction(transaction)
 	if (approvalInfo === undefined) return
 	if (approvalInfo.name === 'approve') {

@@ -155,6 +155,11 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	return undefined
 }
 
+// Duplicate form validation needs only existence, never a locally inferred contract type or Safe owners.
+export async function hasAddressBookDuplicate(address: bigint, rpcEntry: RpcNetwork | undefined): Promise<boolean> {
+	const entry = await identifyAddressWithoutNode(address, rpcEntry)
+	return entry !== undefined && entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'
+}
 // Identifies an address from the address book and bundled metadata alone, never on chain; undefined when neither knows it.
 export const identifyAddressFromLocalData = async (address: EthereumAddress, rpcEntry: RpcNetwork) => await identifyAddressWithoutNode(address, rpcEntry)
 

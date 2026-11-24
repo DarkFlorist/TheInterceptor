@@ -1,5 +1,5 @@
 import { popupSettingsCommandHandlers } from './popupSettingsCommands.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
@@ -24,7 +24,7 @@ const popupMessageHandlers = {
 		return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, request)
 	}),
 	popup_refreshSimulation: popupSnapshotMessageHandler('popup_refreshSimulation', async (context) => {
-		await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true })
+		await runPopupSimulationRefresh({ ...context.services, invalidateOldState: true })
 	}),
 	popup_refreshConfirmTransactionDialogSimulation: popupSnapshotMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context) => {
 		const { ethereum, tokenPriceService } = context.services

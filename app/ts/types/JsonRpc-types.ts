@@ -534,11 +534,17 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	InterceptorError,
 )
 
-// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus methods handled before normal RPC dispatch such as wallet_revokePermissions.
-export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
-export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
-	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
-})
+// Use the union's public members so dispatch and validation share one method list.
+type EthereumJsonRpcRequestCodec = typeof EthereumJsonRpcRequest.alternatives[number]
+const requestCodecsByMethod = new Map<string, EthereumJsonRpcRequestCodec>()
+for (const codec of EthereumJsonRpcRequest.alternatives) {
+	const method = codec.fields.method
+	const names = method.tag === 'literal' ? [method.value] : method.alternatives.map((item) => item.value)
+	for (const name of names) requestCodecsByMethod.set(name, codec)
+}
+
+// Parsing one member avoids producing failures for every unrelated RPC method.
+export const findEthereumJsonRpcRequestCodec = (method: string) => requestCodecsByMethod.get(method)
 
 export type OriginalSendRequestParameters = funtypes.Static<typeof OriginalSendRequestParameters>
 export const OriginalSendRequestParameters = funtypes.Union(SendTransactionParams, SendRawTransactionParams)

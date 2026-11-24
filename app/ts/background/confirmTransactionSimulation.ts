@@ -3,23 +3,39 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
+import { getFailureReasonForDisplay, getInterceptorErrorExplanation } from '../simulation/failureReasons.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
-import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
-import { getSimulationErrorAbis } from './simulationErrorAbi.js'
+import { getErrorDecodingAbis } from './errorDecodingAbis.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+let nextRefreshGeneration = 0
+let activeRefreshGeneration = 0
+
+// Reserve request order before reading eligibility; a no-op refresh must leave the active simulation alone.
+export function reserveConfirmTransactionSimulationRefresh() {
+	const generation = ++nextRefreshGeneration
+	return {
+		isCurrent: () => generation === activeRefreshGeneration,
+		claim: () => {
+			if (generation < activeRefreshGeneration) return false
+			activeRefreshGeneration = generation
+			return true
+		},
+	}
+}
+export type ConfirmTransactionSimulationRefresh = ReturnType<typeof reserveConfirmTransactionSimulationRefresh>
 
 // Every confirmation simulation run gets an id no other run ever has, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from any other. The sequence numbers the runs of this background lifetime and starts over after a restart, and the random lifetime keeps a run of this lifetime from taking the id of a run stored before the restart. The id reads neither the clock nor storage. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
 const confirmationRunLifetime = crypto.randomUUID()
@@ -64,7 +80,9 @@ export async function refreshConfirmTransactionSimulation(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
+	refresh = reserveConfirmTransactionSimulationRefresh(),
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	if (!refresh.claim()) return undefined
 	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
@@ -78,8 +96,32 @@ export async function refreshConfirmTransactionSimulation(
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 		confirmationRunId: getNextConfirmationRunId(),
 	}
+	// The tab read can yield to a newer refresh; a superseded run must not announce or start a simulation.
+	if (!refresh.isCurrent()) return undefined
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
+	const transactionCreationError = transactionToSimulate.success ? undefined : transactionToSimulate.error
+	// getFailureReasonForDisplay shows an Interceptor explanation instead of the decoded reason, so its revert data is never decoded.
+	const transactionCreationErrorDataToDecode = transactionCreationError === undefined || getInterceptorErrorExplanation(transactionCreationError) !== undefined ? undefined : transactionCreationError.data
+	// The errors decoded in this function (the transaction creation error, plus the thrown simulation error in the catch path) use the recipient's ABI, a best-effort guess for a simulation error that may come from another stacked transaction, so they share a single lookup that is skipped unless one is a custom error selector.
+	const getRecipientErrorAbis = async (errorDataToDecode: readonly (string | undefined)[]): Promise<readonly string[]> => {
+		const params = transactionToSimulate.originalRequestParameters.params[0]
+		if (!('to' in params)) return []
+		if (params.to === undefined || params.to === null) return []
+		const recipient = params.to
+		return await getErrorDecodingAbis(errorDataToDecode, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
+	}
+	// The lookup runs after the simulation error was caught, so a new block arriving mid-lookup abandons the refresh like the abort guard at the top of that catch.
+	const getRecipientErrorAbisUnlessNewBlockAborted = async (errorDataToDecode: readonly (string | undefined)[]) => {
+		try {
+			return await getRecipientErrorAbis(errorDataToDecode)
+		} catch (lookupError: unknown) {
+			if (isNewBlockAbort(lookupError)) return undefined
+			throw lookupError
+		}
+	}
+	// A transaction that failed to be created is not simulated, so callers pass the recipient ABI, plus the simulation ABIs when the simulation produced them, to decode its custom errors.
+	const getCreationFailureReasonWithAbis = (errorAbis: readonly string[]) => transactionCreationError === undefined ? undefined : getFailureReasonForDisplay(errorAbis, transactionCreationError)
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
 		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
@@ -104,13 +146,16 @@ export async function refreshConfirmTransactionSimulation(
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
+		if (!refresh.isCurrent()) return undefined
 		const availableAbis = visualizedSimulatorState.addressBookEntries
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
+		const transactionCreationFailureReason = getCreationFailureReasonWithAbis([...availableAbis, ...await getRecipientErrorAbis([transactionCreationErrorDataToDecode])])
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 				...info,
 				simulationStartedTimestamp,
+				transactionCreationFailureReason,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
 				simulationState: {
 					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
@@ -126,18 +171,16 @@ export async function refreshConfirmTransactionSimulation(
 				...info,
 				simulationStartedTimestamp,
 				...visualizedSimulatorState,
-				transactionToSimulate: {
-					...transactionToSimulate,
-					...transactionToSimulate.success ? {
+				transactionToSimulate: transactionToSimulate.success
+					? {
+						...transactionToSimulate,
 						transaction: {
 							...transactionToSimulate.transaction,
 							nonce: lastTransaction ? lastTransaction.transaction.nonce : transactionToSimulate.transaction.nonce,
-						} }
-					: { error: {
-						...transactionToSimulate.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
-					} }
-				}
+						},
+					}
+					: transactionToSimulate,
+				transactionCreationFailureReason,
 			}
 		}
 		return transactionToSimulate.success ? confirmation : await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, confirmation)
@@ -146,21 +189,18 @@ export async function refreshConfirmTransactionSimulation(
 		if (isFailedToFetchError(error)) return undefined
 		const isJsonRpcResponseError = error instanceof JsonRpcResponseError
 		if (!isJsonRpcResponseError) await reportUnexpectedError(error, { code: 'confirm_transaction_simulation_failed' })
+		if (!refresh.isCurrent()) return undefined
 
 		const baseError = isJsonRpcResponseError
 			? { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }
 			: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: error instanceof Error ? error.message : 'Unknown simulation error', data: '0x' }
-		const extractToAbi = async (): Promise<readonly string[]> => {
-			const params = transactionToSimulate.originalRequestParameters.params[0]
-			if (!('to' in params)) return []
-			if (params.to === undefined || params.to === null) return []
-			const recipient = params.to
-			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
-		}
+		const recipientErrorAbis = await getRecipientErrorAbisUnlessNewBlockAborted([transactionCreationErrorDataToDecode, isJsonRpcResponseError ? baseError.data : undefined])
+		if (recipientErrorAbis === undefined) return undefined
 		return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
-			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
+			transactionCreationFailureReason: getCreationFailureReasonWithAbis(recipientErrorAbis),
+			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(recipientErrorAbis, baseError) : baseError.message },
 			simulationState: {
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()

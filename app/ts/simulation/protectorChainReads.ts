@@ -4,14 +4,9 @@ import { type RecordedProtectorChainReads, type SimulationState, toResolvedSimul
 import type { EthereumClientService } from './services/EthereumClientService.js'
 import { getSimulatedCode } from './services/SimulationModeEthereumClientService.js'
 
-type AddressCode = RecordedProtectorChainReads['addressCode'][number]['code']
+import type { ProtectorChainReads } from './protectorTypes.js'
 
-// The chain state protectors read about a transaction besides its simulation result. Every chain read a protector makes must go through this object, so it is recorded with the run and replayed by the address-book re-label, which makes no RPC request.
-export type ProtectorChainReads = {
-	// Whether the address has code where the transaction runs, after the transactions simulated before it.
-	readonly readCode: (address: EthereumAddress) => Promise<AddressCode>
-	readonly readGasPrice: () => Promise<bigint>
-}
+type AddressCode = RecordedProtectorChainReads['addressCode'][number]['code']
 
 type ProtectorChainReadsWithRecord = {
 	readonly chainReads: ProtectorChainReads
@@ -23,16 +18,16 @@ type ProtectorChainReadsWithRecord = {
 export function readAndRecordProtectorChainReads(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState): ProtectorChainReadsWithRecord {
 	const addressCode: { address: EthereumAddress, code: AddressCode }[] = []
 	let gasPrice: bigint | undefined
+	const live = createLiveProtectorChainReads(ethereum, requestAbortController, simulationState)
 	return {
 		chainReads: {
 			readCode: async (address) => {
-				const simulatedCode = await getSimulatedCode(ethereum, requestAbortController, toResolvedSimulationState(simulationState), address)
-				const code = simulatedCode.statusCode === 'failure' ? 'unverified' : simulatedCode.getCodeReturn.length > 0 ? 'present' : 'absent'
+				const code = await live.readCode(address)
 				addressCode.push({ address, code })
 				return code
 			},
 			readGasPrice: async () => {
-				const nodeGasPrice = await ethereum.getGasPrice(requestAbortController)
+				const nodeGasPrice = await live.readGasPrice()
 				gasPrice = nodeGasPrice
 				return nodeGasPrice
 			},
@@ -63,3 +58,11 @@ export function replayRecordedProtectorChainReads(record: RecordedProtectorChain
 		getRecord: () => record,
 	}
 }
+
+export const createLiveProtectorChainReads = (ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState): ProtectorChainReads => ({
+	readCode: async (address) => {
+		const code = await getSimulatedCode(ethereum, requestAbortController, toResolvedSimulationState(simulationState), address)
+		return code.statusCode === 'failure' ? 'unverified' : code.getCodeReturn.length > 0 ? 'present' : 'absent'
+	},
+	readGasPrice: async () => await ethereum.getGasPrice(requestAbortController),
+})

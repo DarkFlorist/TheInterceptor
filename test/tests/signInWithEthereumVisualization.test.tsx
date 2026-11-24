@@ -177,7 +177,7 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 		const visualized = await visualizeSignIn(siweText({ address: MOCK_ADDRESS_CHECKSUMMED }))
 		assert.equal(visualized.signInAccount.address, MOCK_PRIVATE_KEYS_ADDRESS)
 		assert.equal(visualized.quarantine, true)
-		assert.deepEqual(visualized.quarantineReasons, ['The signature request is for an account that is different from your active address.'])
+		assert.deepEqual(visualized.quarantineReasons, ['The account named in the message differs from the signing account.'])
 	})
 
 	test('flags a sign-in message bound to a chain other than the active one', async () => {

@@ -6,8 +6,9 @@ import { act } from 'preact/test-utils'
 import { type GovernanceVoteInputParameters, MessageToPopup, PopupMessage, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
 import { PopupMessageReplyRequests, PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
-import { createPassthroughCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import { createPassthroughCompleteVisualizedSimulation, type ModifyAddressWindowState, type SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 
@@ -177,6 +178,53 @@ function createSimulationFailureReply(transactionOrMessageIdentifier: bigint, er
 			errorType: 'Other' as const,
 			transactionOrMessageIdentifier,
 			errorMessage,
+		},
+	})
+}
+
+function createGnosisSimulationSuccessReply(messageIdentifier: bigint, recipientName: string) {
+	const message = createGnosisSafeMessageFixture(messageIdentifier)
+	const recipient = { ...message.to, name: recipientName }
+	const timestamp = new Date('2024-01-01T00:00:00.000Z')
+	const transaction: SimulatedAndVisualizedTransaction = {
+		website: message.website,
+		created: timestamp,
+		parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+		transactionIdentifier: messageIdentifier,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: gnosisSignerAddress.address, to: recipient.address, value: 1n, input: new Uint8Array() }] },
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 21_000n,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		transactionStatus: 'Transaction Succeeded',
+		transaction: {
+			from: gnosisSignerAddress, to: recipient, rpcNetwork: message.rpcNetwork,
+			type: '1559', nonce: 0n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n,
+			gas: 21_000n, value: 1n, input: new Uint8Array(), hash: 1n,
+		},
+		events: [],
+	}
+	return serialize(SimulateExecutionReply, {
+		method: 'popup_simulateExecutionReply',
+		data: {
+			success: true,
+			transactionOrMessageIdentifier: messageIdentifier,
+			result: {
+				namedTokenIds: [],
+				addressBookEntries: [gnosisSignerAddress, recipient, { type: 'ERC20', name: 'Ether', symbol: 'ETH', decimals: 18n, address: ETHEREUM_LOGS_LOGGER_ADDRESS, entrySource: 'Interceptor' }],
+				tokenPriceEstimates: [],
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [{ simulatedAndVisualizedTransactions: [transaction], visualizedPersonalSignRequests: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } }],
+				},
+				simulationState: {
+					success: true, simulationStateInput: [], simulatedBlocks: [], blockNumber: 1n,
+					blockTimestamp: timestamp, baseFeePerGas: 1n, simulationConductedTimestamp: timestamp, rpcNetwork: message.rpcNetwork,
+				},
+			},
 		},
 	})
 }
@@ -862,6 +910,77 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
+	test.each(['missing', 'rejected', 'wrong chain'] as const)('surfaces optional metadata %s replies once while keeping valid saves enabled', async failure => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		let requests = 0
+		runtimeSendMessage = async message => {
+			if (getRuntimeMethod(message) !== 'popup_requestIdentifyAddress') return undefined
+			requests++
+			if (failure === 'rejected') throw new Error('Token lookup transport failed')
+			if (failure === 'wrong chain') return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({ method: 'popup_requestIdentifyAddress', data: { chainId: 2n, addressBookEntry: undefined } })
+			return undefined
+		}
+		const state = signal<ModifyAddressWindowState>({ windowStateId: 'failed-metadata', errorState: undefined, incompleteAddressBookEntry: {
+			addingAddress: true, type: 'ERC20', address: '0x0000000000000000000000000000000000000001', chainId: 1n,
+			name: 'My token', decimals: 6n, symbol: 'TEST', entrySource: 'User', askForAddressAccess: true,
+			logoUri: undefined, abi: undefined, useAsActiveAddress: undefined, declarativeNetRequestBlockMode: undefined,
+		} })
+		try {
+			await act(async () => { render(h(modules.AddNewAddress, { close: () => undefined, modifyAddressWindowState: state, rpcEntries: signal([]), activeAddress: undefined, setActiveAddressAndInformAboutIt: undefined }), dom.document.body); await settleAsyncUpdates() })
+			await act(async () => { await settleAsyncUpdates() })
+			assert.equal(requests, 1, 'Failed lookups must not retry automatically')
+			assert.equal(dom.document.body.textContent?.includes('Looking up address metadata'), true)
+			const save = collectElements(dom.document.body, 'button').find(button => button.textContent?.includes('Create address'))
+			assert.ok(save)
+			assert.equal(isDisabled(save), false)
+			await act(async () => {
+				state.value = { ...state.value, incompleteAddressBookEntry: { ...state.value.incompleteAddressBookEntry, name: 'Edited token' } }
+				await settleAsyncUpdates()
+			})
+			assert.equal(requests, 1)
+		} finally {
+			await act(async () => { render(undefined, dom.document.body); await settleAsyncUpdates() })
+			dom.restore()
+		}
+	})
+
+	test('keeps form edits and saving responsive while optional metadata is pending', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferred = createDeferred<ReturnType<typeof createIdentifyAddressReply>>()
+		let requests = 0
+		runtimeSendMessage = async message => {
+			if (getRuntimeMethod(message) !== 'popup_requestIdentifyAddress') return undefined
+			requests++
+			return await deferred.promise
+		}
+		const state = signal<ModifyAddressWindowState>({ windowStateId: 'optional-metadata', errorState: undefined, incompleteAddressBookEntry: {
+			addingAddress: true, type: 'ERC20', address: '0x0000000000000000000000000000000000000001', chainId: 1n,
+			name: undefined, decimals: undefined, symbol: 'TEST', entrySource: 'User', askForAddressAccess: true,
+			logoUri: undefined, abi: undefined, useAsActiveAddress: undefined, declarativeNetRequestBlockMode: undefined,
+		} })
+		try {
+			await act(async () => { render(h(modules.AddNewAddress, { close: () => undefined, modifyAddressWindowState: state, rpcEntries: signal([]), activeAddress: undefined, setActiveAddressAndInformAboutIt: undefined }), dom.document.body); await settleAsyncUpdates() })
+			assert.equal(requests, 1)
+			await act(async () => {
+				state.value = { ...state.value, incompleteAddressBookEntry: { ...state.value.incompleteAddressBookEntry, name: 'My token', decimals: 6n } }
+				await settleAsyncUpdates()
+			})
+			const save = collectElements(dom.document.body, 'button').find(button => button.textContent?.includes('Create address'))
+			assert.ok(save)
+			assert.equal(isDisabled(save), false, 'Optional metadata must not block saving valid input')
+			assert.equal(requests, 1, 'Name/decimal edits must not request metadata again')
+			await act(async () => { deferred.resolve(createIdentifyAddressReply(1n, 'Remote token')); await deferred.promise; await settleAsyncUpdates() })
+			assert.equal(state.value.incompleteAddressBookEntry.name, 'My token')
+			assert.equal(state.value.incompleteAddressBookEntry.decimals, 6n)
+		} finally {
+			deferred.resolve(createIdentifyAddressReply(1n, 'Remote token'))
+			await act(async () => { render(undefined, dom.document.body); await settleAsyncUpdates() })
+			dom.restore()
+		}
+	})
+
 	test('retries address identification after returning to a state whose earlier reply became stale', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
@@ -1137,18 +1256,25 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	test('shows cached Safe owners but blocks saving when automatic owner retrieval fails', async () => {
+	test.each(['missing', 'rejected'] as const)('keeps failed Safe lookup stable and supports explicit retry (%s)', async failure => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const safeAddress = '0x3000000000000000000000000000000000000003'
 		const signerAddress = '0x1111111111111111111111111111111111111111'
 		let saveMessage: unknown
+		let ownerRequests = 0
 		runtimeSendMessage = async (message) => {
 			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') {
 				return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({
 					method: 'popup_requestIdentifyAddress',
 					data: { chainId: 1n, addressBookEntry: undefined },
 				})
+			}
+			if (getRuntimeMethod(message) === 'popup_requestSafeContractState') {
+				ownerRequests++
+				if (ownerRequests > 1) return createSafeContractStateReply([BigInt(signerAddress)])
+				if (failure === 'rejected') throw new Error('Safe lookup transport failed')
+				return undefined
 			}
 			if (getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry') {
 				saveMessage = message
@@ -1195,6 +1321,16 @@ describe('popup async action UI', () => {
 		assert.equal(isDisabled(modifyButton), true)
 		await act(async () => { await clickElement(modifyButton) })
 		assert.equal(saveMessage, undefined)
+		await act(async () => { await settleAsyncUpdates() })
+		assert.equal(ownerRequests, 1)
+		assert.equal(dom.document.body.textContent?.includes('Interceptor did not return the current Gnosis Safe signers.'), true, JSON.stringify(modifyAddressWindowState.value.errorState) + ' / ' + dom.document.body.textContent)
+		const retry = collectElements(dom.document.body, 'button').find(button => button.textContent?.includes('Refresh owners'))
+		assert.ok(retry)
+		await act(async () => { await clickElement(retry); await settleAsyncUpdates() })
+		assert.equal(ownerRequests, 2)
+		const enabledSave = collectElements(dom.document.body, 'button').find(button => button.textContent?.trim() === 'Save changes')
+		assert.ok(enabledSave)
+		assert.equal(isDisabled(enabledSave), false)
 		render(null, dom.document.body)
 		dom.restore()
 	})
@@ -1208,8 +1344,9 @@ describe('popup async action UI', () => {
 		const firstReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
 		const refreshReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
 		let requestCount = 0
+		let tokenLookupCount = 0
 		runtimeSendMessage = async (message) => {
-			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe')
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') { tokenLookupCount++; return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe') }
 			if (getRuntimeMethod(message) !== 'popup_requestSafeContractState') return undefined
 			requestCount += 1
 			return requestCount === 1 ? await firstReply.promise : await refreshReply.promise
@@ -1259,6 +1396,10 @@ describe('popup async action UI', () => {
 		if (retrieveButton === undefined) throw new Error('Expected pending Safe signer retrieval button')
 		assert.equal(isDisabled(retrieveButton), true)
 		assert.equal(requestCount, 1)
+		assert.equal(tokenLookupCount, 0, 'Safe lookup must not wait on redundant token identification')
+		const nameInput = collectElements(dom.document.body, 'input').find(input => input.getAttribute('aria-label') === 'Name')
+		assert.ok(nameInput)
+		assert.equal(isDisabled(nameInput), false, 'Unrelated fields stay editable during owner lookup')
 		await act(async () => {
 			firstReply.resolve(createSafeContractStateReply([firstOwner, alternateOwner]))
 			await firstReply.promise
@@ -1478,6 +1619,195 @@ describe('popup async action UI', () => {
 		assert.equal(dom.document.body.textContent?.includes('Simulating Gnosis Safe execution failed because the background page did not return a reply.'), true)
 		dom.restore()
 	})
+
+	for (const visualizer of ['Safe', 'governance']) {
+		for (const completion of ['before edit', 'direct reply after edit', 'broadcast after edit']) {
+			test(`updates ${ visualizer } outcome address names with simulation completion via ${ completion }`, async () => {
+				const renameWhilePending = completion !== 'before edit'
+				const modules = await modulesPromise
+				const dom = installDomMock()
+				const initialReply = createDeferred<unknown>()
+				let recipientName = 'Original recipient'
+				let simulationRequestCount = 0
+				runtimeSendMessage = async (message) => {
+					if (getRuntimeMethod(message) !== (visualizer === 'Safe' ? 'popup_simulateGnosisSafeTransaction' : 'popup_simulateGovernanceContractExecution')) return undefined
+					simulationRequestCount += 1
+					return simulationRequestCount === 1 ? initialReply.promise : createGnosisSimulationSuccessReply(7n, recipientName)
+				}
+
+				try {
+					await act(() => {
+						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
+							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+							activeAddress: gnosisSignerAddress.address,
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+						}) : h(modules.GovernanceVoteVisualizer, {
+							simTx: createGovernanceTransactionFixture(7n),
+							activeAddress: signal(gnosisSignerAddress.address),
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+							governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+						}), dom.document.body)
+					})
+					if (visualizer === 'governance') {
+						const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+						if (button === undefined) throw new Error('Expected governance simulation button')
+						await act(async () => { await clickElement(button) })
+					}
+					const originalReply = createGnosisSimulationSuccessReply(7n, recipientName)
+					if (!renameWhilePending) {
+						await act(async () => {
+							initialReply.resolve(originalReply)
+							await settleAsyncUpdates()
+						})
+						assert.equal(dom.document.body.textContent?.includes(recipientName), true, dom.document.body.textContent)
+					}
+
+					await act(async () => {
+						recipientName = 'Renamed recipient'
+						await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+						await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+						await settleAsyncUpdates()
+					})
+					if (renameWhilePending) {
+						assert.equal(simulationRequestCount, 1)
+						await act(async () => {
+							if (completion === 'broadcast after edit') await emitRuntimeMessage({ role: 'all', ...originalReply })
+							else initialReply.resolve(originalReply)
+							await settleAsyncUpdates()
+						})
+					}
+					await act(async () => { await settleAsyncUpdates() })
+
+					if (completion === 'broadcast after edit') {
+						await act(async () => {
+							initialReply.resolve(originalReply)
+							await settleAsyncUpdates()
+						})
+					}
+					await act(async () => { await settleAsyncUpdates() })
+					const outcomeText = dom.document.body.textContent ?? ''
+					assert.equal(outcomeText.includes('Renamed recipient'), true, outcomeText)
+					assert.equal(outcomeText.includes('Original recipient'), false, outcomeText)
+					assert.equal(simulationRequestCount, 2)
+				} finally {
+					await act(() => { render(null, dom.document.body) })
+					dom.restore()
+				}
+			})
+		}
+
+	}
+
+	for (const support of [true, 0n, 1n, 2n]) {
+		for (const rerenderTiming of ['during request', 'after direct reply']) {
+			test(`preserves governance outcome across equivalent input rerenders ${ rerenderTiming } with support ${ support }`, async () => {
+				const modules = await modulesPromise
+				const dom = installDomMock()
+				const direct = createDeferred<unknown>()
+				let simulationRequestCount = 0
+				// Only governance simulation requests belong to this counter and reply queue; unrelated popup messages must not consume a simulation reply.
+				runtimeSendMessage = async (message: unknown) => {
+					if (getRuntimeMethod(message) !== 'popup_simulateGovernanceContractExecution') return undefined
+					simulationRequestCount += 1
+					return simulationRequestCount === 1 ? createGnosisSimulationSuccessReply(7n, 'Original recipient') : direct.promise
+				}
+				const renderGovernance = (reason?: string) => render(h(modules.GovernanceVoteVisualizer, {
+					simTx: createGovernanceTransactionFixture(7n),
+					activeAddress: signal(gnosisSignerAddress.address),
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+					governanceVoteInputParameters: { ...createGovernanceVoteInputParameters(42n), support, reason, params: new Uint8Array([1, 2]), signature: new Uint8Array([3, 4]) },
+				}), dom.document.body)
+				try {
+					await act(() => { renderGovernance() })
+					const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+					if (button === undefined) throw new Error('Expected governance simulation button')
+					await act(async () => {
+						await clickElement(button)
+						await settleAsyncUpdates()
+					})
+					await act(async () => {
+						await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+						await settleAsyncUpdates()
+					})
+					if (rerenderTiming === 'during request') await act(() => { renderGovernance() })
+					await act(async () => {
+						direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current recipient'))
+						await settleAsyncUpdates()
+					})
+					if (rerenderTiming === 'after direct reply') await act(() => { renderGovernance() })
+					assert.equal(dom.document.body.textContent?.includes('Current recipient'), true)
+					assert.equal(simulationRequestCount, 2)
+					await act(() => { renderGovernance('Changed vote reason') })
+					assert.equal(dom.document.body.textContent?.includes('Current recipient'), false)
+					assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
+				} finally {
+					await act(() => { render(null, dom.document.body) })
+					dom.restore()
+				}
+			})
+		}
+
+	}
+
+	for (const visualizer of ['Safe', 'governance']) {
+		for (const broadcastTiming of ['during request', 'after direct reply']) {
+			test(`an older matching broadcast ${ broadcastTiming } cannot discard the awaited ${ visualizer } result`, async () => {
+				const modules = await modulesPromise
+				const dom = installDomMock()
+				const direct = createDeferred<unknown>()
+				runtimeSendMessage = async () => direct.promise
+				try {
+					await act(() => {
+						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
+							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+							activeAddress: gnosisSignerAddress.address,
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+						}) : h(modules.GovernanceVoteVisualizer, {
+							simTx: createGovernanceTransactionFixture(7n),
+							activeAddress: signal(gnosisSignerAddress.address),
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+							governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+						}), dom.document.body)
+					})
+					if (visualizer === 'governance') {
+						const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+						if (button === undefined) throw new Error('Expected governance simulation button')
+						await act(async () => { await clickElement(button) })
+					}
+					if (broadcastTiming === 'during request') {
+						await act(async () => {
+							await emitRuntimeMessage({ role: 'all', ...createGnosisSimulationSuccessReply(7n, 'Older broadcast name') })
+							await settleAsyncUpdates()
+						})
+						// Broadcast fallback must not expose an enabled refresh control while simulate still guards the pending direct request.
+						assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Refresh')), false)
+						if (visualizer === 'governance') assert.equal(dom.document.body.textContent?.includes('Simulating...'), true)
+					}
+					await act(async () => {
+						direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current direct name'))
+						await settleAsyncUpdates()
+					})
+					if (broadcastTiming === 'after direct reply') {
+						await act(async () => {
+							await emitRuntimeMessage({ role: 'all', ...createGnosisSimulationSuccessReply(7n, 'Older broadcast name') })
+							await settleAsyncUpdates()
+						})
+					}
+					assert.equal(dom.document.body.textContent?.includes('Current direct name'), true)
+					assert.equal(dom.document.body.textContent?.includes('Older broadcast name'), false)
+					assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Refresh')), true)
+				} finally {
+					await act(() => { render(null, dom.document.body) })
+					dom.restore()
+				}
+			})
+		}
+	}
 
 	test('shows the dapp-originated Gnosis Safe EIP-712 fields and hashes under the signature card extra details', async () => {
 		const modules = await modulesPromise

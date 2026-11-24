@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -8,6 +9,7 @@ import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { addMissingTransactionCreationFailureReason } from './pendingTransactionFailureReason.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SafeExecutionSimulationNotice, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
@@ -130,6 +132,25 @@ export function shouldDisableSignableMessageConfirm(params: {
 	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
 }
 
+// Confirming needs the background's copy, a reviewable result and, for a failing or quarantined result or a gas edit not yet simulated, the send-anyway override; it never bypasses creation or signer blockers.
+export function shouldDisableConfirm(pending: ShownPendingTransactionOrSignableMessage | undefined, forceSendEnabled: boolean) {
+	if (!isBackgroundCopy(pending)) return true
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+	if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
+	if (isRejectOnlyTransaction(pending)) return true
+	if (getSendAnywayOverrideReason(pending) !== undefined && !forceSendEnabled) return true
+	if (!isPendingTransactionGasLimitCurrent(pending) && !forceSendEnabled) return true
+	if (pending.type !== 'Transaction') {
+		return shouldDisableSignableMessageConfirm({
+			isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
+			canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
+			forceSendEnabled,
+			hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+		})
+	}
+	return false
+}
+
 export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
 	const reason = error instanceof Error
 		? error.message
@@ -171,7 +192,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
+						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.popupVisualisation.data.transactionCreationFailureReason : 'Simulating...' }
 					</p>
 					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
 				</header>
@@ -388,8 +409,9 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	if (currentPendingTransaction === undefined) return <></>
 	const popupVisualisation = currentPendingTransaction.popupVisualisation
 	const getErrorMesssage = () => {
+		// The card is labelled as a gas estimation error whenever the transaction failed to be created, so its reason wins over a later simulation failure.
+		if (!popupVisualisation.data.transactionToSimulate.success) return popupVisualisation.data.transactionCreationFailureReason ?? 'Unknown error'
 		if (popupVisualisation.statusCode === 'failed') return `${ popupVisualisation.data.error.decodedErrorMessage } ${ popupVisualisation.data.error.data !== undefined ? ` (data: '${ popupVisualisation.data.error.data }')` : '' }`
-		if (!popupVisualisation.data.transactionToSimulate.success) return popupVisualisation.data.transactionToSimulate.error.message
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
@@ -825,9 +847,11 @@ export function ConfirmTransaction() {
 	// Derived from the shown request, so any background copy clears the error however it arrives.
 	const backgroundCopyUnavailable = useComputed(() => bootstrapGaveUp.value && !isBackgroundCopy(currentPendingTransactionOrSignableMessage.value))
 
-	const applyPendingTransactions = (pendingTransactions: readonly ShownPendingTransactionOrSignableMessage[], priority: number) => {
+	// Normalize legacy failure reasons without discarding the background provenance used to validate approvals.
+	const applyPendingTransactions = (receivedPendingTransactions: readonly ShownPendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
 		pendingTransactionsDataPriority.value = priority
+		const pendingTransactions = receivedPendingTransactions.map((pending) => pending.type === 'Transaction' ? addMissingTransactionCreationFailureReason(pending) : pending)
 		const previousPendingTransactions = pendingTransactionsAndSignableMessages.value
 		pendingTransactionsAndSignableMessages.value = pendingTransactions
 		if (previousPendingTransactions.length > 0 && pendingTransactions.length > previousPendingTransactions.length) pendingTransactionAddedNotification.value = true
@@ -960,7 +984,7 @@ export function ConfirmTransaction() {
 		const getPossibleErrorString = () => {
 			const pending = currentPendingTransactionOrSignableMessage.value
 			if (pending === undefined) return undefined
-			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
+			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.popupVisualisation.data.transactionCreationFailureReason
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
 			const results = getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier)
@@ -1018,26 +1042,11 @@ export function ConfirmTransaction() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
 	}
 
-	const isConfirmDisabled = useComputed(() => {
-		const pending = currentPendingTransactionOrSignableMessage.value
-		if (!isBackgroundCopy(pending)) return true
-		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
-		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
-		if (isRejectOnlyTransaction(pending)) return true
-		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
-		if (pending.type !== 'Transaction') {
-			return shouldDisableSignableMessageConfirm({
-				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
-				canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
-				forceSendEnabled: forceSend.value,
-				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
-			})
-		}
-		return false
-	})
+	const isConfirmDisabled = useComputed(() => shouldDisableConfirm(currentPendingTransactionOrSignableMessage.value, forceSend.value))
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
+		if (!isPendingTransactionGasLimitCurrent(pending)) return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.

@@ -1,3 +1,4 @@
+import { encodeErrorString } from './errorDataFixtures.js'
 import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { setSystemTime, test as testWithDefaultNetwork } from 'bun:test'
@@ -400,7 +401,7 @@ test('stores the names of a metadata refresh on its run when another field of th
 	// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the stored run changes.
 	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const ethereumDerivingStoredRunAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
 	})
 
 	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumDerivingStoredRunAgainDuringLookup, confirmationSimulator.tokenPriceService, undefined))
@@ -810,3 +811,26 @@ for (const { scenario, createSimulator, refresh } of supersededFailurePreviewSce
 		})
 	}
 }
+
+
+test('uses the stack-row revert hint for an unformed transaction confirmation', async () => {
+	const transfer = await createUnformedUsdcTransfer(7n)
+	const error = { code: 3, message: 'execution reverted', data: encodeErrorString('STF') }
+	const result = await refreshUsdcTransferSimulation(simulator.ethereum, { ...transfer, error })
+	if (result?.statusCode !== 'success' || result.data.transactionToSimulate.success) throw new Error('Expected an unformed transaction confirmation')
+	assert.match(result.data.transactionCreationFailureReason ?? '', /^STF - possible Uniswap V3 error:/u)
+	assert.equal(result.data.transactionToSimulate.error.message, error.message)
+	assert.equal(result.data.transactionToSimulate.error.data, error.data)
+})
+
+test('uses the stack-row revert hint for a thrown confirmation RPC error', async () => {
+	const error = { code: 3, message: 'execution reverted', data: encodeErrorString('STF') }
+	const failingSimulator = createSimulatorWithRpcFailure((request) => request.method === 'eth_getBalance'
+		? new modules.JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error })
+		: undefined)
+	const result = await refreshUsdcTransferSimulation(failingSimulator.ethereum, await createFormedUsdcTransfer(7n))
+	if (result?.statusCode !== 'failed') throw new Error('Expected a failed confirmation')
+	assert.match(result.data.error.decodedErrorMessage, /^STF - possible Uniswap V3 error:/u)
+	assert.equal(result.data.error.message, error.message)
+	assert.equal(result.data.error.data, error.data)
+})
