@@ -1,7 +1,7 @@
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
+import { getLatestUnexpectedError } from '../../app/ts/utils/unexpectedErrorStorage.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {

@@ -70,6 +70,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/websiteAccessStorage.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/utils/unexpectedErrorStorage.js'),
 	}
 }
 

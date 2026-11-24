@@ -100,7 +100,7 @@ const [
 	{ MessageToPopup },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
-	import('../../app/ts/background/storageVariables.js'),
+	import('../../app/ts/utils/unexpectedErrorStorage.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
