@@ -29,12 +29,19 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
+		if (message.type === 'forwardToSigner') {
+			return postMessageToPortIfConnected(connection.port, {
+				...message,
+				interceptorApproved: true,
+				requestId: message.uniqueRequestIdentifier.requestId,
+				signerReplyMode: getForwardedSignerReplyMode(message.method),
+			})
+		}
 		return postMessageToPortIfConnected(connection.port, {
 			...message,
 			interceptorApproved: true,
 			requestId: message.uniqueRequestIdentifier.requestId,
 			...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
-			...(message.type === 'forwardToSigner' ? { signerReplyMode: getForwardedSignerReplyMode(message.method) } : {}),
 		})
 	}
 	return false
