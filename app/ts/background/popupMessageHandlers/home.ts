@@ -21,7 +21,7 @@ import { getFixedAddressRichList, getMakeCurrentAddressRich, getPreSimulationBlo
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners } from '../signerStateOwnership.js'
 import { updateSimulationMetadata } from '../simulationUpdating.js'
 import { makeSureInterceptorIsNotSleeping } from '../sleeping.js'
-import { getPopupVisualisationState, getRpcConnectionStatus, getRpcList, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from '../storageVariables.js'
+import { getPopupVisualisationState, getRpcConnectionStatus, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from '../storageVariables.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsFromApprovedWebsitePorts } from '../windows/interceptorAccess.js'
 
 function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
@@ -129,7 +129,6 @@ export async function requestNewHomeData(
 
 export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTabConnections, popupRefreshGeneration: number) {
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
-	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
 	const safeTransactionStacksPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks())
 	const tabId = await getLastKnownCurrentTabId()
@@ -152,7 +151,6 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 			settings,
 			activeSigningAddressInThisTab: activeSigningAddress,
 			tabId,
-			rpcEntries: await rpcEntriesPromise,
 			interceptorDisabled,
 		},
 	})
@@ -258,7 +256,6 @@ async function buildHomePageUpdate(
 ): Promise<UpdateHomePage> {
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
 	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationState())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
@@ -301,7 +298,6 @@ async function buildHomePageUpdate(
 			settings,
 			rpcConnectionStatus: await rpcConnectionStatusPromise,
 			tabId,
-			rpcEntries: await rpcEntriesPromise,
 			interceptorDisabled,
 			preSimulationBlockTimeManipulation: await preSimulationBlockTimeManipulationPromise,
 		}

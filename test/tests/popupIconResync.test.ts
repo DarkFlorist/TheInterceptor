@@ -240,7 +240,6 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 		rpcConnectionStatus: undefined,
 		activeSigningAddressInThisTab: undefined,
 		tabId,
-		rpcEntries: defaultRpcEntries,
 		interceptorDisabled: false,
 		preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0xc', deltaUnit: 'Seconds' },
 		...dataOverrides,
@@ -259,7 +258,6 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 			settings: homePage.data.settings,
 			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,
 			tabId: homePage.data.tabId,
-			rpcEntries: homePage.data.rpcEntries,
 			interceptorDisabled: homePage.data.interceptorDisabled,
 		},
 	}
