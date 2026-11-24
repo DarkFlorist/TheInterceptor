@@ -2,6 +2,7 @@ import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { installDomMock } from './domMock.js'
 
@@ -19,9 +20,11 @@ const buttonsIn = (node: TestNode): readonly TestNode[] => [
 
 test('RPC restore shows a rejected admission reply and keeps the retry action available', async () => {
 	installBrowserMock()
-	await browser.storage.local.set({ rpcEntries: [] })
 	const busy = 'Another popup is changing settings. Please wait for it to finish, then try again.'
 	let requests = 0
+	const listeners = new Set<Parameters<typeof browser.runtime.onMessage.addListener>[0]>()
+	browser.runtime.onMessage.addListener = (listener) => { listeners.add(listener) }
+	browser.runtime.onMessage.removeListener = (listener) => { listeners.delete(listener) }
 	browser.runtime.sendMessage = async () => { requests++; return { type: 'PopupSettingsChangeReply', ok: false, message: busy } }
 	const { RpcListings } = await import('../../app/ts/components/pages/SettingsView.js')
 	const dom = installDomMock()
@@ -34,10 +37,16 @@ test('RPC restore shows a rejected admission reply and keeps the retry action av
 	}
 	try {
 		await act(() => { render(<RpcListings />, dom.document.body) })
+		assert.ok(dom.document.body.textContent.includes('Loading RPC connections'))
+		assert.equal(buttonsIn(dom.document.body).length, 0)
+		await act(() => {
+			const update = MessageToPopup.serialize({ role: 'all', method: 'popup_update_rpc_list', data: [] })
+			for (const listener of listeners) listener(update, {}, () => undefined)
+		})
 		const button = buttonsIn(dom.document.body).find((node) => node.textContent?.includes('Yes, load'))
 		if (button?.clickWithPointer === undefined) throw new Error('Expected RPC restore button')
 		await act(async () => { button.clickWithPointer?.(); await new Promise((resolve) => setTimeout(resolve, 0)) })
-		assert.equal(requests, 1)
+		assert.equal(requests, 2)
 		assert.ok(dom.document.body.textContent.includes(busy))
 		assert.equal(button.getAttribute?.('aria-busy'), false)
 		assert.equal(button.getAttribute?.('disabled'), undefined)

@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 import { h, render, type FunctionComponent } from 'preact'
 import { act } from 'preact/test-utils'
 import { AddressBook } from '../../app/ts/AddressBook.js'
-import { useRpcConnectionsList } from '../../app/ts/components/hooks/useRpcConnectionsList.js'
+import { RPC_LIST_INITIAL_RETRY_DELAY_MS, RpcConnectionsProvider, useRpcConnectionsList } from '../../app/ts/components/hooks/useRpcConnectionsList.js'
 import { ConfirmTransaction } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { FetchSimulationStack } from '../../app/ts/components/pages/FetchSimulationStack.js'
 import { InterceptorAccess } from '../../app/ts/components/pages/InterceptorAccess.js'
@@ -60,13 +60,13 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequ
 }) {
 	const listeners: RuntimeMessageListener[] = []
 	const previousBrowser = globalThis.browser
-	let rpcListRequestCount = 0
+	const rpcListRequestIds: string[] = []
 	const sendMessage = async (message: unknown) => {
 		if (getMessageMethod(message) !== 'popup_requestRpcList') return replyToMessage(message)
-		rpcListRequestCount += 1
-		if (rpcListRequestAnswer === undefined) return undefined
 		const requestId = getRequestId(message)
 		if (requestId === undefined) throw new Error('popup_requestRpcList was sent without a requestId')
+		rpcListRequestIds.push(requestId)
+		if (rpcListRequestAnswer === undefined) return undefined
 		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId, rpcEntries: rpcListRequestAnswer } })
 		for (const listener of [...listeners]) listener(answer)
 		return undefined
@@ -105,7 +105,12 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequ
 	return {
 		deliverSerialized,
 		countMessageListeners: () => listeners.length,
-		countRpcListRequests: () => rpcListRequestCount,
+		getLastRpcListRequestId: () => {
+			const requestId = rpcListRequestIds.at(-1)
+			assert.ok(requestId)
+			return requestId
+		},
+		countRpcListRequests: () => rpcListRequestIds.length,
 		deliver: async (message: MessageToPopup) => await deliverSerialized(MessageToPopup.serialize(message)),
 		restore() {
 			Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: previousBrowser })
@@ -364,7 +369,7 @@ describe('useRpcConnectionsList', () => {
 		const browserMock = installPopupBrowserMock({ rpcListRequestAnswer: rpcEntriesWhenPageOpened })
 		try {
 			await act(async () => {
-				render(h('div', {}, h(RpcEntryNames, {}), h(RpcEntryNames, {})), dom.document.body)
+				render(<RpcConnectionsProvider><RpcEntryNames /><RpcEntryNames /></RpcConnectionsProvider>, dom.document.body)
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 			assert.equal(browserMock.countRpcListRequests(), 1)
@@ -383,6 +388,23 @@ describe('useRpcConnectionsList', () => {
 		try {
 			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: 'another-page-request', rpcEntries: rpcEntriesAfterSettingsChange } })
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
+		} finally {
+			await page.cleanup()
+		}
+	})
+
+	test('retries a lost reply and accepts the response for the new request', async () => {
+		const page = await renderRpcEntryNames(undefined)
+		try {
+			const firstRequestId = page.browserMock.getLastRpcListRequestId()
+			await new Promise((resolve) => setTimeout(resolve, RPC_LIST_INITIAL_RETRY_DELAY_MS + 50))
+			assert.equal(page.browserMock.countRpcListRequests(), 2)
+			const secondRequestId = page.browserMock.getLastRpcListRequestId()
+			assert.notEqual(firstRequestId, secondRequestId)
+			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: firstRequestId, rpcEntries: rpcEntriesWhenPageOpened } })
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
+			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: secondRequestId, rpcEntries: rpcEntriesAfterSettingsChange } })
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
 		} finally {
 			await page.cleanup()
 		}

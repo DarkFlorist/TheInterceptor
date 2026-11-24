@@ -12,6 +12,7 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
@@ -43,6 +44,10 @@ function createBrowserMock() {
 				for (const listener of [...listeners]) listener(message)
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
+				}
+				if (isRecord(message) && message.method === 'popup_requestRpcList' && isRecord(message.data) && typeof message.data.requestId === 'string') {
+					const reply = MessageToPopup.serialize({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: message.data.requestId, rpcEntries: [] } })
+					for (const listener of [...listeners]) listener(reply)
 				}
 				if (message?.method === 'popup_readyAndListening') return readyAndListeningReply()
 				if (message?.method === 'popup_confirmDialog') await confirmDialogHandler?.(message)

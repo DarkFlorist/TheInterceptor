@@ -17,7 +17,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
-import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
+import { RpcConnectionsProvider, useRpcConnectionsState } from '../hooks/useRpcConnectionsList.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -142,6 +142,10 @@ function ImportExport() {
 }
 
 export function SettingsView() {
+	return <RpcConnectionsProvider><SettingsContent /></RpcConnectionsProvider>
+}
+
+function SettingsContent() {
 	const useTabsInsteadOfPopup = useSignal<boolean>(false)
 	const metamaskCompatibilityMode = useSignal<boolean>(false)
 	const safeAppsCompatibilityMode = useSignal<boolean>(false)
@@ -238,11 +242,12 @@ export function SettingsView() {
 }
 
 export const RpcListings = () => {
-	const rpcEntries = useRpcConnectionsList()
+	const rpcEntries = useRpcConnectionsState().value
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
 	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
 
-	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
+	if (rpcEntries === undefined) return <p role = 'status'>Loading RPC connections…</p>
+	if (shouldOfferBundledRpcReset(rpcEntries)) {
 		return (
 			<aside class = 'report' style = { { display: 'grid', minHeight: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
 				{ resetRpcListState.value.state === 'rejected' ? <ErrorComponent text = { resetRpcListState.value.error.message } /> : <></> }
@@ -261,7 +266,7 @@ export const RpcListings = () => {
 
 	return (
 		<ul class = 'grid' style = '--gap-y: 0.5rem'>
-			{ rpcEntries.value.map((entry) => <RpcSummary key = { JSON.stringify(serialize(RpcEntry, entry)) } info = { entry } />) }
+			{ rpcEntries.map((entry) => <RpcSummary key = { JSON.stringify(serialize(RpcEntry, entry)) } info = { entry } />) }
 		</ul>
 	)
 }
