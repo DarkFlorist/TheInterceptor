@@ -7,13 +7,17 @@ import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCoun
 const installBrowserForTest = createRestoringBrowserMockInstaller()
 
 // Pause a read after the access decision and service capture, without delaying the initial address lookup.
-async function createAdmissionScenario(method: string, pauseKey = 'userAddressBookEntriesV3') {
+async function createAdmissionScenario(method: string, pauseKey = 'userAddressBookEntriesV3', signingSafe = false) {
 	const browserMock = installBrowserForTest()
 	const modules = await loadModules()
 	const account = 1n
 	const website = { websiteOrigin: 'https://execution-admission.example', icon: undefined, title: undefined }
 	await modules.setUseSignersAddressAsActiveAddress(false)
-	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	if (signingSafe) {
+		await modules.updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Safe', address: account, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [2n, 3n] }])
+		await modules.updateTabState(1, (previous) => ({ ...previous, signerAccounts: [2n], activeSigningAddress: 2n }))
+		await modules.changeSimulationMode({ simulationMode: false, activeSigningAddress: 2n, activeSigningSafeAddress: account })
+	} else await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
 	await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port, messages } = createPort(1)
@@ -30,8 +34,10 @@ async function createAdmissionScenario(method: string, pauseKey = 'userAddressBo
 	const paused = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
 	let didPause = false
+	let preparations = 0
 	const read = browserMock.browser.storage.local.get
 	browserMock.browser.storage.local.get = async (keys) => {
+		if (servicesCaptured && (keys === 'safeAppsCompatibilityMode' || Array.isArray(keys) && keys.length === 1 && keys[0] === 'safeAppsCompatibilityMode')) preparations++
 		if (servicesCaptured && !didPause && (keys === pauseKey || Array.isArray(keys) && keys.includes(pauseKey))) {
 			didPause = true
 			paused.resolve()
@@ -49,6 +55,7 @@ async function createAdmissionScenario(method: string, pauseKey = 'userAddressBo
 	return {
 		modules, account, website, owner, installed, messages, connections,
 		reads: () => ({ original: originalReads, installed: installedReads }),
+		preparations: () => preparations,
 		finish: async () => { release.resolve(); await settleWithin(execution, 1000, 'Request admission did not finish') },
 	}
 }
@@ -96,4 +103,21 @@ describe('request execution admission', () => {
 		finally { await scenario.finish() }
 		assert.equal(scenario.messages.find(message => message.requestId === 900)?.error?.code, 4100)
 	})
+
+	test('redecides a prepared Safe reply after its address-book ownership changes', async () => {
+		const scenario = await createAdmissionScenario('safe_apps_request', 'safeAppsCompatibilityMode', true)
+		try {
+			await scenario.modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.type === 'safe' ? { ...entry, safeSignerAddresses: [] } : entry))
+		} finally { await scenario.finish() }
+		assert.equal(scenario.preparations(), 2)
+	})
+
+	test('redecides a prepared Safe reply after switching to another owner of the same Safe', async () => {
+		const scenario = await createAdmissionScenario('safe_apps_request', 'safeAppsCompatibilityMode', true)
+		try {
+			await scenario.modules.updateTabState(1, (previous) => ({ ...previous, signerAccounts: [3n], activeSigningAddress: 3n }))
+		} finally { await scenario.finish() }
+		assert.equal(scenario.preparations(), 2)
+	})
+
 })
