@@ -2,6 +2,18 @@ import type { render } from 'preact'
 
 type AttributeMap = Record<string, string | undefined>
 type RenderContainer = Parameters<typeof render>[1]
+type TestEvent = {
+	bubbles?: boolean
+	cancelBubble?: boolean
+	currentTarget?: TestElement
+	defaultPrevented?: boolean
+	preventDefault?: () => void
+	key?: string
+	shiftKey?: boolean
+	stopPropagation?: () => void
+	target?: TestElement
+	type: string
+}
 
 class TestNode {
 	readonly nodeType: number = 0
@@ -71,6 +83,11 @@ class TestNode {
 		if (this === node) return true
 		return this.childNodes.some((child) => child.contains(node))
 	}
+
+	get isConnected() {
+		if (this === this.ownerDocument.body) return true
+		return this.parentNode?.isConnected ?? false
+	}
 }
 
 class TestTextNode extends TestNode {
@@ -139,12 +156,36 @@ class TestElement extends TestNode {
 		this.eventListeners.get(type)?.delete(listener)
 	}
 
-	dispatchEvent(event: Event) {
+	dispatchEvent(input: Event | TestEvent) {
+		const event = input instanceof Event ? input : new Event(input.type, { bubbles: input.bubbles, cancelable: true })
+		if (!(input instanceof Event)) {
+			Object.defineProperty(event, 'key', { value: input.key })
+			Object.defineProperty(event, 'shiftKey', { value: input.shiftKey })
+		}
+		const eventType = this.eventListeners.has(event.type) ? event.type : [...this.eventListeners.keys()].find(type => type.toLowerCase() === event.type.toLowerCase()) ?? event.type
+		Object.defineProperty(event, 'type', { configurable: true, value: eventType })
 		if (event.target === null) Object.defineProperty(event, 'target', { configurable: true, value: this })
 		Object.defineProperty(event, 'currentTarget', { configurable: true, value: this })
 		for (const listener of this.eventListeners.get(event.type) ?? []) listener.call(this, event)
 		if (event.bubbles && !event.cancelBubble && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
 		return !event.defaultPrevented
+	}
+	querySelectorAll() {
+		const matches: TestElement[] = []
+		const collect = (node: TestNode) => {
+			for (const child of node.childNodes) {
+				if (child instanceof TestElement) {
+					const tagName = child.tagName.toLowerCase()
+					const isFormControl = ['button', 'input', 'select', 'textarea'].includes(tagName) && child.getAttribute('disabled') === null
+					const isLink = child.getAttribute('href') !== null
+					const tabIndex = child.getAttribute('tabindex') ?? child.getAttribute('tabIndex')
+					if (isFormControl || isLink || (tabIndex !== null && tabIndex !== '-1')) matches.push(child)
+				}
+				collect(child)
+			}
+		}
+		collect(this)
+		return matches
 	}
 	// focus stands for keyboard focus, which :focus-visible reports.
 	focus() {
@@ -179,12 +220,19 @@ class TestElement extends TestNode {
 		return this.attributes[name] !== undefined
 	}
 
+	// Supports a comma-separated list of attribute selectors, each `[name]` or `[name="value"]`, which is all the components use.
 	closest(selector: string): TestElement | null {
-		const attributeMatch = selector.match(/^\[([^\]]+)\]$/u)
-		if (attributeMatch?.[1] === undefined) return null
+		const attributeSelectors = selector.split(',').map((part) => part.trim().match(/^\[([^\]=]+)(?:="([^"]*)")?\]$/u))
+		if (attributeSelectors.some((match) => match?.[1] === undefined)) return null
+		const matchesSelector = (element: TestElement) => attributeSelectors.some((match) => {
+			const name = match?.[1]
+			if (name === undefined) return false
+			const expectedValue = match?.[2]
+			return expectedValue === undefined ? element.hasAttribute(name) : element.getAttribute(name) === expectedValue
+		})
 		let element: TestElement | null = this
 		while (element !== null) {
-			if (element.hasAttribute(attributeMatch[1])) return element
+			if (matchesSelector(element)) return element
 			element = element.parentNode instanceof TestElement ? element.parentNode : null
 		}
 		return null
@@ -202,17 +250,6 @@ class TestElement extends TestNode {
 class TestDialogElement extends TestElement {
 	open = false
 	returnValue = ''
-	readonly eventListeners = new Map<string, Set<(event: { currentTarget: TestDialogElement }) => void>>()
-
-	override addEventListener(type: string, listener: (event: { currentTarget: TestDialogElement }) => void) {
-		const listeners = this.eventListeners.get(type) ?? new Set()
-		listeners.add(listener)
-		this.eventListeners.set(type, listeners)
-	}
-
-	override removeEventListener(type: string, listener: (event: { currentTarget: TestDialogElement }) => void) {
-		this.eventListeners.get(type)?.delete(listener)
-	}
 
 	showModal() {
 		this.open = true
@@ -221,7 +258,7 @@ class TestDialogElement extends TestElement {
 	close(returnValue = '') {
 		this.open = false
 		this.returnValue = returnValue
-		for (const listener of this.eventListeners.get('close') ?? []) listener({ currentTarget: this })
+		this.dispatchEvent({ type: 'close' })
 	}
 }
 

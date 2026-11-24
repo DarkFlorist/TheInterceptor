@@ -14,6 +14,8 @@ import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEt
 import { assertNever } from '../../utils/typescript.js'
 import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
+import { getSettings } from '../settings.js'
+import { getDefaultRichNativeAmount, getRichNativeAmountForAddress } from '../richModeSettings.js'
 
 export type SimulationStackSnapshot = {
 	simulationInput: ResolvedSimulationInput
@@ -46,7 +48,9 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 		case '1.0.0':
 		case '1.0.1': {
 			const addressToMakeRich = await getAddressToMakeRich()
-			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } as const
+			if (addressToMakeRich === undefined) return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, await getDefaultRichNativeAmount(), version) } as const
+			const nativeAmount = await getRichNativeAmountForAddress((await getSettings()).activeRpcNetwork.chainId, addressToMakeRich)
+			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, nativeAmount, version) } as const
 		}
 		default: assertNever(version)
 	}

@@ -122,16 +122,16 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
 		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcInfo, rpcEntries.value, activeRpcNetwork,
-			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
-			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
+			async (entries) => { await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }) },
+			async (entry) => { await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry }) }
 		)
 	}
 
 	const removeRpcEntry = async (entry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
 		await removeRpcEntryAndKeepActiveRpcConsistent(entry, rpcEntries.value, activeRpcNetwork,
-			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
-			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
+			async (entries) => { await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }) },
+			async (entry) => { await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry }) }
 		)
 	}
 

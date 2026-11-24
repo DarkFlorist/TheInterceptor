@@ -1,13 +1,13 @@
 import { useEffect } from 'preact/hooks'
 import { Notice } from '../subcomponents/Error.js'
 import { type ComponentChildren, createRef } from 'preact'
-import { XMarkIcon } from '../subcomponents/icons.js'
 import { type Signal, useComputed } from '@preact/signals'
 import { isJSON } from '../../utils/json.js'
 import { getMissingPopupReplyErrorMessage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { InterceptorSimulationExport } from '../../types/visualizer-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSection, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 type SimulationInputParams = {
 	input: Signal<string>
@@ -67,44 +67,20 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 		})
 	}
 
-	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
-						<img src = '../img/address-book.svg' width = '24' height = '24'/>
-					</span>
+	return <InterceptorDialogSurface ariaLabel = 'Import simulation stack' closeDisabled = { isImporting.value } onClose = { param.close } size = 'regular'>
+		<InterceptorDialogHeader close = { param.close } closeDisabled = { isImporting.value } closeLabel = 'Close import dialog' icon = '../img/LOGOA.svg' title = 'Import simulation stack' subtitle = 'Restore transactions and messages from an Interceptor export'/>
+		<InterceptorDialogBody>
+			<InterceptorDialogSection>
+				<div class = 'simulation-stack-import-field'>
+					<Text text = 'Interceptor simulation stack'/>
+					<SimulationInput input = { param.simulationInput } isValid = { isValid } disabled = { isImporting.value }/>
 				</div>
-				<div class = 'card-header-title'>
-					<p class = 'paragraph'> { 'Import Interceptor Simulation Stack' } </p>
-				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close } disabled = { isImporting.value }>
-					<XMarkIcon />
-				</button>
-			</header>
-			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
-					<div class = 'card-content'>
-						<div class = 'media'>
-							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-								<div class = 'container' style = 'margin-bottom: 10px;'>
-									<div class = 'simulation-stack-import-field'>
-										<Text text = { 'Interceptor Simulation Stack: ' }/>
-										<SimulationInput input = { param.simulationInput } isValid = { isValid } disabled = { isImporting.value }/>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
-					{ errorString.value !== undefined ? <Notice text = { errorString.value } /> : importError.value !== undefined ? <Notice text = { importError.value } /> : <></> }
-				</div>
-			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<AsyncActionButton class = 'button is-success is-primary' state = { importRequestState.value.state } text = 'Import' pendingText = 'Importing...' onClick = { importStack } disabled = { isSubmitButtonDisabled.value } />
-			</footer>
-		</div>
-	</> )
+			</InterceptorDialogSection>
+			{ errorString.value !== undefined ? <div class = 'interceptor-dialog-feedback'><Notice text = { errorString.value } /></div> : importError.value !== undefined ? <div class = 'interceptor-dialog-feedback'><Notice text = { importError.value } /></div> : <></> }
+		</InterceptorDialogBody>
+		<InterceptorDialogFooter>
+			<button type = 'button' class = 'btn btn--ghost' onClick = { param.close } disabled = { isImporting.value }>Cancel</button>
+			<AsyncActionButton class = 'btn btn--primary' state = { importRequestState.value.state } text = 'Import' pendingText = 'Importing...' onClick = { importStack } disabled = { isSubmitButtonDisabled.value } />
+		</InterceptorDialogFooter>
+	</InterceptorDialogSurface>
 }

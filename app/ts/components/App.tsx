@@ -52,6 +52,10 @@ export function App() {
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richFundingChainId,
+		richNativeAmount,
+		richTokenOptions,
+		richAccountBalances,
 		simulationMode,
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
@@ -70,7 +74,7 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
-	const { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState } = usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState })
+	const { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, changeRichSettings } = usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState })
 
 	useEffect(() => {
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
@@ -231,7 +235,7 @@ export function App() {
 						isActiveAddressChangePending = { isActiveAddressChangePending }
 						isSettingsChangePending = { isSettingsChangePending }
 						setSimulationMode = { setSimulationMode }
-						setRichState = { setRichState }
+						changeRichSettings = { changeRichSettings }
 						setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 						rpcNetwork = { rpcNetwork }
 						simVisResults = { simVisResults }
@@ -241,6 +245,10 @@ export function App() {
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
+						richFundingChainId = { richFundingChainId }
+						richNativeAmount = { richNativeAmount }
+						richTokenOptions = { richTokenOptions }
+						richAccountBalances = { richAccountBalances }
 						activeAddresses = { activeAddresses }
 						walletSelectedAddressBookEntry = { walletSelectedAddressBookEntry }
 						simulationMode = { simulationMode }

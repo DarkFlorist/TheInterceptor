@@ -88,6 +88,8 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/reloadConnectedTabs.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/addressBookStorage.js'),
+		...await import('../../app/ts/background/addressBookCoordinator.js'),
 	}
 }
 

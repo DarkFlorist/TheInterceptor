@@ -241,7 +241,7 @@ export function SettingsView() {
 export const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
-	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
+	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(async () => { await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }) })
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (

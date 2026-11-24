@@ -13,6 +13,7 @@ export const popupMessageProtocol = {
 	popup_confirmDialog: { domain: 'confirmation' },
 	popup_changeActiveAddress: { domain: 'home' },
 	popup_modifyMakeMeRich: { domain: 'home' },
+	popup_modifyRichToken: { domain: 'home' },
 	popup_changePage: { domain: 'navigation' },
 	popup_requestAccountsFromSigner: { domain: 'confirmation' },
 	popup_resetSimulation: { domain: 'simulation' },

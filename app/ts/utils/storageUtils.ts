@@ -1,7 +1,7 @@
 import { captureStorageWritesTo, writeLocalStorage } from './localStorageWrites.js'
 import type { StorageWriteValue } from './storageWriteTracking.js'
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
+import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
@@ -14,6 +14,7 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { RichAccountBalances, RichToken, RichModeState, RichListElement } from '../types/richMode.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
@@ -46,12 +47,7 @@ export const OldActiveAddressEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 })
 
-export type RichListElement = funtypes.Static<typeof RichListElement>
-export const RichListElement = funtypes.ReadonlyObject({
-	address: EthereumAddress,
-	makingRich: funtypes.Boolean,
-	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
-})
+export { RichListElement } from '../types/richMode.js'
 
 // Shared with startup reads so validating one setting never traverses unrelated storage unions.
 const startupStorageCodecs = {
@@ -116,6 +112,7 @@ const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareO
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	...startupStoragePartialCodecs,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
+	richNativeAmount: EthereumQuantity,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
@@ -138,6 +135,9 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
+	richTokens: funtypes.ReadonlyArray(RichToken),
+	richAccountBalances: RichAccountBalances,
+	richModeState: RichModeState,
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
@@ -158,6 +158,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeCurrentAddressRich'),
+	funtypes.Literal('richNativeAmount'),
 	funtypes.Literal('chainChangeConfirmationPromise'),
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('popupVisualisation'),
@@ -181,6 +182,9 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ensLabelHashes'),
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
 	funtypes.Literal('fixedAddressRichList'),
+	funtypes.Literal('richTokens'),
+	funtypes.Literal('richAccountBalances'),
+	funtypes.Literal('richModeState'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('pendingWatchAssetRequests'),
 	funtypes.Literal('popupRefreshGeneration'),

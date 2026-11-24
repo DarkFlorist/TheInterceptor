@@ -10,6 +10,7 @@ import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { afterEach, describe, test } from 'bun:test'
+import { emptyRichModeState } from '../../app/ts/background/richModeSettings.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -423,7 +424,7 @@ describe('popup clear reset', () => {
 
 	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
 		browserMock.reset()
-		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, richModeState: { ...emptyRichModeState, makeCurrentAddressRich: true }, interceptorTransactionStack: { operations: [] } })
 		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const originalGet = browser.storage.local.get
 		let changed = false
@@ -612,11 +613,11 @@ describe('popup clear reset', () => {
 
 	test('renders the captured refresh input and rich count after live settings change', async () => {
 		browserMock.reset()
-		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false }, interceptorTransactionStack: { operations: [] } })
 		const modules = await modulesPromise
 		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const snapshot = await captureSimulationSnapshot()
-		await browserStorageLocalSet({ makeCurrentAddressRich: true })
+		await browserStorageLocalSet({ richModeState: { ...emptyRichModeState, makeCurrentAddressRich: true } })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
 		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })
 		assert.equal(result.numberOfAddressesMadeRich, 0)

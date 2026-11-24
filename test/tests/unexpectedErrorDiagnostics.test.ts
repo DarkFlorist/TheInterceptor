@@ -151,6 +151,8 @@ async function loadModules() {
 		...await import('../../app/ts/utils/errors.js'),
 		...await import('../../app/ts/utils/requests.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/addressBookStorage.js'),
+		...await import('../../app/ts/background/addressBookCoordinator.js'),
 		...await import('../../app/ts/components/subcomponents/Error.js'),
 	}
 }

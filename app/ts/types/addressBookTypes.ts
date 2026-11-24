@@ -158,7 +158,7 @@ export function getSafeSignerAddresses(entry: SafeEntry) {
 }
 
 export type AddressBookEntries = readonly AddressBookEntry[]
-export const AddressBookEntries: funtypes.Runtype<AddressBookEntries> = funtypes.ReadonlyArray(AddressBookEntry)
+export const AddressBookEntries: funtypes.Codec<AddressBookEntries> = funtypes.ReadonlyArray(AddressBookEntry)
 
 export type AddressBookEntryType = funtypes.Static<typeof AddressBookEntryType>
 export const AddressBookEntryType = funtypes.Union(funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721'), funtypes.Literal('safe'))

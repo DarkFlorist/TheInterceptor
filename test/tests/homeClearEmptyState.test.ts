@@ -5,7 +5,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Home } from '../../app/ts/components/pages/Home.js'
 import { installDomMock } from './domMock.js'
-import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { ICON_SIGNING, ICON_SIMULATING, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -259,9 +259,13 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		isActiveAddressChangePending: new Signal(false),
 		isSettingsChangePending: new Signal(false),
 		setSimulationMode: async () => undefined,
-		setRichState: async () => undefined,
+		changeRichSettings: async () => ({ ok: true, richToken: undefined, simulationRefresh: undefined }),
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
+		richFundingChainId: new Signal(rpcNetwork.chainId),
+		richNativeAmount: new Signal(MAKE_YOU_RICH_TRANSACTION.transaction.value),
+		richTokenOptions: new Signal([]),
+		richAccountBalances: new Signal([]),
 		activeAddresses: new Signal([activeAddressEntry]),
 		walletSelectedAddressBookEntry: new Signal(undefined),
 		tabState: new Signal<TabState | undefined>(undefined),
@@ -489,12 +493,11 @@ describe('Home popup clear empty state', () => {
 		const previousInputElement = globalThis.HTMLInputElement
 		Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, writable: true, value: globalThis.Element })
 		const browserMock = installBrowserMock()
-		let rejectChange: ((error: Error) => void) | undefined
-		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
-		const params = createHomeParams({ setRichState: async (enabled, address) => {
-			assert.equal(enabled, true)
-			assert.equal(address, 'CurrentAddress')
-			await change
+		let finishChange: ((result: { ok: false, error: string }) => void) | undefined
+		const change = new Promise<{ ok: false, error: string }>((resolve) => { finishChange = resolve })
+		const params = createHomeParams({ changeRichSettings: async (request) => {
+			assert.deepEqual(request, { method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: true, address: 'CurrentAddress' } })
+			return await change
 		} })
 		try {
 			await act(() => { render(h(Home, params), dom.document.body) })
@@ -504,12 +507,12 @@ describe('Home popup clear empty state', () => {
 			if (handler === undefined) throw new Error('Expected rich toggle handler')
 			Reflect.set(checkbox, 'checked', true)
 			await act(async () => { await handler({ target: checkbox }) })
-			assert.equal(params.makeCurrentAddressRich.value, true)
+			assert.equal(params.makeCurrentAddressRich.value, false, 'a pending toggle must not mutate the authoritative home-data snapshot')
 			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), true)
 			assert.equal(String(checkbox.getAttribute?.('disabled')), 'true')
 			await act(async () => {
-				if (rejectChange === undefined) throw new Error('Expected pending change')
-				rejectChange(new Error('Balances could not be refreshed'))
+				if (finishChange === undefined) throw new Error('Expected pending change')
+				finishChange({ ok: false, error: 'Balances could not be refreshed' })
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 			assert.equal(dom.document.body.textContent?.includes('Balances could not be refreshed'), true)

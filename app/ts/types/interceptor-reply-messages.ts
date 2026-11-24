@@ -1,3 +1,5 @@
+import { ModifyRichTokenRequest, ModifyRichTokenReply } from './richModeRequests.js'
+export { ModifyRichTokenRequest, RichTokenSimulationRefresh } from './richModeRequests.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList } from './popupSettingsRequests.js'
 import type { popupSettingsOperations, DirectPopupSettingsMethod } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
@@ -9,6 +11,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
+import { RichAccountBalances, RichTokenOptions } from './richMode.js'
 import { SafeStackExport } from './safeTypes.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
@@ -35,7 +38,12 @@ const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestMakeMeRichData'),
 	richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 	makeCurrentAddressRich: funtypes.Boolean,
-})
+}).And(funtypes.ReadonlyPartial({
+	richTokenOptions: RichTokenOptions,
+	richFundingChainId: EthereumQuantity,
+	richNativeAmount: EthereumQuantity,
+	richAccountBalances: RichAccountBalances,
+}))
 
 type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
 const RequestActiveAddressesReply = funtypes.ReadonlyObject({
@@ -280,6 +288,7 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 type PopupSettingsReplyCodecs = {
 	ChangeActiveAddressReply: typeof ChangeActiveAddressReply
 	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
+	ModifyRichTokenReply: typeof ModifyRichTokenReply
 }
 
 // Settings commands with direct replies use their descriptor codec; imports deliver their reply by broadcast.
@@ -312,6 +321,7 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
+	popup_modifyRichToken: ModifyRichTokenReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
@@ -354,6 +364,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	RequestSafeContractState,
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
+	ModifyRichTokenRequest,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -392,6 +403,7 @@ export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['m
 
 export type PopupReplyOption =
 	| RequestMakeMeRichDataReply
+	| funtypes.Static<typeof ModifyRichTokenReply>
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
 	| RequestLatestUnexpectedErrorReply
@@ -416,6 +428,7 @@ export type PopupReplyOption =
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
 	RequestMakeMeRichDataReply,
+	ModifyRichTokenReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
 	RequestLatestUnexpectedErrorReply,
