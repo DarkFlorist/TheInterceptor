@@ -4,7 +4,6 @@ import type { OpenWebPage } from '../../app/ts/types/interceptor-messages.js'
 import type { MockTabSeed } from '../harness/browserMock.js'
 import { replaceProperty } from '../harness/globals.js'
 import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 function createOpenWebPageRequest(tabId: number, url: string): OpenWebPage {
 	return {
@@ -28,7 +27,7 @@ function installTabsBrowserMock(tabs: readonly MockTabSeed[], updateShouldFail =
 }
 
 async function loadOpenWebPage() {
-	return (await importAllPopupMessageHandlers()).openWebPage
+	return (await import('../../app/ts/background/popupMessageHandlers/navigation.js')).openWebPage
 }
 
 describe('openWebPage', () => {
