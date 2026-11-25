@@ -43,7 +43,7 @@ async function setupTwoWebsites() {
 
 	// Calls the access gate directly so that methods the background answers without a dialog can sit in the queue too.
 	const addToAccessQueue = async (website: Website, socket: WebsiteSocket, request: InterceptedRequest) => {
-		await modules.requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, activeAddress, await modules.getSettings(), activeAddress, noopPublishRpcConnectionStatus)
+		await modules.requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, activeAddress, await modules.requireSettingsWithReadableNetwork(), activeAddress, noopPublishRpcConnectionStatus)
 	}
 	const sendFromWebsite = async (website: Website, socket: WebsiteSocket, port: browser.runtime.Port, request: InterceptedRequest) => {
 		await modules.handleInterceptedRequest(port, website.websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)

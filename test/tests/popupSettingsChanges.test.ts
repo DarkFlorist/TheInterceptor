@@ -156,7 +156,7 @@ describe('popup settings changes', () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { PopupSettingsChangeStatus } = await import('../../app/ts/types/interceptor-messages.js')
 		const statuses = () => runtimeMessages.flatMap(message => { const parsed = PopupSettingsChangeStatus.safeParse(message); return parsed.success ? [parsed.value.data] : [] })
-		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
 		const { applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
@@ -167,7 +167,7 @@ describe('popup settings changes', () => {
 		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		} }]])
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		const context = {
 			...createEthereumWithGetBlockCounter({ count: 0 }), settings, websiteTabConnections: connections,
 			publishRpcConnectionStatus: async () => undefined,
@@ -191,7 +191,7 @@ describe('popup settings changes', () => {
 				const reply = await dispatchPopupMessage({ ...context }, request)
 				assert.ok(reply !== undefined && 'ok' in reply && !reply.ok && reply.message.includes('Another popup'))
 			}
-			assert.equal((await getSettings()).simulationMode, false)
+			assert.equal((await requireSettingsWithReadableNetwork()).simulationMode, false)
 			await dispatchPopupMessage({ ...context }, { method: 'popup_requestSimulationMode' })
 		} finally {
 			const token = getConfirmedSignerStateToken(connections, 1)
@@ -216,7 +216,7 @@ describe('popup settings changes', () => {
 
 	test('skips work when reselecting the current mode or RPC', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { changeSimulationMode, getSettings } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork } = await loadModules()
 		const { enableSimulationMode } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
 		await changeSimulationMode({ simulationMode: true })
@@ -224,13 +224,13 @@ describe('popup settings changes', () => {
 		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Should not reset services') })
 		const count = runtimeMessages.length
 		await enableSimulationMode(reset, new Map(), { method: 'popup_enableSimulationMode', data: true })
-		await changeActiveRpc(reset, new Map(), (await getSettings()).activeRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
+		await changeActiveRpc(reset, new Map(), (await requireSettingsWithReadableNetwork()).activeRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 		assert.equal(runtimeMessages.length, count)
 	})
 
 	for (const simulationMode of [true, false]) test(`saves active RPC metadata without resetting services in ${ simulationMode ? 'simulation' : 'signing' } mode`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
 		const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 		await saveCurrentTabId(1)
@@ -240,25 +240,25 @@ describe('popup settings changes', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		} }]])
 		await changeSimulationMode({ simulationMode })
-		const currentRpc = (await getSettings()).activeRpcNetwork
+		const currentRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const editedRpc = { ...currentRpc, name: 'Renamed network', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' }, primary: !currentRpc.primary, minimized: !currentRpc.minimized }
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: currentRpc })
 		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') })
 		assert.deepEqual(await changeActiveRpc(reset, connections, editedRpc, { source: 'dapp', simulationMode: simulationMode, signerTabId: 1 }), { result: null })
-		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
+		assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, editedRpc)
 		const popupEdit = { ...editedRpc, name: 'Renamed through popup' }
 		assert.deepEqual(await popupChangeActiveRpc(reset, connections, { method: 'popup_changeActiveRpc', data: popupEdit }), { type: 'PopupSettingsChangeReply', ok: true })
-		assert.deepEqual((await getSettings()).activeRpcNetwork, popupEdit)
+		assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, popupEdit)
 		assert.equal(messages.some(message => message.method === 'request_signer_to_wallet_switchEthereumChain'), false, 'Metadata edits must not ask a connected wallet to switch chains')
 	})
 
 	for (const simulationMode of [true, false]) for (const reselect of [true, false]) test(`local RPC selection persists the chain preference (simulation=${ simulationMode }, reselect=${ reselect })`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
 		const { setRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
-		const current = (await getSettings()).activeRpcNetwork
+		const current = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 		if (current.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const selected = { ...current, httpsRpc: 'https://selected.example', primary: false }
 		await setRpcList([{ ...current, primary: true }, selected])
@@ -266,15 +266,15 @@ describe('popup settings changes', () => {
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		await changeActiveRpc(services.simulationServicesOwner, new Map(), selected, { source: 'dapp', simulationMode: simulationMode, signerTabId: undefined })
 		assert.equal((await getPrimaryRpcForChain(selected.chainId))?.httpsRpc, selected.httpsRpc)
-		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, selected.httpsRpc)
+		assert.equal((await requireSettingsWithReadableNetwork()).activeRpcNetwork.httpsRpc, selected.httpsRpc)
 	})
 
 	test('activation installs services once without exposing a potentially superseded snapshot', async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork } = await loadModules()
 		const { activateAddressSelection } = await import('../../app/ts/background/activeSettings.js')
 		await changeSimulationMode({ simulationMode: true })
-		const currentRpc = (await getSettings()).activeRpcNetwork
+		const currentRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const nextRpc = { ...currentRpc, httpsRpc: 'https://replacement.example' }
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
@@ -324,10 +324,10 @@ describe('popup settings changes', () => {
 
 	test('installs the selected RPC service before publishing its settings', async () => {
 		installBrowserMock()
-		const { changeSimulationMode, changeActiveAddressAndChain, getSettings } = await loadModules()
+		const { changeSimulationMode, changeActiveAddressAndChain, requireSettingsWithReadableNetwork } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		await changeSimulationMode({ simulationMode: true })
-		const rpc = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://replacement.example.test' }
+		const rpc = { ...(await requireSettingsWithReadableNetwork()).activeRpcNetwork, httpsRpc: 'https://replacement.example.test' }
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		let installed = false
 		let announced = false
@@ -349,10 +349,10 @@ describe('popup settings changes', () => {
 
 	test('RPC-list preference edits preserve an exact selection among entries sharing an endpoint', async () => {
 		installBrowserMock()
-		const { getSettings, changeSimulationMode } = await loadModules()
+		const { requireSettingsWithReadableNetwork, changeSimulationMode } = await loadModules()
 		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
-		const initial = (await getSettings()).activeRpcNetwork
+		const initial = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 		if (initial.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const selected = { ...initial, name: 'Selected twin', primary: false, currencyTicker: 'SELECTED' }
 		const other = { ...initial, name: 'Other twin', primary: true, currencyTicker: 'OTHER', blockExplorer: { apiUrl: 'https://other.example/api', apiKey: '' } }
@@ -364,7 +364,7 @@ describe('popup settings changes', () => {
 		try {
 			const edited = { ...selected, minimized: !selected.minimized }
 			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [other, edited] })
-			assert.deepEqual((await getSettings()).activeRpcNetwork, edited)
+			assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, edited)
 			assert.equal(owner.getCurrent(), captured)
 			assert.equal(owner.getCurrent().ethereum.getRpcEntry().currencyTicker, selected.currencyTicker)
 		} finally { owner.getCurrent().ethereum.cleanup() }
@@ -372,10 +372,10 @@ describe('popup settings changes', () => {
 
 	for (const source of ['list', 'editor'] as const) test(`RPC metadata edits via ${ source } replace installed metadata and refresh without changing captured clients`, async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { getSettings, changeActiveAddressAndChain } = await loadModules()
+		const { requireSettingsWithReadableNetwork, changeActiveAddressAndChain } = await loadModules()
 		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
 		const captured = owner.getCurrent()
@@ -393,7 +393,7 @@ describe('popup settings changes', () => {
 					async rpcNetwork => await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork }))
 			} else await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, edited] })
 			assert.deepEqual(owner.getCurrent().ethereum.getRpcEntry(), edited)
-			assert.deepEqual((await getSettings()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
+			assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
 			assert.notEqual(owner.getCurrent(), captured)
 			assert.deepEqual(captured.ethereum.getRpcEntry(), settings.activeRpcNetwork)
 			assert.ok(refreshCount() > before)
@@ -407,8 +407,8 @@ describe('popup settings changes', () => {
 
 	test('refreshes when persisted network selection is unchanged but installed services must be replaced', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { getSettings, activateAddressSelection } = await loadModules()
-		const network = (await getSettings()).activeRpcNetwork
+		const { requireSettingsWithReadableNetwork, activateAddressSelection } = await loadModules()
+		const network = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 		if (network.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const stale = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...network, httpsRpc: 'https://stale.example' } })
 		const selected = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: network })
@@ -427,7 +427,7 @@ describe('popup settings changes', () => {
 	for (const recovery of ['RPC selection', 'settings import'] as const) test(`an unavailable active RPC can be repaired through ${ recovery } without default-network authority`, async () => await withSilencedConsole(async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
-		const initial = await modules.getSettings()
+		const initial = await modules.requireSettingsWithReadableNetwork()
 		const { popupMessageHandler } = await import('../../app/ts/background/popupMessageRouting.js')
 		const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
 		const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
@@ -437,7 +437,7 @@ describe('popup settings changes', () => {
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }] }))
 		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
-		await assert.rejects(modules.getSettings(), /RPC configuration is unavailable/u)
+		await assert.rejects(modules.requireSettingsWithReadableNetwork(), /RPC configuration is unavailable/u)
 		const projection = await getSettingsForConfigurationChange(services.ethereum.getRpcEntry())
 		assert.equal(projection.hasReadableActiveNetwork, false)
 		assert.equal(Object.hasOwn(projection.settings, 'websiteAccess'), false)
@@ -446,19 +446,19 @@ describe('popup settings changes', () => {
 			: { method: 'popup_import_settings', data: { fileContents: JSON.stringify(ExportedSettings.serialize(backup)) } }), async () => undefined)
 		if (recovery === 'RPC selection') assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
 		else assert.ok(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_initiate_export_settings_reply'))
-		assert.equal((await modules.getSettings()).activeRpcNetwork.httpsRpc, initial.activeRpcNetwork.httpsRpc)
-		assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, recovery === 'RPC selection' ? 2n : initial.activeRpcNetwork.chainId)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).activeRpcNetwork.httpsRpc, initial.activeRpcNetwork.httpsRpc)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).activeRpcNetwork.chainId, recovery === 'RPC selection' ? 2n : initial.activeRpcNetwork.chainId)
 		assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 0)
 		assert.equal(await modules.getLatestUnexpectedError(), undefined)
 	}))
 
 	test('rich changes request a visualization refresh immediately and unchanged values skip it', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { requireSettingsWithReadableNetwork } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const context = {
-			...services, settings: await getSettings(), websiteTabConnections: new Map(),
+			...services, settings: await requireSettingsWithReadableNetwork(), websiteTabConnections: new Map(),
 			publishRpcConnectionStatus: async () => undefined,
 			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
 			resetSimulationState: async () => undefined,
@@ -478,7 +478,7 @@ describe('popup settings changes', () => {
 
 	for (const refreshOutcome of ['unavailable', 'available'] as const) test(`rich changes reply from the awaited refresh outcome (${ refreshOutcome })`, async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { requireSettingsWithReadableNetwork } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 		const { getMakeCurrentAddressRich } = await import('../../app/ts/background/settings.js')
@@ -489,7 +489,7 @@ describe('popup settings changes', () => {
 			: createPassthroughCompleteVisualizedSimulation(5, 'done'))
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const context = {
-			...services, settings: await getSettings(), websiteTabConnections: new Map(),
+			...services, settings: await requireSettingsWithReadableNetwork(), websiteTabConnections: new Map(),
 			publishRpcConnectionStatus: async () => undefined,
 			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
 			resetSimulationState: async () => undefined,
@@ -505,11 +505,11 @@ describe('popup settings changes', () => {
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
-			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
+			const { changeSimulationMode, requireSettingsWithReadableNetwork, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
-			const currentRpc = (await getSettings()).activeRpcNetwork
+			const currentRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 			const primaryRpc = { ...currentRpc, chainId: 2n, httpsRpc: 'https://primary.example.test', primary: true }
 			const requestedRpc = { ...primaryRpc, name: 'Requested network', httpsRpc: outcome === 'metadata after chain event' ? primaryRpc.httpsRpc : 'https://alternative.example.test', primary: false }
 			const originalRpcList = [currentRpc, primaryRpc, requestedRpc]
@@ -535,7 +535,7 @@ describe('popup settings changes', () => {
 				assert.deepEqual(await getRpcList(), originalRpcList)
 				if (outcome === 'metadata after chain event') {
 					await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, 'hasAccess', 1n)
-					assert.deepEqual((await getSettings()).activeRpcNetwork, primaryRpc)
+					assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, primaryRpc)
 				}
 				await walletSwitchEthereumChainReply(simulationServicesOwner, connections, port, {
 					method: 'wallet_switchEthereumChain_reply',
@@ -543,7 +543,7 @@ describe('popup settings changes', () => {
 				}, 'hasAccess', 1n)
 			}
 			const reply = await pending
-			const activeRpc = (await getSettings()).activeRpcNetwork
+			const activeRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 			if (outcome !== 'reject' && outcome !== 'safe') {
 				assert.equal(simulationReads, 0, 'External-wallet signing must not read simulation state before acknowledging the switch')
 				assert.equal(reply.ok, true)
@@ -566,10 +566,10 @@ describe('popup settings changes', () => {
 
 	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Safe chain (crossChain=${ crossChain })`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
 		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
 		const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
-		const currentRpc = (await getSettings()).activeRpcNetwork
+		const currentRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 		const requestedRpc = { ...currentRpc, chainId: crossChain ? 2n : currentRpc.chainId, name: 'Alternative RPC', httpsRpc: 'https://alternative.example.test', primary: false }
 		const rpcList = [currentRpc, requestedRpc]
 		await setRpcList(rpcList)
@@ -583,7 +583,7 @@ describe('popup settings changes', () => {
 		} }]])
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await changeActiveRpc(simulationServicesOwner, connections, requestedRpc, { source: 'dapp', signerTabId: 1, simulationMode: false }, 10)
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		assert.equal(settings.activeSigningSafeAddress, 3n)
 		assert.equal(messages.some(message => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
 		assert.equal(isSignerChainChangePending(), false)
@@ -601,7 +601,7 @@ describe('popup settings changes', () => {
 
 	for (const matchesDispatchedToken of [true, false]) test(`early reply deadline ownership matches the dispatched signer token (${ matchesDispatchedToken })`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
+		const { changeSimulationMode, requireSettingsWithReadableNetwork, websiteSocketToString } = await loadModules()
 		const { changeActiveRpc, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 		await changeSimulationMode({ simulationMode: false })
 		const socket = { tabId: 1, connectionName: 0n }
@@ -610,7 +610,7 @@ describe('popup settings changes', () => {
 		const connections = new Map([[1, { ...ownership, connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		} }]])
-		const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://early-reply.example.test' }
+		const rpc = { ...(await requireSettingsWithReadableNetwork()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://early-reply.example.test' }
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		let delivery: Promise<void> | undefined
 		const originalPost = port.postMessage
@@ -639,7 +639,7 @@ describe('popup settings changes', () => {
 	for (const outcome of ['timeout', 'reply', 'failure'] as const) {
 		test(`wallet deadline releases a silent request but does not expire a received reply (${ outcome })`, async () => {
 			installBrowserMock()
-			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
+			const { changeSimulationMode, requireSettingsWithReadableNetwork, websiteSocketToString } = await loadModules()
 			const { changeActiveRpc, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 			const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
 			await changeSimulationMode({ simulationMode: false })
@@ -648,7 +648,7 @@ describe('popup settings changes', () => {
 			const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 			} }]])
-			const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://timeout.example.test' }
+			const rpc = { ...(await requireSettingsWithReadableNetwork()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://timeout.example.test' }
 			const services = createEthereumWithGetBlockCounter({ count: 0 })
 			const request = (timeoutMs: number) => changeActiveRpc(services.simulationServicesOwner, connections, rpc, { source: 'dapp', simulationMode: false, signerTabId: 1 }, timeoutMs)
 			const token = getConfirmedSignerStateToken(connections, 1)
@@ -705,16 +705,16 @@ describe('popup settings changes', () => {
 					method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', walletSwitchRequestId, signerProviderGeneration: token.signerProviderGeneration }],
 					interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
 				}, 'hasAccess', undefined)
-				const beforeLateReply = (await getSettings()).activeRpcNetwork
+				const beforeLateReply = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 				await deliver(expiredId)
 				assert.equal(completed, false)
-				assert.deepEqual((await getSettings()).activeRpcNetwork, beforeLateReply)
+				assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, beforeLateReply)
 				await deliver(dappId)
 				await dappSwitch
-				assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, dappRpc.httpsRpc)
+				assert.equal((await requireSettingsWithReadableNetwork()).activeRpcNetwork.httpsRpc, dappRpc.httpsRpc)
 				assert.equal(messages.find(message => message.method === 'wallet_switchEthereumChain' && message.requestId === 55)?.result, null)
 				await deliver(expiredId)
-				assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, dappRpc.httpsRpc)
+				assert.equal((await requireSettingsWithReadableNetwork()).activeRpcNetwork.httpsRpc, dappRpc.httpsRpc)
 			}
 		})
 	}
@@ -723,7 +723,7 @@ describe('popup settings changes', () => {
 		const accept = outcome !== 'rejection'
 		test(`waits for the matching wallet network ${ outcome }`, async () => {
 			installBrowserMock()
-			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
+			const { changeSimulationMode, requireSettingsWithReadableNetwork, websiteSocketToString } = await loadModules()
 			const { changeActiveRpc, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 			await changeSimulationMode({ simulationMode: false })
 			const socket = { tabId: 1, connectionName: 0n }
@@ -732,7 +732,7 @@ describe('popup settings changes', () => {
 			const connections = new Map([[1, { ...ownership, connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 			} }]])
-			const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://rpc.example.test' }
+			const rpc = { ...(await requireSettingsWithReadableNetwork()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://rpc.example.test' }
 			const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			let completed = false
 			const pending = changeActiveRpc(simulationServicesOwner, connections, rpc, { source: 'dapp', simulationMode: false, signerTabId: 1 }).then((result) => { completed = true; return result })
@@ -751,7 +751,7 @@ describe('popup settings changes', () => {
 				assert.strictEqual(result.result, null)
 			} else if (outcome === 'endpoint mismatch') {
 				assert.match(result.error?.message ?? '', /could not activate the requested network/)
-				assert.notEqual((await getSettings()).activeRpcNetwork.httpsRpc, rpc.httpsRpc)
+				assert.notEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork.httpsRpc, rpc.httpsRpc)
 			} else assert.equal(result.error?.message, 'User rejected network change')
 		})
 	}
@@ -764,7 +764,7 @@ for (const operation of ['add', 'edit', 'remove'] as const) test(`RPC editor ${ 
 	const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 	const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
 	const { saveRpcEntryAndKeepActiveRpcConsistent, removeRpcEntryAndKeepActiveRpcConsistent } = await import('../../app/ts/components/subcomponents/ConfigureRpcConnection.js')
-	const initial = await modules.getSettings()
+	const initial = await modules.requireSettingsWithReadableNetwork()
 	const first = { ...initial.activeRpcNetwork, chainId: 2n, name: 'First', primary: true }
 	const fallback = { ...first, name: 'Fallback', primary: false }
 	const entries = [first, fallback]
@@ -780,8 +780,8 @@ for (const operation of ['add', 'edit', 'remove'] as const) test(`RPC editor ${ 
 		else await saveRpcEntryAndKeepActiveRpcConsistent({ ...first, name: operation === 'add' ? 'Added' : 'Edited' }, operation === 'add' ? undefined : first, entries, active, persist, unexpectedSelection)
 		const stored = await getRpcList()
 		assert.equal(stored.length, operation === 'remove' ? 1 : operation === 'add' ? 3 : 2)
-		assert.equal((await modules.getSettings()).activeRpcNetwork.name, operation === 'remove' ? 'Fallback' : operation === 'edit' ? 'Edited' : 'First')
-		assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, 2n)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).activeRpcNetwork.name, operation === 'remove' ? 'Fallback' : operation === 'edit' ? 'Edited' : 'First')
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).activeRpcNetwork.chainId, 2n)
 		assert.equal(await modules.getLatestUnexpectedError(), undefined)
 	} finally { simulationServicesOwner.getCurrent().ethereum.setBlockPolling(false) }
 }))

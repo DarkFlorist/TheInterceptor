@@ -40,6 +40,7 @@ export async function popupMessageHandler(
 		if (requestReply === undefined) return undefined
 		return PopupReplyOption.serialize(requestReply)
 	} catch(error: unknown) {
+		// Network-dependent reads can stop here while RPC settings are unavailable. Repair requests use a snapshot instead.
 		if (isExpectedInfrastructureError(error)) return
 		throw error
 	}

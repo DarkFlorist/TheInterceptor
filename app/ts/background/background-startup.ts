@@ -2,7 +2,8 @@
 import 'webextension-polyfill'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
-import { getSettings, getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable, settingsIfRpcConfigurationReady, updateKnownWebsiteMetadata } from './settings.js'
+import { requireSettingsWithReadableNetwork, getSettingsSnapshot, updateKnownWebsiteMetadata } from './settings.js'
+import { settingsIfRpcConfigurationReady } from './websiteAccessPolicy.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
@@ -249,7 +250,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
 			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
-			const settings = await getSettings()
+			const settings = await requireSettingsWithReadableNetwork()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
@@ -288,7 +289,7 @@ async function startup() {
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const startupSnapshot = await getSettingsSnapshot()
-	const startupSettings = settingsEvenIfRpcConfigurationUnusable(startupSnapshot)
+	const startupSettings = startupSnapshot.status === 'available' ? startupSnapshot.settings : undefined
 	const startupConfigurationReady = settingsIfRpcConfigurationReady(startupSnapshot) !== undefined
 	// A dormant bootstrap client keeps configuration commands reachable; it is not persisted as the active selection and is never authority for provider admission. Constructors perform no RPC.
 	const bootstrapNetwork = startupSettings?.activeRpcNetwork ?? DEFAULT_RPCS[0]

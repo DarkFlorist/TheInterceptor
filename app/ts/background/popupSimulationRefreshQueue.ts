@@ -1,3 +1,4 @@
+import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 // Owns coalescing and supersession of interactive refreshes: which requests are equivalent, which is pending, and the invalidation merged across them. popupVisualisationUpdater owns execution, the publication generation guard, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
@@ -98,7 +99,10 @@ export async function runPopupSimulationRefresh({ invalidateOldState = false, ..
 
 // Awaits only local invalidation and capture, then returns without an outcome; the refresh runs as a background task that reports its own failures. Callers that need the outcome use runPopupSimulationRefresh.
 export async function startPopupSimulationRefreshInBackground({ invalidateOldState = true, ...services }: PopupSimulationRefresh): Promise<void> {
-	const request = await preparePopupVisualisationRefresh(services, invalidateOldState, true)
+	const request = await preparePopupVisualisationRefresh(services, invalidateOldState, true).catch((error: unknown) => {
+		if (isRpcConfigurationUnavailableError(error)) return undefined
+		throw error
+	})
 	if (request === undefined) return
 	const queued = refreshQueue.toQueued(services, request)
 	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshQueue.refresh(queued, invalidateOldState))

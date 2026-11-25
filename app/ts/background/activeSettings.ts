@@ -11,7 +11,7 @@ import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWeb
 import { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getSettings, getSettingsForConfigurationChange, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { requireSettingsWithReadableNetwork, getSettingsForConfigurationChange, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { changeSimulationMode } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
@@ -19,7 +19,7 @@ import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
 async function clearSimulationStateFromConfig() {
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
@@ -53,7 +53,7 @@ export async function resetSimulationStateFromConfig(simulationServicesOwner: Si
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
-	const previousActiveAddress = (await getSettings()).activeSimulationAddress
+	const previousActiveAddress = (await requireSettingsWithReadableNetwork()).activeSimulationAddress
 	await trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress)
 }
 
@@ -85,7 +85,7 @@ export async function runActiveSettingsTransition(
 			const { settings: previousSettings, hasReadableActiveNetwork } = await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 			if (!await commit()) return
 
-			const updatedSettings = await getSettings()
+			const updatedSettings = await requireSettingsWithReadableNetwork()
 			const rpcChainChanged = !hasReadableActiveNetwork || getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork).chainChanged
 			let networkOutcome: SimulationNetworkReconciliation = 'unchanged'
 			try {
@@ -118,7 +118,7 @@ export async function runActiveSettingsTransition(
 			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 				await startPopupSimulationRefreshInBackground(simulationServicesOwner.getCurrent())
 			}
-			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await requireSettingsWithReadableNetwork())
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.

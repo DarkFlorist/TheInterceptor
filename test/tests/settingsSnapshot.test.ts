@@ -47,7 +47,6 @@ const secondSnapshot = {
 }
 
 let storageReadCount = 0
-let storageReadError: Error | undefined
 
 Object.defineProperty(globalThis, 'browser', {
 	configurable: true,
@@ -56,7 +55,6 @@ Object.defineProperty(globalThis, 'browser', {
 		storage: {
 			local: {
 				async get(keys: string | readonly string[]) {
-					if (storageReadError !== undefined) throw storageReadError
 					const snapshot = storageReadCount++ === 0 ? firstSnapshot : secondSnapshot
 					const requestedKeys = Array.isArray(keys) ? keys : [keys]
 					return Object.fromEntries(Object.entries(snapshot).filter(([key]) => requestedKeys.includes(key)))
@@ -68,9 +66,6 @@ Object.defineProperty(globalThis, 'browser', {
 		},
 	},
 })
-
-const { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, settingsForPublication } = await import('../../app/ts/background/settings.js')
-const rereadSettingsForPublication = async (settings: Awaited<ReturnType<typeof getRequiredSettings>>) => settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(settings)), settings)
 
 test('a required settings read is one atomic browser storage snapshot', async () => {
 	storageReadCount = 0
@@ -88,22 +83,4 @@ test('a required settings read is one atomic browser storage snapshot', async ()
 	const serializedSettings = serialize(Settings, settings)
 	assert.equal('rpcConfigurationAvailable' in serializedSettings, false)
 	assert.deepEqual(Settings.parse(serializedSettings), settings)
-})
-
-test('an admitted RPC network snapshot published through settingsForPublication keeps the given RPC network and drops approvals when storage is unreadable', async () => {
-	storageReadCount = 0
-	storageReadError = undefined
-	const settings = { ...await getRequiredSettings(), websiteAccess: [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }] }
-
-	const reread = await rereadSettingsForPublication(settings)
-	assert.equal(reread.activeRpcNetwork.name, 'First network')
-	assert.equal(reread.activeSimulationAddress, 0x2222222222222222222222222222222222222222n)
-	assert.equal(reread.simulationMode, false)
-
-	storageReadError = new Error('Storage unavailable')
-	try {
-		assert.deepEqual(await rereadSettingsForPublication(settings), { ...settings, websiteAccess: [] })
-	} finally {
-		storageReadError = undefined
-	}
 })

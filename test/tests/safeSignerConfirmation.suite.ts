@@ -1014,7 +1014,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	assert.equal(optimisticTransaction.preSimulationTransaction.signedTransaction.maxFeePerGas, 0n)
 	assert.equal(optimisticTransaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas, 0n)
 	assert.deepEqual(optimisticTransaction.preSimulationTransaction.simulationOptions, { requiredChainId: fakeRpcNetwork.chainId })
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await (await import('../../app/ts/background/settings.js')).requireSettingsWithReadableNetwork()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash

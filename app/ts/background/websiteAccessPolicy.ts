@@ -1,3 +1,5 @@
+import type { Settings } from '../types/interceptor-messages.js'
+import type { SettingsSnapshot, WebsiteApprovalsSnapshot } from './settings.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 
@@ -30,3 +32,26 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 
 // The access a website has for the active address, or for the website itself when no address is active. Connection approval and request blocking both decide by it.
 export const getWebsiteAccessForAddress = (websiteAccess: WebsiteAccessArray, websiteOrigin: string, activeAddress: AddressBookEntry | undefined) => activeAddress ? hasAddressAccess(websiteAccess, websiteOrigin, activeAddress) : hasAccess(websiteAccess, websiteOrigin)
+
+const readyRpcConfigurationMarker = Symbol('readyRpcConfiguration')
+// Settings read while the RPC configuration was ready. Connection grants and request blocking require this branded projection.
+export type ReadyRpcSettings = Settings & { readonly [readyRpcConfigurationMarker]: true }
+
+// Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
+export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): ReadyRpcSettings | undefined {
+	if (snapshot.rpcConfiguration.status !== 'ready' || snapshot.status !== 'available') return undefined
+	return { ...snapshot.settings, [readyRpcConfigurationMarker]: true }
+}
+
+// For a best-effort display, unreadable approvals supply no entries. Decisions that must abort on a failed read use requireReadableApprovals.
+export function approvalsOrNoneIfUnreadable(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (snapshot.status === 'available') return snapshot.settings.websiteAccess
+	const websiteApprovals = snapshot.status === 'unavailable' ? snapshot.websiteApprovals : snapshot
+	return websiteApprovals.status === 'readable' ? websiteApprovals.websiteAccess : []
+}
+
+// Projection for paths where a failed read must stop the caller (for example so applied request blocks stay in place): rethrows the storage error.
+export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (websiteApprovals.status === 'unreadable') throw websiteApprovals.error
+	return websiteApprovals.websiteAccess
+}

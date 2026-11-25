@@ -6,7 +6,7 @@ import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-type
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingRequestWaitingForSigner, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, requireSettingsWithReadableNetwork } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { withSuppressedUnscopedConnectionEventsForSocketAsync } from './websiteConnectionEvents.js'
 import { verifyAccess } from './accessManagement.js'
@@ -110,7 +110,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		if (transition.shouldActivate) {
 			const changeActiveAddress = async () => {
@@ -127,7 +127,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		}
-		const updatedSettings = transition.shouldActivate ? await getSettings() : settings
+		const updatedSettings = transition.shouldActivate ? await requireSettingsWithReadableNetwork() : settings
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
 			tabId,
@@ -156,7 +156,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -248,12 +248,12 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
-			const settings = await getSettings()
+			const settings = await requireSettingsWithReadableNetwork()
 			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 			}
 		}
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
 		if (isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)

@@ -9,10 +9,6 @@ export type RpcConfigurationState =
 	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly activeRpcNetwork?: RpcNetwork, readonly error?: unknown }
 
-export function rpcConfigurationIsReady(configuration: RpcConfigurationState): configuration is Extract<RpcConfigurationState, { status: 'ready' }> {
-	return configuration.status === 'ready'
-}
-
 const rpcConfigurationSemaphore = new Semaphore(1)
 
 type RpcConfigurationStorageItems = Readonly<Record<string, unknown>> & {

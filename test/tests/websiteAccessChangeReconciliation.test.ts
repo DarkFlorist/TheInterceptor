@@ -123,7 +123,7 @@ test('reports grant notification and block failures after reconciliation release
 		assert.equal(reconciled, true)
 		reports.push(error)
 	})
-	await reconcileWebsiteApprovalAccesses(connections, await modules.getSettings())
+	await reconcileWebsiteApprovalAccesses(connections, await modules.requireSettingsWithReadableNetwork())
 	assert.deepEqual(reports, [notificationFailure, blockFailure])
 	assert.equal(connection.approved, false)
 })
@@ -134,7 +134,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), /current tab lookup failed/u)
 
-		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
+		assert.deepEqual((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		const latestUnexpectedError = await modules.getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError, undefined)
@@ -149,7 +149,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), (error) => error === reloadStepError)
 
-		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
+		assert.deepEqual((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
 	})
@@ -224,8 +224,8 @@ describe('website access registration and reconciliation', () => {
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
 
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.access, true)
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.interceptorDisabled, false)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.access, true)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.interceptorDisabled, false)
 		assert.deepEqual(reloadedTabIds, [])
 		assert.equal(reconcile.mock.calls.length, 1)
 		assertConnectionStillApproved()
@@ -314,7 +314,7 @@ for (const edit of ['approval', 'multi-approval', 'blocking', 'new-blocking-reco
 test('unavailable RPC settings skip deferred access prompts without per-connection internal errors', async () => {
 	const { runtimeMessages } = installBrowserMock()
 	const modules = await loadModules()
-	const settings = await modules.getSettings()
+	const settings = await modules.requireSettingsWithReadableNetwork()
 	await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
 	const connections = new Map([1, 2, 3].map((tabId) => {
 		const socket = { tabId, connectionName: 0n }

@@ -1,6 +1,6 @@
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getSettings, getSettingsForConfigurationChange } from './settings.js'
+import { requireSettingsWithReadableNetwork, getSettingsForConfigurationChange } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { Future } from '../utils/future.js'
 import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
@@ -95,7 +95,7 @@ export type RpcSwitchRequest =
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
 	const { settings, hasReadableActiveNetwork } = request.source === 'popup'
 		? await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
-		: { settings: await getSettings(), hasReadableActiveNetwork: true }
+		: { settings: await requireSettingsWithReadableNetwork(), hasReadableActiveNetwork: true }
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
 	// Restoring an unreadable selection is local configuration repair, not a wallet switch from the dormant comparison network.
 	const route = hasReadableActiveNetwork ? getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode) : 'local'
@@ -142,7 +142,7 @@ async function requestSignerChainChange(websiteTabConnections: WebsiteTabConnect
 	try {
 		const dispatchedToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, requestTabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId, walletSwitchRequestId: pending.walletSwitchRequestId })
 		if (dispatchedToken === false) return { error: signerUnavailableError }
-		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings(), popupRefreshGeneration: bumpPopupRefreshGeneration() })
+		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await requireSettingsWithReadableNetwork(), popupRefreshGeneration: bumpPopupRefreshGeneration() })
 		pending.signerStateToken = dispatchedToken
 		if (!pending.receivedReplyTokens.some(token => doSignerStateTokensMatch(dispatchedToken, token))) pending.timeout = setTimeout(() => {
 			pending.future.resolve({ type: 'timeout' })
@@ -203,7 +203,7 @@ export async function applyWalletSwitchReply(
 			if (params.accept) {
 				const requestedRpc = getPendingSignerChainChangeRpc(callbackSignerStateToken, params.chainId)
 				await applyChain(currentSignerStateToken, params.chainId, requestedRpc)
-				const activeRpc = (await getSettings()).activeRpcNetwork
+				const activeRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 				if (requestedRpc !== undefined && getRpcNetworkChange(activeRpc, requestedRpc).endpointChanged) {
 					rejectWalletSwitchReply(callbackSignerStateToken, params, { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet switched networks, but Interceptor could not activate the requested network.' })
 					return

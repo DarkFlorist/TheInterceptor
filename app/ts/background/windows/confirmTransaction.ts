@@ -30,7 +30,7 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettings } from '../settings.js'
+import { requireSettingsWithReadableNetwork } from '../settings.js'
 import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -241,7 +241,7 @@ export type ConfirmTransactionDialogStateOptions = {
 // The only builder of the confirmation dialog state: it owns the simulation-mode/passthrough rule, the block number source and the RPC status read.
 export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationState, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
 	const getVisualizedSimulatorState = async () => {
-		const isSimulationMode = simulationMode === 'activeSettings' ? (await getSettings()).simulationMode : simulationMode
+		const isSimulationMode = simulationMode === 'activeSettings' ? (await requireSettingsWithReadableNetwork()).simulationMode : simulationMode
 		return isSimulationMode ? await getVisualisation() : createPassthroughCompleteVisualizedSimulation()
 	}
 	const [visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus] = await Promise.all([
@@ -551,7 +551,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 			await updatePendingTransactionOrMessageInstance(pendingTransactionOrMessage, async (transaction) => modifyObject(transaction, { approvalStatus }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 		}
-		if ((await getSettings()).simulationMode || !simulationModeGuard.allowsSignerForward()) {
+		if ((await requireSettingsWithReadableNetwork()).simulationMode || !simulationModeGuard.allowsSignerForward()) {
 			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
 			return false
 		}

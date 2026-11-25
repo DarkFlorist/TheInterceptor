@@ -791,7 +791,7 @@ describe('popup clear reset', () => {
 		await changeActiveRpc(simulationServicesOwner, new Map(), sameChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 
 		const modules = await modulesPromise
-		const updatedSettings = await modules.getSettings()
+		const updatedSettings = await modules.requireSettingsWithReadableNetwork()
 		const storedInterceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, sameChainRpcNetwork)
@@ -821,7 +821,7 @@ describe('popup clear reset', () => {
 		await waitForBackgroundTasks()
 
 		const modules = await modulesPromise
-		const updatedSettings = await modules.getSettings()
+		const updatedSettings = await modules.requireSettingsWithReadableNetwork()
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, otherChainRpcNetwork)
