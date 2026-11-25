@@ -11,7 +11,7 @@ import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWeb
 import { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { requireSettingsWithReadableNetwork, getSettingsForConfigurationChange, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { changeSimulationMode } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
@@ -19,7 +19,7 @@ import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
 async function clearSimulationStateFromConfig() {
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
@@ -53,7 +53,7 @@ export async function resetSimulationStateFromConfig(simulationServicesOwner: Si
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
-	const previousActiveAddress = (await getSettings()).activeSimulationAddress
+	const previousActiveAddress = (await requireSettingsWithReadableNetwork()).activeSimulationAddress
 	await trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress)
 }
 
@@ -82,11 +82,13 @@ export async function runActiveSettingsTransition(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			const previousSettings = await getSettings()
+			const previousSettings = await getSettingsForConfigurationChange()
+			const previousNetwork = previousSettings.activeRpcNetwork
+			const previousStackContext = previousNetwork === undefined ? undefined : getActiveStackContext({ ...previousSettings, activeRpcNetwork: previousNetwork })
 			if (!await commit()) return
 
-			const updatedSettings = await getSettings()
-			const { chainChanged: rpcChainChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+			const updatedSettings = await requireSettingsWithReadableNetwork()
+			const rpcChainChanged = previousNetwork === undefined || getRpcNetworkChange(previousNetwork, updatedSettings.activeRpcNetwork).chainChanged
 			let networkOutcome: SimulationNetworkReconciliation = 'unchanged'
 			try {
 				try {
@@ -115,10 +117,10 @@ export async function runActiveSettingsTransition(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || previousStackContext === undefined || !activeStackContextsEqual(previousStackContext, getActiveStackContext(updatedSettings)))) {
 				await startPopupSimulationRefreshInBackground(simulationServicesOwner.getCurrent())
 			}
-			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await requireSettingsWithReadableNetwork())
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.

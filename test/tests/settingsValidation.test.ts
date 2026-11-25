@@ -1,6 +1,7 @@
+import { RpcNetwork, RpcEntries } from '../../app/ts/types/rpc.js'
 import * as assert from 'node:assert/strict'
 import { beforeEach, test } from 'bun:test'
-import { DEFAULT_ACTIVE_ADDRESSES } from '../../app/ts/config/defaults.js'
+import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
@@ -13,10 +14,13 @@ Object.defineProperty(globalThis, 'browser', {
 	} } },
 })
 const { browserStorageLocalSafeParse } = await import('../../app/ts/utils/storageUtils.js')
-const { getSettings } = await import('../../app/ts/background/settings.js')
+const { requireSettingsWithReadableNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 
 beforeEach(() => {
 	for (const key of Object.keys(storedItems)) delete storedItems[key]
+	const initialRpc = DEFAULT_RPCS[0]
+	if (initialRpc === undefined) throw new Error('Missing default RPC')
+	Object.assign(storedItems, { rpcEntries: RpcEntries.serialize(DEFAULT_RPCS), activeRpcNetwork: RpcNetwork.serialize(initialRpc) })
 	writes.length = 0
 })
 
@@ -26,18 +30,18 @@ test('settings validate each website once instead of traversing unrelated storag
 		get website() { websiteReads += 1; return { websiteOrigin: 'denied.example' } },
 		access: false,
 	}]
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	assert.equal(websiteReads, 1)
 	assert.equal(settings.websiteAccess[0]?.access, false)
 	assert.equal(writes.length, 0)
 })
 
 test('settings distinguish missing addresses from explicit clears', async () => {
-	const defaultSettings = await getSettings()
+	const defaultSettings = await requireSettingsWithReadableNetwork()
 	assert.equal(defaultSettings.activeSimulationAddress, DEFAULT_ACTIVE_ADDRESSES[0]?.address)
 	storedItems.independentActiveSimulationAddress = 'missing'
 	storedItems.activeSigningSafeAddress = 'missing'
-	const clearedSettings = await getSettings()
+	const clearedSettings = await requireSettingsWithReadableNetwork()
 	assert.equal(clearedSettings.activeSimulationAddress, undefined)
 	assert.equal(clearedSettings.activeSigningSafeAddress, undefined)
 	assert.equal(writes.length, 0)
@@ -47,7 +51,7 @@ test('a corrupt simulation mode fails closed without overwriting stored settings
 	storedItems.simulationMode = 'invalid'
 	storedItems.useSignersAddressAsActiveAddress = true
 	storedItems.independentActiveSimulationAddress = '0x0000000000000000000000000000000000000002'
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	assert.equal(settings.simulationMode, true)
 	assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	assert.equal(settings.activeSimulationAddress, 2n)
@@ -57,13 +61,34 @@ test('a corrupt simulation mode fails closed without overwriting stored settings
 test('corrupt address repairs use the canonical storage encoding and survive startup', async () => {
 	storedItems.independentActiveSimulationAddress = 'invalid'
 	storedItems.activeSigningSafeAddress = 'invalid'
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	const parsed = browserStorageLocalSafeParse(storedItems)
 	assert.ok(parsed !== undefined)
 	assert.equal(parsed.independentActiveSimulationAddress, settings.activeSimulationAddress)
 	assert.ok(Object.hasOwn(parsed, 'activeSigningSafeAddress'))
 	assert.equal(parsed.activeSigningSafeAddress, undefined)
 	assert.equal(storedItems.activeSigningSafeAddress, 'missing')
-	assert.deepEqual(await getSettings(), settings)
+	assert.deepEqual(await requireSettingsWithReadableNetwork(), settings)
 	assert.equal(writes.length, 2)
+})
+
+test('concurrent required and snapshot reads repair a missing active network once', async () => {
+	delete storedItems.activeRpcNetwork
+	const primary = { name: 'Stored primary', chainId: 10n, httpsRpc: 'https://primary.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	storedItems.rpcEntries = RpcEntries.serialize([primary])
+	const [required, snapshot] = await Promise.all([requireSettingsWithReadableNetwork(), getSettingsSnapshot()])
+	assert.equal(snapshot.status, 'active-network-readable')
+	if (snapshot.status !== 'active-network-readable') throw new Error('Expected the repaired configuration')
+	assert.equal(required.activeRpcNetwork.chainId, 10n)
+	assert.deepEqual(required.activeRpcNetwork, snapshot.settings.activeRpcNetwork)
+	assert.equal(writes.length, 1)
+})
+
+test('an unavailable active selection never becomes an invented default network', async () => {
+	delete storedItems.activeRpcNetwork
+	storedItems.rpcEntries = []
+	await assert.rejects(requireSettingsWithReadableNetwork(), /RPC configuration is unavailable/u)
+	assert.equal((await getSettingsSnapshot()).status, 'active-network-unreadable')
+	assert.equal(storedItems.activeRpcNetwork, undefined)
+	assert.equal(writes.length, 0)
 })

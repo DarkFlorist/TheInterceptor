@@ -1,3 +1,4 @@
+import { settingsIfRpcConfigurationReady } from '../rpcReadySettings.js'
 import { getUnsimulatedGasLimitEdit, isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
@@ -30,7 +31,7 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettings } from '../settings.js'
+import { getSettingsSnapshot, getStoredSimulationMode } from '../settings.js'
 import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -241,7 +242,7 @@ export type ConfirmTransactionDialogStateOptions = {
 // The only builder of the confirmation dialog state: it owns the simulation-mode/passthrough rule, the block number source and the RPC status read.
 export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationState, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
 	const getVisualizedSimulatorState = async () => {
-		const isSimulationMode = simulationMode === 'activeSettings' ? (await getSettings()).simulationMode : simulationMode
+		const isSimulationMode = simulationMode === 'activeSettings' ? await getStoredSimulationMode() : simulationMode
 		return isSimulationMode ? await getVisualisation() : createPassthroughCompleteVisualizedSimulation()
 	}
 	const [visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus] = await Promise.all([
@@ -316,8 +317,10 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 	try {
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
+		const settings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
+		if (settings === undefined) return false
 		const dialog = await buildConfirmTransactionDialogState(ethereum, {
-			simulationMode: 'activeSettings',
+			simulationMode: settings.simulationMode,
 			getVisualisation: async () => await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating }),
 			blockNumberSource: { kind: 'fetch', abortController: undefined },
 		})
@@ -551,7 +554,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 			await updatePendingTransactionOrMessageInstance(pendingTransactionOrMessage, async (transaction) => modifyObject(transaction, { approvalStatus }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 		}
-		if ((await getSettings()).simulationMode || !simulationModeGuard.allowsSignerForward()) {
+		if (await getStoredSimulationMode() || !simulationModeGuard.allowsSignerForward()) {
 			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
 			return false
 		}

@@ -4,7 +4,6 @@ import { popupSettingsOperations, type PopupSettingsAdmittedRequest } from '../t
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
-import { getSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
 import { runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 
@@ -13,7 +12,7 @@ const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await
 function settingsCommand<Method extends PopupSettingsAdmittedRequest['method']>(method: Method, action: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
 	return popupMessageHandler(method, async (context, request) => {
 		const descriptor = popupSettingsOperations[method]
-		const admission = await settingsCoordinator.run(descriptor.operation, async () => await action({ ...context, settings: await getSettings() }, request))
+		const admission = await settingsCoordinator.run(descriptor.operation, async () => await action(context, request))
 		if (admission.accepted) return admission.result
 		const message = 'Another popup is changing settings. Please wait for it to finish, then try again.'
 		const reply = descriptor.reply

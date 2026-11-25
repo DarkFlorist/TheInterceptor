@@ -26,15 +26,6 @@ export function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
 	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
 }
 
-export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
-	}
-}
-
 export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
 	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
 	try {

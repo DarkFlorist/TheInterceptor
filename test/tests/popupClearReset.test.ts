@@ -423,7 +423,7 @@ describe('popup clear reset', () => {
 
 	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
 		browserMock.reset()
-		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, rpcEntries: [rpcNetwork], independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
 		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const originalGet = browser.storage.local.get
 		let changed = false
@@ -791,7 +791,7 @@ describe('popup clear reset', () => {
 		await changeActiveRpc(simulationServicesOwner, new Map(), sameChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 
 		const modules = await modulesPromise
-		const updatedSettings = await modules.getSettings()
+		const updatedSettings = await modules.requireSettingsWithReadableNetwork()
 		const storedInterceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, sameChainRpcNetwork)
@@ -821,7 +821,7 @@ describe('popup clear reset', () => {
 		await waitForBackgroundTasks()
 
 		const modules = await modulesPromise
-		const updatedSettings = await modules.getSettings()
+		const updatedSettings = await modules.requireSettingsWithReadableNetwork()
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, otherChainRpcNetwork)
@@ -848,7 +848,6 @@ describe('popup clear reset', () => {
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }),
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			await modules.getSettings(),
 			async () => undefined,
 		)
 

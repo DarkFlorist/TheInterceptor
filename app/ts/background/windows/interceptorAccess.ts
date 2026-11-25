@@ -3,13 +3,13 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../websiteConnectionEvents.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
+import { withSuppressedUnscopedConnectionEventsForSocketAsync } from '../websiteConnectionEvents.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, verifyRequestedAccess } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { getSettings } from '../settings.js'
+import { requireSettingsWithReadableNetwork } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -119,7 +119,7 @@ export async function resolveInterceptorAccess(simulationServicesOwner: Simulati
 		await updateWebsiteApprovalAccesses(
 			simulationServicesOwner,
 			websiteTabConnections,
-			await getSettings(),
+			await requireSettingsWithReadableNetwork(),
 			true,
 		)
 	}
@@ -151,7 +151,7 @@ export function filterAccessDialogAddressesForChain(activeAddresses: AddressBook
 }
 
 async function getAccessDialogActiveAddresses() {
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	return filterAccessDialogAddressesForChain(await getActiveAddresses(), settings.activeRpcNetwork.chainId)
 }
 
@@ -304,7 +304,7 @@ export async function requestAccessFromUser(
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
-		const verify = () => verifyAccess(
+		const verify = () => (request === undefined ? verifyAccess : verifyRequestedAccess)(
 			websiteTabConnections,
 			socket,
 			true,
@@ -314,7 +314,7 @@ export async function requestAccessFromUser(
 			{ ignoreConnectionApproval: request !== undefined && isAccountConnectionMethod(request.method) },
 		)
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
-		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
+		return withSuppressedUnscopedConnectionEventsForSocketAsync(request.uniqueRequestIdentifier.requestSocket, verify)
 	}
 	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulationServicesOwner, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
@@ -340,7 +340,7 @@ export async function requestAccessFromUser(
 
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
-		const hasAccess = verifyAccessForCurrentRequest(await getSettings())
+		const hasAccess = await verifyAccessForCurrentRequest(await requireSettingsWithReadableNetwork())
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
@@ -398,7 +398,7 @@ export async function requestAccessFromUser(
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
-			if (verifyAccessForCurrentRequest(await getSettings()) !== 'askAccess') return previousPendingAccessRequests
+			if (await verifyAccessForCurrentRequest(await requireSettingsWithReadableNetwork()) !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
@@ -477,7 +477,7 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
-			const settings = await getSettings()
+			const settings = await requireSettingsWithReadableNetwork()
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
 			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
 			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
@@ -534,7 +534,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		}
 
 		const proposedSelection = await getProposedSelection()
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		const requestAccessToAddress = proposedSelection === undefined
 			? pendingAccessRequest.requestAccessToAddress
 			: proposedSelection.type === 'addressBookEntry' && proposedSelection.entry.type === 'safe'
@@ -555,7 +555,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 }
 
 async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
 	const activeAddresses = await getActiveAddresses()
@@ -575,7 +575,7 @@ async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: 
 }
 
 export async function interceptorAccessMetadataRefresh() {
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
 		data: {

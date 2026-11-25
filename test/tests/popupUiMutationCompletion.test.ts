@@ -60,7 +60,7 @@ describe('UI mutation completion', () => {
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 		const context = {
-			simulationServicesOwner: owner, settings: await modules.getSettings(), websiteTabConnections: new Map(),
+			simulationServicesOwner: owner, settings: await modules.requireSettingsWithReadableNetwork(), websiteTabConnections: new Map(),
 			publishRpcConnectionStatus: async () => undefined,
 			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
 			resetSimulationState: async () => await modules.resetSimulationStateFromConfig(owner),
@@ -98,7 +98,7 @@ describe('UI mutation completion', () => {
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), false, 'Stack-only gas edits must not broadcast an empty confirmation list')
 			}
 			// The settings coordinator must be available even while the earlier refresh is blocked; rich edits are not used here because they await their refresh to report its outcome.
-			const next = await completesPromptly(dispatchPopupMessage(context, { method: 'popup_enableSimulationMode', data: (await modules.getSettings()).simulationMode }))
+			const next = await completesPromptly(dispatchPopupMessage(context, { method: 'popup_enableSimulationMode', data: (await modules.requireSettingsWithReadableNetwork()).simulationMode }))
 			assert.equal(next?.type, 'PopupSettingsChangeReply')
 			assert.ok(next !== undefined && 'ok' in next && next.ok)
 		} finally {
@@ -189,7 +189,7 @@ describe('UI mutation completion', () => {
 			await completesPromptly(iconTargetsRead.promise)
 			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, false)
 			assert.equal(Object.values(connections.get(2)?.connections ?? {})[0]?.approved, true)
-			assert.equal((await modules.getSettings()).websiteAccess[0]?.addressAccess?.[0]?.access, false)
+			assert.equal((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.addressAccess?.[0]?.access, false)
 		} finally {
 			release.resolve()
 			await waitForBackgroundTasks()
@@ -240,7 +240,7 @@ describe('UI mutation completion', () => {
 	test('failed reconciliation clears every approval and notifies lifecycle despite a broken port', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { reconcileCommittedWebsiteAccessOrFailClosed } = await import('../../app/ts/background/accessManagement.js')
+		const { reconcileCommittedAddressBookChange } = await import('../../app/ts/background/accessManagement.js')
 		const revokedTabs: number[] = []
 		const connections: WebsiteTabConnections = Object.assign(new Map(), { lifecycle: { approvalChanged: (socket: { tabId: number }, approved: boolean) => { if (!approved) revokedTabs.push(socket.tabId) } } })
 		const healthyPort = createPort(2)
@@ -256,7 +256,7 @@ describe('UI mutation completion', () => {
 			return await originalGet(keys)
 		} })
 		try {
-			await assert.rejects(reconcileCommittedWebsiteAccessOrFailClosed(connections), caught => caught === error)
+			await assert.rejects(reconcileCommittedAddressBookChange(connections), caught => caught === error)
 			assert.equal([...connections.values()].some(tab => Object.values(tab.connections).some(connection => connection.approved)), false)
 			assert.deepEqual(revokedTabs, [1, 2, 3])
 			assert.deepEqual(healthyPort.messages.map(message => message.method), ['accountsChanged', 'disconnect'])
@@ -275,7 +275,7 @@ describe('UI mutation completion', () => {
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
 		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
 		await modules.updateWebsiteAccess(() => [website, { websiteOrigin: 'still-allowed.test' }].map(website => ({ website, access: true, addressAccess: [{ address, access: true }], declarativeNetRequestBlockMode: 'block-all' })))
-		const entry = (await modules.getSettings()).websiteAccess.find(entry => entry.website.websiteOrigin === website.websiteOrigin)
+		const entry = (await modules.requireSettingsWithReadableNetwork()).websiteAccess.find(entry => entry.website.websiteOrigin === website.websiteOrigin)
 		assert.ok(entry)
 		const connections: WebsiteTabConnections = new Map()
 		for (const [tabId, websiteOrigin] of [[1, website.websiteOrigin], [2, 'still-allowed.test']] as const) {
@@ -300,7 +300,7 @@ describe('UI mutation completion', () => {
 			if (failure === 'tab read' && keys === 'tabState_2') { readStarted.resolve(); await releaseRead.promise }
 			return await originalGet(keys)
 		} })
-		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw error } })
+		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getSessionRules', { configurable: true, value: async () => { throw error } })
 		let settled = false
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = mode === 'bulk'
@@ -328,14 +328,14 @@ describe('UI mutation completion', () => {
 		}
 	})
 
-	test.each(['bulk', 'disable', 'remove'] as const)('%s access change fails closed if content-script setup and reconciliation reject after saving permissions', async operation => {
+	test.each(['bulk', 'disable', 'remove'] as const)('%s access change preserves restored authority when registration rolls back and reconciliation cannot read settings', async operation => {
 		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const website = { websiteOrigin: 'revoked-before-injection.test' }
 		const anotherWebsite = { websiteOrigin: 'disabled-in-same-edit.test' }
 		await modules.updateWebsiteAccess(() => [{ website, access: true, interceptorDisabled: operation === 'remove' }, { website: anotherWebsite, access: true }])
-		const entries = (await modules.getSettings()).websiteAccess
+		const entries = (await modules.requireSettingsWithReadableNetwork()).websiteAccess
 		const [entry, anotherEntry] = entries
 		assert.ok(entry && anotherEntry)
 		const socket = { tabId: 1, connectionName: 0n }
@@ -353,12 +353,12 @@ describe('UI mutation completion', () => {
 				? handlers.disableInterceptor(owner, connections, { method: 'popup_disableInterceptor', data: { website, interceptorDisabled: true } })
 				: handlers.removeWebsiteAccess(owner, connections, { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: website.websiteOrigin } })
 			await assert.rejects(request, caught => caught === error)
-			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, false)
+			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, true)
 			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed' || message.method === 'popup_interceptor_access_changed' || message.method === 'popup_setDisableInterceptorReply'), false)
 		} finally { restoreStorage() }
-		// The failed content-script setup rolls the saved change back; the approval stays cleared because reconciliation could not read the restored permissions.
+		// Registration rolled back the edit. Its committed before/after authority is unchanged, so an unreadable reconciliation must not revoke that restored approval.
 		const byOrigin = (accesses: typeof entries) => [...accesses].sort((first, second) => first.website.websiteOrigin.localeCompare(second.website.websiteOrigin))
-		assert.deepEqual(byOrigin((await modules.getSettings()).websiteAccess), byOrigin(entries))
+		assert.deepEqual(byOrigin((await modules.requireSettingsWithReadableNetwork()).websiteAccess), byOrigin(entries))
 	})
 
 	test.each(['My Active Addresses', 'My Safes'] as const)('notifies persisted %s removal even if permission reconciliation fails', async addressBookCategory => {
@@ -370,7 +370,9 @@ describe('UI mutation completion', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const connection = { port: createPort(1).port, socket, websiteOrigin: 'blocked-removal.test', approved: true, wantsToConnect: true }
 		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
-		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile removed account access') } })
+		// The existing rule remains enforced if its replacement fails; the icon queries actual applied rules.
+		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => [{ id: 1, action: { type: 'block' }, condition: { initiatorDomains: ['blocked-removal.test'], domainType: 'thirdParty' } }] })
+		Object.defineProperty(browser.declarativeNetRequest, 'updateDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile removed account access') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		await modules.removeAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
 			method: 'popup_removeAddressBookEntry', data: { address, addressBookCategory, chainId: 1n },
@@ -392,7 +394,7 @@ describe('UI mutation completion', () => {
 		const connection = { port: createPort(1).port, socket, websiteOrigin: 'https://blocked.invalid', approved: true, wantsToConnect: true }
 		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
 		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://blocked.invalid' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
-		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
+		Object.defineProperty(browser.declarativeNetRequest, 'updateDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
 			method: 'popup_addOrModifyAddressBookEntry', data: { type: 'contact', address: 42n, name: 'Saved account', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -412,7 +414,7 @@ describe('UI mutation completion', () => {
 		const { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
-		const settings = await modules.getSettings()
+		const settings = await modules.requireSettingsWithReadableNetwork()
 		let reconciliationCompleted = false
 		const connections: WebsiteTabConnections = Object.assign(new Map(), {
 			lifecycle: { accessReconciled: () => { reconciliationCompleted = true } },

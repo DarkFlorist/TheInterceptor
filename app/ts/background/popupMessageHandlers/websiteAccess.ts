@@ -3,7 +3,7 @@ import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequest
 import { applyWebsiteAccessUpdate } from '../applyWebsiteAccessUpdate.js'
 import { withInterceptorDisabledForWebsite, withExternalRequestsBlockedOrAllowed, withoutAddressAccess, withAddressAccessForWebsite, withoutWebsiteAccess } from '../websiteAccessMutations.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getSettings } from '../settings.js'
+import { requireSettingsWithReadableNetwork } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
@@ -14,7 +14,7 @@ export async function disableInterceptor(simulationServicesOwner: SimulationServ
 }
 
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
-	const settings = await getSettings()
+	const settings = await requireSettingsWithReadableNetwork()
 	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
 	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess, settings.activeRpcNetwork.chainId)
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })

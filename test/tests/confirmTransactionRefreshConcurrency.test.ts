@@ -1,5 +1,5 @@
 import * as assert from 'node:assert'
-import { beforeEach, test } from 'bun:test'
+import { beforeEach, spyOn, test } from 'bun:test'
 import { createDeferredSignal, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { browserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
@@ -18,10 +18,13 @@ test('confirmation reset restores its browser after another test installs a diff
 	assert.deepEqual(browserMock.storageState.pendingTransactionsAndMessages, [])
 })
 
-test('gas edits broadcast a JSON-transportable pending request that disables stale approval', async () => {
+test.each(['readable', 'corrupt'] as const)('gas edits broadcast the edited pending request with a %s active network', async network => {
+	if (network === 'corrupt') browserMock.storageState.activeRpcNetwork = 'invalid network'
 	const { forceSetGasLimitForTransaction } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
+	const { backgroundTaskSupervisor } = await import('../../app/ts/background/backgroundTasks.js')
+	const startTask = spyOn(backgroundTaskSupervisor, 'start')
 	try {
 		await forceSetGasLimitForTransaction(ethereum, tokenPriceService, {
 			method: 'popup_forceSetGasLimitForTransaction',
@@ -36,7 +39,11 @@ test('gas edits broadcast a JSON-transportable pending request that disables sta
 		assert.equal(edited.transactionIdentifier, pendingTransaction.transactionIdentifier)
 		assert.equal(edited.originalRequestParameters.params[0].gas, 30_000n)
 		assert.equal(isPendingTransactionGasLimitCurrent(edited), false, 'The popup must reject results for the previous gas limit')
-	} finally { await waitForBackgroundTasks() }
+		assert.ok(startTask.mock.calls.some(([task]) => task.source === 'popup_forceSetGasLimitForTransaction'), 'The edited request schedules a confirmation refresh')
+	} finally {
+		startTask.mockRestore()
+		await waitForBackgroundTasks()
+	}
 })
 
 test.each(['dialog view update', 'metadata refresh', 'gas edit'] as const)('%s sends the pending requests with their companion dialog update', async path => {

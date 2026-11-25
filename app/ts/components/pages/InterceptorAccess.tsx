@@ -244,7 +244,7 @@ export function InterceptorAccess() {
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
-				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
+				activeRpcChainId.value = parsed.data.activeRpcNetwork?.chainId
 				return false
 			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {

@@ -77,8 +77,9 @@ async function assertRejectable(websiteTabConnections: ReturnType<typeof connect
 	assert.equal(rejection.error.code, 4001)
 }
 
-test('approving a signing-mode transaction forwards it to the signer when simulation mode did not change', async () => {
+test.each(['readable', 'corrupt'] as const)('approving a signing-mode transaction forwards it with a %s network selection', async network => {
 	const { postedMessages, websiteTabConnections } = await setUpSigningModeRequest()
+	if (network === 'corrupt') browserMock.storageState.activeRpcNetwork = 'corrupt'
 	assert.equal(await resolve(websiteTabConnections, 'accept'), true)
 	assert.deepEqual(postedMessages.filter(isForwardToSigner).map((message) => isRecord(message) ? message.method : undefined), ['eth_sendTransaction'])
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus.status, 'WaitingForSigner')

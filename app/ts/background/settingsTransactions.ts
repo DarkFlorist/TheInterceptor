@@ -1,69 +1,11 @@
+import { hasSameWebsiteAccess, rollbackWebsiteAccessFields, type CommittedWebsiteAccessChange } from './websiteAccessState.js'
 import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
-import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
+import type { WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
 
-// Equality, and for transaction-rolled-back types also rollback, for every field of a stored type; the mapped types make a field added to that type without a rule here a compile error.
-type FieldEquality<T> = { readonly [Key in keyof T]-?: { readonly isSame: (first: T[Key], second: T[Key]) => boolean } }
-type FieldRules<T> = { readonly [Key in keyof T]-?: FieldEquality<T>[Key] & { readonly rollback: (previous: T[Key] | undefined, updated: T[Key], current: T[Key]) => T[Key] } }
-
-function hasSameFields<T extends object>(fields: FieldEquality<T>, first: T, second: T) {
-	for (const key in fields) {
-		if (!fields[key].isSame(first[key], second[key])) return false
-	}
-	return true
-}
-
-// Fields rolled back to absent are written as undefined, which persists the same as omitting them.
-function rollbackFields<T extends object>(rules: FieldRules<T>, previous: T | undefined, updated: T, current: T): T {
-	const restored = { ...current }
-	for (const key in rules) restored[key] = rules[key].rollback(previous?.[key], updated[key], current[key])
-	return restored
-}
-
-// Reverts a value the transaction changed unless a concurrent writer has overwritten it since.
-function revertUnlessOverwritten<Value>(isSame: (first: Value | undefined, second: Value | undefined) => boolean) {
-	return {
-		isSame,
-		rollback: (previous: Value | undefined, updated: Value | undefined, current: Value | undefined) => !isSame(previous, updated) && isSame(current, updated) ? previous : current,
-	}
-}
-
-const addressAccessEntryEquality = {
-	address: { isSame: Object.is },
-	access: { isSame: Object.is },
-} satisfies FieldEquality<WebsiteAddressAccess>
-
-function hasSameAddressAccess(first: readonly WebsiteAddressAccess[] | undefined, second: readonly WebsiteAddressAccess[] | undefined) {
-	if (first === undefined || second === undefined) return first === second
-	return first.length === second.length && first.every((entry, index) => {
-		const secondEntry = second[index]
-		return secondEntry !== undefined && hasSameFields(addressAccessEntryEquality, entry, secondEntry)
-	})
-}
-
-const websiteRules = {
-	// The origin identifies the entry, so rollback never changes it.
-	websiteOrigin: { isSame: Object.is, rollback: (_previous, _updated, current) => current },
-	title: revertUnlessOverwritten<string>(Object.is),
-	icon: revertUnlessOverwritten<string>(Object.is),
-} satisfies FieldRules<Website>
-
-const websiteAccessRules = {
-	website: {
-		isSame: (first, second) => hasSameFields(websiteRules, first, second),
-		rollback: (previous, updated, current) => rollbackFields(websiteRules, previous, updated, current),
-	},
-	addressAccess: revertUnlessOverwritten(hasSameAddressAccess),
-	access: revertUnlessOverwritten<boolean>(Object.is),
-	interceptorDisabled: revertUnlessOverwritten<boolean>(Object.is),
-	declarativeNetRequestBlockMode: revertUnlessOverwritten<WebsiteAccess['declarativeNetRequestBlockMode']>(Object.is),
-} satisfies FieldRules<WebsiteAccess>
-
-const hasSameWebsiteAccess = (first: WebsiteAccess, second: WebsiteAccess) => hasSameFields(websiteAccessRules, first, second)
-
 async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessArray, updatedWebsiteAccess: WebsiteAccessArray) {
-	await updateWebsiteAccess((currentWebsiteAccess) => {
+	return await updateWebsiteAccess((currentWebsiteAccess) => {
 		const previousByOrigin = new Map(previousWebsiteAccess.map((entry) => [entry.website.websiteOrigin, entry]))
 		const updatedByOrigin = new Map(updatedWebsiteAccess.map((entry) => [entry.website.websiteOrigin, entry]))
 		const changedOrigins = new Set([...previousByOrigin.keys(), ...updatedByOrigin.keys()].filter((origin) => {
@@ -89,7 +31,7 @@ async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessAr
 				continue
 			}
 			if (previous === undefined && hasSameWebsiteAccess(current, updated)) continue
-			restoredWebsiteAccess.push(rollbackFields(websiteAccessRules, previous, updated, current))
+			restoredWebsiteAccess.push(rollbackWebsiteAccessFields(previous, updated, current))
 		}
 		for (const origin of changedOrigins) {
 			if (currentOrigins.has(origin) || updatedByOrigin.has(origin)) continue
@@ -101,8 +43,8 @@ async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessAr
 }
 
 export type WebsiteAccessTransactionOutcome =
-	| (Extract<StorageTransactionOutcome, { readonly status: 'completed' }> & { readonly websiteAccess: WebsiteAccessArray })
-	| Extract<StorageTransactionOutcome, { readonly status: 'failed' }>
+	| (Extract<StorageTransactionOutcome, { readonly status: 'completed' }> & { readonly websiteAccess: WebsiteAccessArray, readonly committedChange: CommittedWebsiteAccessChange })
+	| (Extract<StorageTransactionOutcome, { readonly status: 'failed' }> & { readonly committedChange?: CommittedWebsiteAccessChange })
 
 // The transaction itself owns the commit/rollback phase, including failures; callers never infer it from a callback being invoked.
 export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>): Promise<WebsiteAccessTransactionOutcome> {
@@ -110,11 +52,12 @@ export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: W
 	try {
 		snapshots = await updateWebsiteAccessWithSnapshots(update)
 		await afterUpdate(snapshots.updatedWebsiteAccess)
-		return { status: 'completed', storage: 'written', websiteAccess: snapshots.updatedWebsiteAccess }
+		return { status: 'completed', storage: 'written', websiteAccess: snapshots.updatedWebsiteAccess, committedChange: snapshots }
 	} catch (error: unknown) {
 		if (snapshots === undefined) return { status: 'failed', storage: 'not-written', error }
 		try {
-			await restoreWebsiteAccessUpdate(snapshots.previousWebsiteAccess, snapshots.updatedWebsiteAccess)
+			const restoredWebsiteAccess = await restoreWebsiteAccessUpdate(snapshots.previousWebsiteAccess, snapshots.updatedWebsiteAccess)
+			return { status: 'failed', storage: 'rolled-back', error, committedChange: { previousWebsiteAccess: snapshots.previousWebsiteAccess, updatedWebsiteAccess: restoredWebsiteAccess } }
 		} catch (rollbackError: unknown) {
 			let failure: unknown = error
 			try {
@@ -124,6 +67,5 @@ export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: W
 			}
 			return { status: 'failed', storage: 'rollback-failed', error: failure }
 		}
-		return { status: 'failed', storage: 'rolled-back', error }
 	}
 }

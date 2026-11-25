@@ -57,7 +57,7 @@ function assertAnsweredInSimulationMode(replies: readonly { type?: unknown, erro
 	assert.deepEqual(replies.map((reply) => reply.error), [SIMULATION_MODE_ADD_CHAIN_ERROR])
 }
 
-// getSettings() is the only reader of simulationMode, and after the arming point a request reads the settings once per routing attempt. Handling the request again from the start would read them more often.
+// requireSettingsWithReadableNetwork() is the only reader of simulationMode, and after the arming point a request reads the settings once per routing attempt. Handling the request again from the start would read them more often.
 const isSettingsRead = (keys: unknown) => Array.isArray(keys) && keys.includes('simulationMode')
 
 const GUARD_WRITTEN_RPC_NETWORK = { name: 'Guard write RPC', chainId: 8453n, httpsRpc: 'http://127.0.0.1:8545', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -148,7 +148,7 @@ describe('simulation mode forward guard', () => {
 		const { setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
 		let repairedOpenedPage = false
 		const replies = await sendAddEthereumChainAfterArming(4, async () => {
-			// A corrupt page makes getSettings() await a repair write after it has already read simulation mode.
+			// A corrupt page makes requireSettingsWithReadableNetwork() await a repair write after it has already read simulation mode.
 			await browser.storage.local.set({ openedPageV2: 'corrupt' })
 			setStorageHooks({
 				beforeSet: async (items) => {
@@ -270,7 +270,7 @@ describe('simulation mode forward guard', () => {
 		const simulationModeWrites: unknown[] = []
 		setStorageHooks({ beforeSet: async (items) => { if ('simulationMode' in items) simulationModeWrites.push(items.simulationMode) } })
 		await withSilencedConsole(async () => {
-			const [backgroundSettings, popupContextSettings] = await Promise.all([modules.getSettings(), popupSettings.getSettings()])
+			const [backgroundSettings, popupContextSettings] = await Promise.all([modules.requireSettingsWithReadableNetwork(), popupSettings.requireSettingsWithReadableNetwork()])
 			assert.equal(backgroundSettings.simulationMode, true)
 			assert.equal(popupContextSettings.simulationMode, true)
 		})
@@ -336,10 +336,10 @@ describe('simulation mode forward guard', () => {
 
 	test.each(GUARD_WRITE_CASES)('a mode write with $description reads back through the canonical settings schema', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
 		installBrowserMock()
-		const { getSettings, getSigningAddressPreferences } = await loadModules()
+		const { requireSettingsWithReadableNetwork, getSigningAddressPreferences } = await loadModules()
 		const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 		await browserStorageLocalSet({ simulationMode, activeRpcNetwork: GUARD_WRITTEN_RPC_NETWORK, independentActiveSimulationAddress: activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress, signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
-		const settings = await getSettings()
+		const settings = await requireSettingsWithReadableNetwork()
 		assert.equal(settings.simulationMode, simulationMode)
 		assert.deepEqual(settings.activeRpcNetwork, GUARD_WRITTEN_RPC_NETWORK)
 		assert.equal(settings.activeSimulationAddress, activeSimulationAddress)

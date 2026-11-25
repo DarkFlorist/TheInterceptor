@@ -1,10 +1,11 @@
 import { getInterceptorDisabledSites, type ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
-import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getWebsiteApprovalsSnapshot } from './settings.js'
+import { requireReadableApprovals } from './websiteAccessPolicy.js'
 
 export async function getContentScriptInjectionConfiguration(): Promise<ContentScriptRegistrationConfiguration> {
-	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
+	const [approvals, metamaskCompatibilityMode] = await Promise.all([getWebsiteApprovalsSnapshot({ repairCorrupt: true }), getMetamaskCompatibilityMode()])
 	return {
-		injectionSites: { interceptorDisabledSites: getInterceptorDisabledSites(settings.websiteAccess) },
+		injectionSites: { interceptorDisabledSites: getInterceptorDisabledSites(requireReadableApprovals(approvals)) },
 		pageWorldProvider: { metamaskCompatibilityMode },
 	}
 }

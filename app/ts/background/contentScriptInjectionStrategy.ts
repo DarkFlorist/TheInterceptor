@@ -11,7 +11,7 @@ import { getMetamaskCompatibilityMode } from './settings.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
-type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<StorageTransactionOutcome>
+type WebsiteAccessUpdateTransaction<Transaction extends StorageTransactionOutcome> = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<Transaction>
 
 type ContentScriptInjectionStrategyRefresh =
 	| { readonly configurationSource: 'storage' }
@@ -41,8 +41,8 @@ export async function refreshContentScriptInjectionStrategy() {
 
 type RefreshFailureHandling = 'rollBackUpdate' | 'reportAndKeepUpdate'
 
-type ContentScriptConfigurationUpdate =
-	| { readonly onRefreshFailure: 'rollBackUpdate', readonly refreshFailureCode: string, readonly runUpdateWithRefresh: (refreshIfChanged: () => Promise<void>) => Promise<StorageTransactionOutcome> }
+type ContentScriptConfigurationUpdate<Transaction extends StorageTransactionOutcome> =
+	| { readonly onRefreshFailure: 'rollBackUpdate', readonly refreshFailureCode: string, readonly runUpdateWithRefresh: (refreshIfChanged: () => Promise<void>) => Promise<Transaction> }
 	| { readonly onRefreshFailure: 'reportAndKeepUpdate', readonly refreshFailureCode: string, readonly runUpdate: () => Promise<unknown> }
 
 async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptRegistrationConfiguration, onRefreshFailure: RefreshFailureHandling) {
@@ -58,16 +58,18 @@ async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: W
 }
 
 // Reload ownership is an outcome even when refresh/error reporting fails, so callers can finish their own post-commit work without an out-parameter.
-export type ContentScriptConfigurationUpdateOutcome = {
+export type ContentScriptConfigurationUpdateOutcome<Transaction extends StorageTransactionOutcome = StorageTransactionOutcome> = {
+	readonly transaction: Transaction | undefined
 	readonly reload: 'not-needed' | 'handled'
 	readonly storage: StorageTransactionOutcome['storage']
 } & ({ readonly status: 'completed' } | { readonly status: 'failed', readonly error: unknown })
 
 // Refresh failures are reported once here. Update failures and reporting failures are returned explicitly; website-access coordination needs the partial outcome to reconcile persisted permissions.
-async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(websiteTabConnections: WebsiteTabConnections, readConfigurationBeforeUpdate: () => Promise<Snapshot>, hasSameConfiguration: (before: Snapshot, after: ContentScriptRegistrationConfiguration) => boolean, update: ContentScriptConfigurationUpdate): Promise<ContentScriptConfigurationUpdateOutcome> {
+async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot, Transaction extends StorageTransactionOutcome = StorageTransactionOutcome>(websiteTabConnections: WebsiteTabConnections, readConfigurationBeforeUpdate: () => Promise<Snapshot>, hasSameConfiguration: (before: Snapshot, after: ContentScriptRegistrationConfiguration) => boolean, update: ContentScriptConfigurationUpdate<Transaction>): Promise<ContentScriptConfigurationUpdateOutcome<Transaction>> {
 	return await contentScriptInjectionConfigurationSemaphore.execute(async () => {
 		let reload: ContentScriptConfigurationUpdateOutcome['reload'] = 'not-needed'
 		let storage: ContentScriptConfigurationUpdateOutcome['storage'] = 'not-written'
+		let transaction: Transaction | undefined
 		try {
 			const configurationBeforeUpdate = await readConfigurationBeforeUpdate()
 			const refreshErrors = new Set<unknown>()
@@ -85,7 +87,7 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 			}
 			try {
 				if (update.onRefreshFailure === 'rollBackUpdate') {
-					const transaction = await update.runUpdateWithRefresh(refreshIfChanged)
+					transaction = await update.runUpdateWithRefresh(refreshIfChanged)
 					storage = transaction.storage
 					if (transaction.status === 'failed') throw transaction.error
 				} else {
@@ -97,14 +99,14 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 				if (!refreshErrors.has(error)) throw error
 				await reportUnexpectedError(error, { code: update.refreshFailureCode })
 			}
-			return { status: 'completed', reload, storage }
+			return { status: 'completed', reload, storage, transaction }
 		} catch (error: unknown) {
-			return { status: 'failed', reload, storage, error }
+			return { status: 'failed', reload, storage, error, transaction }
 		}
 	})
 }
 
-export async function tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
+export async function tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged<Transaction extends StorageTransactionOutcome>(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction<Transaction>) {
 	return await updateContentScriptConfigurationAndReloadTabsIfChanged(
 		websiteTabConnections,
 		getContentScriptInjectionConfiguration,

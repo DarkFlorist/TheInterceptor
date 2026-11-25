@@ -5,6 +5,18 @@ import { withSilencedConsole } from './consoleSilence.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
+import type { WebsiteAccessTransactionOutcome } from '../../app/ts/background/settingsTransactions.js'
+
+async function assertRolledBack(transaction: Promise<WebsiteAccessTransactionOutcome>, error: Error) {
+	const outcome = await transaction
+	assert.equal(outcome.status, 'failed')
+	if (outcome.status !== 'failed') throw new Error('Expected a failed transaction')
+	assert.equal(outcome.storage, 'rolled-back')
+	assert.equal(outcome.error, error)
+	assert.notEqual(outcome.committedChange, undefined)
+	return outcome
+}
+
 type RuntimeMessage = {
 	readonly method?: string
 	readonly data?: { readonly message?: string, readonly code?: string }
@@ -357,7 +369,8 @@ describe('content script injection strategy', () => {
 		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map(), true))
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.equal((await getLatestUnexpectedError())?.data.code, 'page_world_provider_bootstrap_refresh_failed')
+		// Registration reads approvals directly; unrelated RPC/settings reads cannot fail this refresh.
+		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('compatibility setting changes update registration before best-effort reload target lookup', async () => {
@@ -584,7 +597,7 @@ describe('content script injection strategy', () => {
 		const { tryWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
 
 		await withSilencedConsole(async () => {
-			assert.deepEqual(await tryWebsiteAccessRollback(
+			await assertRolledBack(tryWebsiteAccessRollback(
 				(entries) => entries.map((entry) => ({
 					...entry,
 					website: { ...entry.website, title: 'Transaction title' },
@@ -597,7 +610,7 @@ describe('content script injection strategy', () => {
 					await updateWebsiteAccess((entries) => entries.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Concurrent title' } })))
 					throw registrationError
 				},
-			), { status: 'failed', storage: 'rolled-back', error: registrationError })
+			), registrationError)
 		})
 
 		assert.deepEqual(getStorageState().websiteAccess, [{ ...previousWebsiteAccess[0], website: { ...previousWebsiteAccess[0]?.website, title: 'Concurrent title' } }])
@@ -610,7 +623,7 @@ describe('content script injection strategy', () => {
 		const { tryWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
 
 		await withSilencedConsole(async () => {
-			assert.deepEqual(await tryWebsiteAccessRollback(
+			await assertRolledBack(tryWebsiteAccessRollback(
 				() => [{
 					website: { websiteOrigin: 'created.test', title: 'Transaction title', icon: undefined },
 					addressAccess: [{ address: 0x2222222222222222222222222222222222222222n, access: true }],
@@ -622,7 +635,7 @@ describe('content script injection strategy', () => {
 					await updateWebsiteAccess((entries) => entries.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Concurrent title' } })))
 					throw registrationError
 				},
-			), { status: 'failed', storage: 'rolled-back', error: registrationError })
+			), registrationError)
 		})
 
 		// Browser storage is JSON, so fields rolled back to undefined are absent once persisted.
@@ -656,7 +669,7 @@ describe('content script injection strategy', () => {
 		)
 		releaseOrdinaryUpdate.resolve()
 		await ordinaryUpdate
-		await withSilencedConsole(async () => assert.deepEqual(await failedTransaction, { status: 'failed', storage: 'rolled-back', error: registrationError }))
+		await withSilencedConsole(async () => await assertRolledBack(failedTransaction, registrationError))
 
 		assert.deepEqual(getStorageState().websiteAccess, [{ ...previousWebsiteAccess[0], website: { ...previousWebsiteAccess[0]?.website, title: 'Ordinary update' }, access: false }])
 	})
@@ -1069,10 +1082,11 @@ describe('content script injection strategy', () => {
 		const { tryWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
 		const refreshError = new Error('Registration failed after commit')
 		const rolledBack = await tryWebsiteAccessRollback(() => [], async () => { throw refreshError })
-		assert.deepEqual(rolledBack, { status: 'failed', storage: 'rolled-back', error: refreshError })
+		await assertRolledBack(Promise.resolve(rolledBack), refreshError)
+		assert.deepEqual(rolledBack.committedChange, { previousWebsiteAccess: disabledWebsiteAccess, updatedWebsiteAccess: disabledWebsiteAccess })
 		assert.deepEqual(getStorageState().websiteAccess, disabledWebsiteAccess)
 		const committed = await tryWebsiteAccessRollback(() => [], async () => undefined)
-		assert.deepEqual(committed, { status: 'completed', storage: 'written', websiteAccess: [] })
+		assert.deepEqual(committed, { status: 'completed', storage: 'written', websiteAccess: [], committedChange: { previousWebsiteAccess: disabledWebsiteAccess, updatedWebsiteAccess: [] } })
 	})
 
 	test('the configuration API returns an initial write failure with its storage phase', async () => {
@@ -1083,7 +1097,7 @@ describe('content script injection strategy', () => {
 		const originalSet = browser.storage.local.set
 		browser.storage.local.set = async () => { throw writeError }
 		try {
-			assert.deepEqual(await tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], tryWebsiteAccessRollback), { status: 'failed', storage: 'not-written', reload: 'not-needed', error: writeError })
+			assert.deepEqual(await tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], tryWebsiteAccessRollback), { status: 'failed', storage: 'not-written', reload: 'not-needed', error: writeError, transaction: { status: 'failed', storage: 'not-written', error: writeError } })
 		} finally {
 			browser.storage.local.set = originalSet
 		}

@@ -1,3 +1,4 @@
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import * as injectionStrategy from '../../app/ts/background/contentScriptInjectionStrategy.js'
 import * as assert from 'assert'
 import { afterEach, describe, mock, spyOn, test } from 'bun:test'
@@ -91,11 +92,41 @@ const importAccessManagement = async () => await import('../../app/ts/background
 
 const makeReconciliationReject = async (reconcileError: Error) => {
 	const accessManagement = await importAccessManagement()
-	spyOn(accessManagement, 'reconcileCommittedWebsiteAccessOrFailClosed').mockImplementationOnce(async () => { throw reconcileError })
+	spyOn(accessManagement, 'reconcileCommittedAccessChangeAndScheduleUiUpdate').mockImplementationOnce(async () => { throw reconcileError })
 }
 
 afterEach(() => {
 	mock.restore()
+})
+
+test('reports grant notification and block failures after reconciliation releases its lock', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { reconcileWebsiteApprovalAccesses } = await importAccessManagement()
+	const websiteOrigin = 'https://grant-failure.test'
+	await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+	const notificationFailure = new Error('Connection notification failed')
+	const blockFailure = new Error('Grant block lookup failed')
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port } = createPort(socket.tabId, (message) => { if (message.method === 'connect') throw notificationFailure })
+	const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+	let reconciled = false
+	const connections = Object.assign(new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]]), {
+		lifecycle: { accessReconciled: () => { reconciled = true } },
+	})
+	const readSessionRules = browser.declarativeNetRequest.getSessionRules.bind(browser.declarativeNetRequest)
+	spyOn(browser.declarativeNetRequest, 'getSessionRules').mockImplementation(async () => {
+		if (connection.approved) throw blockFailure
+		return await readSessionRules()
+	})
+	const reports: unknown[] = []
+	spyOn(errors, 'reportAsUnexpectedError').mockImplementation(async (error) => {
+		assert.equal(reconciled, true)
+		reports.push(error)
+	})
+	await reconcileWebsiteApprovalAccesses(connections, await modules.requireSettingsWithReadableNetwork())
+	assert.deepEqual(reports, [notificationFailure, blockFailure])
+	assert.equal(connection.approved, false)
 })
 
 describe('removeWebsiteAddressAccess', () => {
@@ -104,7 +135,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), /current tab lookup failed/u)
 
-		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
+		assert.deepEqual((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		const latestUnexpectedError = await modules.getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError, undefined)
@@ -119,7 +150,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), (error) => error === reloadStepError)
 
-		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
+		assert.deepEqual((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
 	})
@@ -147,8 +178,8 @@ describe('website access registration and reconciliation', () => {
 		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
-		const reconcileApprovals = accessManagement.reconcileCommittedWebsiteAccessOrFailClosed
-		spyOn(accessManagement, 'reconcileCommittedWebsiteAccessOrFailClosed').mockImplementation(async (...args) => {
+		const reconcileApprovals = accessManagement.reconcileCommittedAccessChangeAndScheduleUiUpdate
+		spyOn(accessManagement, 'reconcileCommittedAccessChangeAndScheduleUiUpdate').mockImplementation(async (...args) => {
 			sideEffectOrder.push('reconcile')
 			return await reconcileApprovals(...args)
 		})
@@ -175,7 +206,7 @@ describe('website access registration and reconciliation', () => {
 	test('does not run follow-ups when the initial storage write fails', async () => {
 		const { reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		const registration = mockContentScriptInjectionUpdate()
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeAndScheduleUiUpdate')
 		const writeError = new Error('storage write failed')
 		spyOn(browser.storage.local, 'set').mockImplementation(async () => { throw writeError })
 
@@ -190,12 +221,12 @@ describe('website access registration and reconciliation', () => {
 	test('rolls back a failed registration and reconciles the restored permissions', async () => {
 		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeAndScheduleUiUpdate')
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
 
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.access, true)
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.interceptorDisabled, false)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.access, true)
+		assert.equal((await modules.requireSettingsWithReadableNetwork()).websiteAccess[0]?.interceptorDisabled, false)
 		assert.deepEqual(reloadedTabIds, [])
 		assert.equal(reconcile.mock.calls.length, 1)
 		assertConnectionStillApproved()
@@ -207,7 +238,7 @@ describe('website access registration and reconciliation', () => {
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
 		const reportingError = new Error('report failed')
 		spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingError })
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeAndScheduleUiUpdate')
 
 		await assert.rejects(handlers[handler](), (error) => error === reportingError)
 
@@ -230,7 +261,7 @@ describe('website access registration and reconciliation', () => {
 		test(`${ handler } (disabled: ${ interceptorDisabled }) refreshes registration if needed and reconciles once`, async () => {
 			const { reloadedTabIds, connectedTabIds, handlers } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled })
 			const registration = mockContentScriptInjectionUpdate()
-			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeAndScheduleUiUpdate')
 
 			await handlers[handler]()
 
@@ -238,5 +269,131 @@ describe('website access registration and reconciliation', () => {
 			assert.deepEqual(reloadedTabIds, reloadsTabs ? connectedTabIds : [])
 			assert.equal(reconcile.mock.calls.length, 1)
 		})
+	}
+})
+
+
+for (const edit of ['approval', 'multi-approval', 'blocking', 'new-blocking-record', 'rolled-back-approval', 'unknown-outcome'] as const) test(`an unreadable post-write snapshot uses the committed authority scope for a ${ edit } edit`, async () => {
+	const { setStorageHooks } = installBrowserMock()
+	const modules = await loadModules()
+	const { applyWebsiteAccessUpdate } = await import('../../app/ts/background/applyWebsiteAccessUpdate.js')
+	const origins = ['scope-a.test', 'scope-b.test']
+	await modules.updateWebsiteAccess(() => origins.filter((_, index) => edit !== 'new-blocking-record' || index !== 0).map((websiteOrigin) => ({ website: { websiteOrigin }, access: true })))
+	const connections = new Map(origins.map((websiteOrigin, index) => {
+		const tabId = index + 1
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
+	}))
+	let committed = false
+	setStorageHooks({
+		afterSet: async (items) => { if ('websiteAccess' in items) committed = true },
+		afterGet: async (keys) => { if (committed && Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('post-write settings unavailable') },
+	})
+	if (edit === 'rolled-back-approval') mockContentScriptInjectionUpdate(new Error('registration failed'))
+	if (edit === 'unknown-outcome') {
+		committed = true
+		spyOn(await import('../../app/ts/background/websiteAccessUpdating.js'), 'tryUpdateWebsiteAccessAndContentScriptInjectionStrategy').mockResolvedValueOnce({ status: 'completed', storage: 'written', reload: 'not-needed', transaction: undefined })
+	}
+	try {
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await withSilencedConsole(async () => {
+			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] && edit !== 'multi-approval' ? entry : edit === 'multi-approval' || edit === 'approval' || edit === 'rolled-back-approval' ? { ...entry, access: false, ...(edit === 'rolled-back-approval' ? { interceptorDisabled: true } : {}) } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
+			await waitForBackgroundTasks()
+		})
+		assert.equal(committed, true)
+		const approvalOf = (tabId: number) => Object.values(connections.get(tabId)?.connections ?? {})[0]?.approved
+		assert.equal(approvalOf(1), edit !== 'approval' && edit !== 'multi-approval' && edit !== 'unknown-outcome')
+		assert.equal(approvalOf(2), edit !== 'multi-approval' && edit !== 'unknown-outcome')
+	} finally {
+		await waitForBackgroundTasks()
+		setStorageHooks({})
+	}
+})
+
+test('unavailable RPC settings skip deferred access prompts without per-connection internal errors', async () => {
+	const { runtimeMessages } = installBrowserMock()
+	const modules = await loadModules()
+	const settings = await modules.requireSettingsWithReadableNetwork()
+	await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	const connections = new Map([1, 2, 3].map((tabId) => {
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: `https://prompt-${ tabId }.test`, approved: false, wantsToConnect: true } } }] as const
+	}))
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	await withSilencedConsole(async () => await modules.updateWebsiteApprovalAccesses(simulationServicesOwner, connections, settings, true))
+	assert.equal(await modules.getLatestUnexpectedError(), undefined)
+	assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), false)
+})
+
+test('reconciliation skips grant attempts when the network is readable but the RPC list is empty', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const websiteOrigin = 'https://approved.example'
+	await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: undefined }])
+	const settings = await modules.requireSettingsWithReadableNetwork()
+	await browser.storage.local.set({ rpcEntries: [] })
+	const { reconcileWebsiteApprovalAccesses } = await importAccessManagement()
+	const grant = spyOn(await import('../../app/ts/background/connectionGrant.js'), 'grantWithLiveSettings')
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId)
+	const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	await reconcileWebsiteApprovalAccesses(connections, settings)
+	assert.equal(grant.mock.calls.length, 0)
+	assert.equal(connection.approved, false)
+	assert.equal(messages.some((message) => message.method === 'connect'), false)
+})
+
+test.each(['endpoint', 'chain with different address policy', 'repeated endpoint changes'] as const)('reconciliation handles %s during grant admission', async change => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { updateUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
+	const grants = await import('../../app/ts/background/connectionGrant.js')
+	const { reconcileWebsiteApprovalAccesses, reconcileCommittedAddressBookChange } = await importAccessManagement()
+	const website = { websiteOrigin: 'https://grant-retry.example', icon: undefined, title: undefined }
+	const account = 1n
+	const nextChainId = 42n
+	await modules.setUseSignersAddressAsActiveAddress(false)
+	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+	const settings = await modules.requireSettingsWithReadableNetwork()
+	const address = { type: 'contact' as const, entrySource: 'User' as const, address: account, name: 'Simulation account' }
+	await updateUserAddressBookEntries(() => [
+		{ ...address, chainId: settings.activeRpcNetwork.chainId, askForAddressAccess: false },
+		{ ...address, chainId: nextChainId, askForAddressAccess: true },
+	])
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId)
+	const connection = { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	const changedEndpoint = 'https://changed.example'
+	const grantWithLiveSettings = grants.grantWithLiveSettings
+	const recheck = spyOn(grants, 'grantWithLiveSettings').mockImplementationOnce(async (admitted, grant) => {
+		const updatedNetwork = change === 'chain with different address policy'
+			? { ...settings.activeRpcNetwork, chainId: nextChainId }
+			: { ...settings.activeRpcNetwork, httpsRpc: changedEndpoint }
+		await browserStorageLocalSet({ activeRpcNetwork: updatedNetwork })
+		return await grantWithLiveSettings(admitted, grant)
+	})
+	if (change === 'repeated endpoint changes') recheck.mockImplementationOnce(async (admitted, grant) => {
+		await browserStorageLocalSet({ activeRpcNetwork: { ...settings.activeRpcNetwork, httpsRpc: 'https://changed-again.example' } })
+		return await grantWithLiveSettings(admitted, grant)
+	})
+	try {
+		if (change === 'repeated endpoint changes') {
+			await assert.rejects(reconcileCommittedAddressBookChange(connections), error => grants.getConnectionGrantRefusalReply(error)?.error.code === -32603)
+		} else {
+			await reconcileWebsiteApprovalAccesses(connections, settings)
+		}
+		assert.equal(recheck.mock.calls.length, change === 'chain with different address policy' ? 1 : 2)
+		if (change !== 'chain with different address policy') assert.equal(recheck.mock.calls[1]?.[0].activeRpcNetwork.httpsRpc, changedEndpoint)
+		assert.equal(connection.approved, change === 'endpoint')
+		assert.equal(messages.some(message => message.method === 'connect'), change === 'endpoint')
+	} finally {
+		recheck.mockRestore()
+		await waitForBackgroundTasks()
 	}
 })

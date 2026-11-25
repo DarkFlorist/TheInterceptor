@@ -853,7 +853,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
-		activeRpcNetwork: RpcNetwork,
+		activeRpcNetwork: funtypes.Union(RpcNetwork, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 	})
 }).asReadonly()

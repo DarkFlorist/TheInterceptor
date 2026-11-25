@@ -1,3 +1,4 @@
+import { requireRpcReadySettings, type ReadyRpcSettings } from './rpcReadySettings.js'
 import { buildSimulationStateInput } from './simulationInputBuilding.js'
 import type { IdentifyAddress, MetadataLookups } from '../types/metadataLookups.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -24,7 +25,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressWith, lookUpMetadataOnChain, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -40,17 +41,16 @@ import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext } from '../utils/activeStackContext.js'
 
-export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
+const getAddressesbeingMadeRich = async (settings: Settings) => {
 	if (!settings.simulationMode) return []
 	const currentAddressBeingRich = await getAddressToMakeRich(settings)
 	const makeRichAddressList = await getFixedAddressRichList()
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
+export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: ReadyRpcSettings): Promise<SimulationStateInput> => {
 	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? getSettings(),
+		settingsSnapshot ?? requireRpcReadySettings(),
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
@@ -67,7 +67,7 @@ export type SimulationSnapshot = {
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
-	const settings = await getSettings()
+	const settings = await requireRpcReadySettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
@@ -495,7 +495,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		return entry
 	}
 	const weth = await getWeth()
-	const settings = await getSettings()
 	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
@@ -516,7 +515,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			if (parsedInputDataForBlock === undefined) throw new Error('Block index overflow')
 
 			return {
-				visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(identifyAddressWith(ethereum, requestAbortController), signedMessage, settings.activeRpcNetwork))),
+				visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(identifyAddressWith(ethereum, requestAbortController), signedMessage, simulationState.rpcNetwork))),
 				simulatedAndVisualizedTransactions: block.transactions.map((transaction, index): NonSimulatedAndVisualizedTransaction => {
 					const removeFromAndToFromSignedTransaction = () => {
 						const { from, to, ...otherFields } = transaction.signedTransaction
@@ -533,7 +532,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 						transaction: {
 							...getFromAndToMetadata(transaction.signedTransaction, updatedMetadata.addressBookEntries),
 							...(delegationAddressBySender.get(addressString(transaction.signedTransaction.from)) !== undefined ? { delegationAddress: delegationAddressBySender.get(addressString(transaction.signedTransaction.from)) } : {}),
-							rpcNetwork: settings.activeRpcNetwork,
+							rpcNetwork: simulationState.rpcNetwork,
 							...otherFields,
 						},
 					}
@@ -595,7 +594,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		const protectorsForBlock = protectorsForEachBlockAndTransaction[blockIndex]
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined) throw new Error('Block index overflow')
 		return {
-			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(identifyAddressWith(ethereum, requestAbortController), signedMessage, settings.activeRpcNetwork))),
+			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(identifyAddressWith(ethereum, requestAbortController), signedMessage, simulationState.rpcNetwork))),
 			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationAddressBySender),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}

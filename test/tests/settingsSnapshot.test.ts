@@ -1,5 +1,18 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
+
+const firstRpc = {
+	name: 'First network',
+	chainId: '0x1',
+	httpsRpc: 'https://first.example',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	primary: true,
+	minimized: true,
+}
 
 const firstSnapshot = {
 	independentActiveSimulationAddress: '0x1111111111111111111111111111111111111111',
@@ -8,15 +21,18 @@ const firstSnapshot = {
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
 	simulationMode: true,
-	activeRpcNetwork: {
-		name: 'First network',
-		chainId: '0x1',
-		httpsRpc: 'https://first.example',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		primary: true,
-		minimized: true,
-	},
+	activeRpcNetwork: firstRpc,
+	rpcEntries: [firstRpc],
+}
+
+const secondRpc = {
+	name: 'Second network',
+	chainId: '0xa',
+	httpsRpc: 'https://second.example',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	primary: true,
+	minimized: true,
 }
 
 const secondSnapshot = {
@@ -26,15 +42,8 @@ const secondSnapshot = {
 	useSignersAddressAsActiveAddress: true,
 	websiteAccess: [],
 	simulationMode: false,
-	activeRpcNetwork: {
-		name: 'Second network',
-		chainId: '0xa',
-		httpsRpc: 'https://second.example',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		primary: true,
-		minimized: true,
-	},
+	activeRpcNetwork: secondRpc,
+	rpcEntries: [secondRpc],
 }
 
 let storageReadCount = 0
@@ -58,12 +67,10 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getSettings } = await import('../../app/ts/background/settings.js')
-
-test('getSettings returns one atomic browser storage snapshot', async () => {
+test('a required settings read is one atomic browser storage snapshot', async () => {
 	storageReadCount = 0
 
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 
 	assert.equal(storageReadCount, 1)
 	assert.equal(settings.activeSimulationAddress, 0x1111111111111111111111111111111111111111n)
@@ -73,4 +80,7 @@ test('getSettings returns one atomic browser storage snapshot', async () => {
 	assert.equal(settings.simulationMode, true)
 	assert.equal(settings.activeRpcNetwork.name, 'First network')
 	assert.equal(settings.activeRpcNetwork.chainId, 1n)
+	const serializedSettings = serialize(Settings, settings)
+	assert.equal('rpcConfigurationAvailable' in serializedSettings, false)
+	assert.deepEqual(Settings.parse(serializedSettings), settings)
 })
