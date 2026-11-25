@@ -750,7 +750,8 @@ describe('popup settings changes', () => {
 				assert.equal(result.error, undefined)
 				assert.strictEqual(result.result, null)
 			} else if (outcome === 'endpoint mismatch') {
-				assert.match(result.error?.message ?? '', /could not activate the requested network/)
+				const { ERROR_ACTIVE_RPC_ENDPOINT_CHANGED } = await import('../../app/ts/utils/constants.js')
+				assert.deepEqual(result.error, ERROR_ACTIVE_RPC_ENDPOINT_CHANGED.error)
 				assert.notEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork.httpsRpc, rpc.httpsRpc)
 			} else assert.equal(result.error?.message, 'User rejected network change')
 		})

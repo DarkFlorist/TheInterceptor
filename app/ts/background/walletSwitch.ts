@@ -1,7 +1,7 @@
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { requireSettingsWithReadableNetwork, getSettingsForConfigurationChange } from './settings.js'
-import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { ERROR_ACTIVE_RPC_ENDPOINT_CHANGED, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { Future } from '../utils/future.js'
 import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -205,7 +205,7 @@ export async function applyWalletSwitchReply(
 				await applyChain(currentSignerStateToken, params.chainId, requestedRpc)
 				const activeRpc = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
 				if (requestedRpc !== undefined && getRpcNetworkChange(activeRpc, requestedRpc).endpointChanged) {
-					rejectWalletSwitchReply(callbackSignerStateToken, params, { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet switched networks, but Interceptor could not activate the requested network.' })
+					rejectWalletSwitchReply(callbackSignerStateToken, params, ERROR_ACTIVE_RPC_ENDPOINT_CHANGED.error)
 					return
 				}
 				if (requestedRpc !== undefined) await promoteRpcAsPrimary(requestedRpc)

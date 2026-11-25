@@ -38,6 +38,37 @@ function installEthSyncingRpcMock(syncingResults: readonly unknown[]) {
 	}
 }
 
+test.each([['chain', 4901], ['endpoint', -32603], ['unavailable', 4900]] as const)('grant admission interrupted by %s sends a retryable provider error', async (change, expectedCode) => {
+	installBrowserMock()
+	const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, requireSettingsWithReadableNetwork } = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const grants = await import('../../app/ts/background/connectionGrant.js')
+	const website = { websiteOrigin: 'https://grant-race.example', icon: undefined, title: undefined }
+	const account = 1n
+	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+	const network = (await requireSettingsWithReadableNetwork()).activeRpcNetwork
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId)
+	const connection = { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	const grantWithLiveSettings = grants.grantWithLiveSettings
+	const recheck = spyOn(grants, 'grantWithLiveSettings').mockImplementationOnce(async (admitted, grant) => {
+		if (change === 'unavailable') await browserStorageLocalSet({ rpcEntries: [] })
+		else await browserStorageLocalSet({ activeRpcNetwork: { ...network, ...(change === 'chain' ? { chainId: 42n } : { httpsRpc: 'https://changed.example' }) } })
+		return await grantWithLiveSettings(admitted, grant)
+	})
+	try {
+		await handleInterceptedRequest(port, website.websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 991, requestSocket: socket }, method: 'eth_accounts', params: undefined,
+		}, connections, noopPublishRpcConnectionStatus)
+		assert.equal(messages.find(message => message.requestId === 991)?.error?.code, expectedCode)
+		assert.equal(connection.approved, false)
+	} finally { recheck.mockRestore() }
+})
+
 describe('background eth_accounts', () => {
 	test('resolves an access prompt with the services installed after it opened', async () => {
 		installBrowserMock()

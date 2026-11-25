@@ -1,3 +1,6 @@
+import { createInterceptorInternalError, getInterceptorInternalErrorCode } from '../utils/caughtErrors.js'
+import { ERROR_ACTIVE_RPC_ENDPOINT_CHANGED, ERROR_ACTIVE_RPC_NETWORK_CHANGED } from '../utils/constants.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot } from './settings.js'
 import { type ReadyRpcSettings, settingsIfRpcConfigurationReady } from './websiteAccessPolicy.js'
@@ -17,7 +20,26 @@ export async function grantWithLiveSettings<Grant extends (settings: ReadyRpcSet
 	return { kind: 'granted', result: runGrant(live.settings) }
 }
 
-type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
+export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
+
+function getNetworkChangeReply(kind: string | undefined) {
+	switch (kind) {
+		case 'chain-changed': return ERROR_ACTIVE_RPC_NETWORK_CHANGED
+		case 'endpoint-changed': return ERROR_ACTIVE_RPC_ENDPOINT_CHANGED
+		default: return undefined
+	}
+}
+
+export function createConnectionGrantRefusal(kind: AdmittedRpcNetworkNoLongerLive): Error {
+	const reply = getNetworkChangeReply(kind)
+	return reply === undefined
+		? createRpcConfigurationUnavailableError()
+		: createInterceptorInternalError(reply.error.message, kind, 'handled')
+}
+
+export function getConnectionGrantRefusalReply(error: unknown) {
+	return getNetworkChangeReply(getInterceptorInternalErrorCode(error))
+}
 
 type LiveSettingsOnAdmittedRpcNetwork =
 	| { readonly kind: 'ready', readonly settings: ReadyRpcSettings }

@@ -4,7 +4,7 @@ import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, Intercep
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { withSuppressedUnscopedConnectionEventsForSocketAsync } from '../websiteConnectionEvents.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, verifyRequestedAccess } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
@@ -304,7 +304,7 @@ export async function requestAccessFromUser(
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
-		const verify = () => verifyAccess(
+		const verify = () => (request === undefined ? verifyAccess : verifyRequestedAccess)(
 			websiteTabConnections,
 			socket,
 			true,

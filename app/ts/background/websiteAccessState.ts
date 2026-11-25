@@ -1,3 +1,4 @@
+import { assertNever } from '../utils/typescript.js'
 import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 
 // Pure website-access field semantics shared by authority reconciliation and transactional rollback. Storage orchestration does not decide which fields grant access. Equality, and for transaction-rolled-back types also rollback, for every field of a stored type; the mapped types make a field added to that type without a rule here a compile error.
@@ -96,3 +97,36 @@ export const hasSameWebsiteAccess = (first: WebsiteAccess, second: WebsiteAccess
 export const rollbackWebsiteAccessFields = (previous: WebsiteAccess | undefined, updated: WebsiteAccess, current: WebsiteAccess) => rollbackFields(websiteAccessRules, previous, updated, current)
 
 export type CommittedWebsiteAccessChange = { readonly previousWebsiteAccess: WebsiteAccessArray, readonly updatedWebsiteAccess: WebsiteAccessArray }
+
+// A committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Its kind, not the call site, decides which websites' runtime approvals fail closed when settings are unreadable (see getAffectedWebsites).
+export type CommittedAccessChange =
+	// The complete committed or rolled-back snapshots; missing metadata conservatively affects every website.
+	| { readonly kind: 'website-access', readonly committedChange?: CommittedWebsiteAccessChange }
+	// Address-book entries, which can alter any website's effective address policy.
+	| { readonly kind: 'address-book' }
+
+export type AffectedWebsites =
+	| { readonly kind: 'every' }
+	| { readonly kind: 'none' }
+	| { readonly kind: 'websites', readonly websiteOrigins: readonly string[] }
+
+export function getAffectedWebsites(change: CommittedAccessChange): AffectedWebsites {
+	switch (change.kind) {
+		case 'website-access': {
+			if (change.committedChange === undefined) return { kind: 'every' }
+			const origins = getWebsiteApprovalChangedOrigins(change.committedChange.previousWebsiteAccess, change.committedChange.updatedWebsiteAccess)
+			return origins.length === 0 ? { kind: 'none' } : { kind: 'websites', websiteOrigins: origins }
+		}
+		case 'address-book': return { kind: 'every' }
+		default: return assertNever(change)
+	}
+}
+
+export const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: string) => {
+	switch (affectedWebsites.kind) {
+		case 'every': return true
+		case 'none': return false
+		case 'websites': return affectedWebsites.websiteOrigins.includes(websiteOrigin)
+		default: return assertNever(affectedWebsites)
+	}
+}

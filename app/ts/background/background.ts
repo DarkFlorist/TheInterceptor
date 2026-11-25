@@ -1,3 +1,4 @@
+import { getConnectionGrantRefusalReply } from './connectionGrant.js'
 import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
@@ -11,7 +12,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
 import { withSuppressedUnscopedConnectionEventsForSocketAsync } from './websiteConnectionEvents.js'
-import { clearWebsiteConnectionIntent, reconcileCommittedAccessChangeAndUpdateUi, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, reconcileCommittedAccessChangeAndUpdateUi, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyRequestedAccess } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -409,8 +410,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	try {
 		return await handleInterceptedRequestWithSettings(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 	} catch (error: unknown) {
-		if (!isRpcConfigurationUnavailableError(error)) throw error
-		return replyWithUnavailableRpcConfiguration(websiteTabConnections, request, error.message)
+		if (isRpcConfigurationUnavailableError(error)) return replyWithUnavailableRpcConfiguration(websiteTabConnections, request, error.message)
+		const refusal = getConnectionGrantRefusalReply(error)
+		if (refusal === undefined) throw error
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...refusal })
 	}
 }
 
@@ -447,7 +450,7 @@ const handleInterceptedRequestWithSettings = async (port: browser.runtime.Port |
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
 	const accountIdentityRequest = isAccountOnlyMethod(request.method)
-	const verifyRequestAccess = () => verifyAccess(
+	const verifyRequestAccess = () => verifyRequestedAccess(
 		websiteTabConnections,
 		socket,
 		accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1',
@@ -489,7 +492,7 @@ const handleInterceptedRequestWithSettings = async (port: browser.runtime.Port |
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedAccess = await verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
+		const refreshedAccess = await verifyRequestedAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
 		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus)
 	}

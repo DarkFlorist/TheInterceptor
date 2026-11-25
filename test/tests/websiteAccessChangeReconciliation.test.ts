@@ -1,3 +1,4 @@
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import * as injectionStrategy from '../../app/ts/background/contentScriptInjectionStrategy.js'
 import * as assert from 'assert'
 import { afterEach, describe, mock, spyOn, test } from 'bun:test'
@@ -276,7 +277,6 @@ for (const edit of ['approval', 'multi-approval', 'blocking', 'new-blocking-reco
 	const { setStorageHooks } = installBrowserMock()
 	const modules = await loadModules()
 	const { applyWebsiteAccessUpdate } = await import('../../app/ts/background/applyWebsiteAccessUpdate.js')
-	const { waitForBackgroundTasks } = await import('./backgroundTasksTestHarness.js')
 	const origins = ['scope-a.test', 'scope-b.test']
 	await modules.updateWebsiteAccess(() => origins.filter((_, index) => edit !== 'new-blocking-record' || index !== 0).map((websiteOrigin) => ({ website: { websiteOrigin }, access: true })))
 	const connections = new Map(origins.map((websiteOrigin, index) => {
@@ -344,4 +344,56 @@ test('reconciliation skips grant attempts when the network is readable but the R
 	assert.equal(grant.mock.calls.length, 0)
 	assert.equal(connection.approved, false)
 	assert.equal(messages.some((message) => message.method === 'connect'), false)
+})
+
+test.each(['endpoint', 'chain with different address policy', 'repeated endpoint changes'] as const)('reconciliation handles %s during grant admission', async change => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { updateUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
+	const grants = await import('../../app/ts/background/connectionGrant.js')
+	const { reconcileWebsiteApprovalAccesses, reconcileCommittedAddressBookChange } = await importAccessManagement()
+	const website = { websiteOrigin: 'https://grant-retry.example', icon: undefined, title: undefined }
+	const account = 1n
+	const nextChainId = 42n
+	await modules.setUseSignersAddressAsActiveAddress(false)
+	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+	const settings = await modules.requireSettingsWithReadableNetwork()
+	const address = { type: 'contact' as const, entrySource: 'User' as const, address: account, name: 'Simulation account' }
+	await updateUserAddressBookEntries(() => [
+		{ ...address, chainId: settings.activeRpcNetwork.chainId, askForAddressAccess: false },
+		{ ...address, chainId: nextChainId, askForAddressAccess: true },
+	])
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId)
+	const connection = { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	const changedEndpoint = 'https://changed.example'
+	const grantWithLiveSettings = grants.grantWithLiveSettings
+	const recheck = spyOn(grants, 'grantWithLiveSettings').mockImplementationOnce(async (admitted, grant) => {
+		const updatedNetwork = change === 'chain with different address policy'
+			? { ...settings.activeRpcNetwork, chainId: nextChainId }
+			: { ...settings.activeRpcNetwork, httpsRpc: changedEndpoint }
+		await browserStorageLocalSet({ activeRpcNetwork: updatedNetwork })
+		return await grantWithLiveSettings(admitted, grant)
+	})
+	if (change === 'repeated endpoint changes') recheck.mockImplementationOnce(async (admitted, grant) => {
+		await browserStorageLocalSet({ activeRpcNetwork: { ...settings.activeRpcNetwork, httpsRpc: 'https://changed-again.example' } })
+		return await grantWithLiveSettings(admitted, grant)
+	})
+	try {
+		if (change === 'repeated endpoint changes') {
+			await assert.rejects(reconcileCommittedAddressBookChange(connections), error => grants.getConnectionGrantRefusalReply(error)?.error.code === -32603)
+		} else {
+			await reconcileWebsiteApprovalAccesses(connections, settings)
+		}
+		assert.equal(recheck.mock.calls.length, change === 'chain with different address policy' ? 1 : 2)
+		if (change !== 'chain with different address policy') assert.equal(recheck.mock.calls[1]?.[0].activeRpcNetwork.httpsRpc, changedEndpoint)
+		assert.equal(connection.approved, change === 'endpoint')
+		assert.equal(messages.some(message => message.method === 'connect'), change === 'endpoint')
+	} finally {
+		recheck.mockRestore()
+		await waitForBackgroundTasks()
+	}
 })

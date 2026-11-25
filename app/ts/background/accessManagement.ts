@@ -6,15 +6,15 @@ import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot, updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
-import { getWebsiteApprovalChangedOrigins, type CommittedWebsiteAccessChange } from './websiteAccessState.js'
-import { grantWithLiveSettings } from './connectionGrant.js'
+import { getAffectedWebsites, isAffectedWebsite, type AffectedWebsites, type CommittedAccessChange } from './websiteAccessState.js'
+import { createConnectionGrantRefusal, grantWithLiveSettings, type AdmittedRpcNetworkNoLongerLive } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { assertNever, modifyObject } from '../utils/typescript.js'
+import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
@@ -28,6 +28,7 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { getWebsiteAccessForAddress, hasAccess, hasAddressAccess, type ApprovalState, settingsIfRpcConfigurationReady, type ReadyRpcSettings } from './websiteAccessPolicy.js'
 import { updateDeclarativeNetRequestBlocks } from './requestBlocking.js'
 import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
+export type { CommittedAccessChange } from './websiteAccessState.js'
 
 
 /**
@@ -59,7 +60,7 @@ type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
-export async function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): Promise<ApprovalState> {
+async function verifyAccessDecision(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): Promise<ApprovalState | { readonly refused: AdmittedRpcNetworkNoLongerLive }> {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const getAccess = (current: Settings) => requestAccessForAddress !== undefined
@@ -75,7 +76,7 @@ export async function verifyAccess(websiteTabConnections: WebsiteTabConnections,
 		if (liveAccess !== 'hasAccess') return { access: liveAccess }
 		return { access: liveAccess, followUpFailures: connectToPort(websiteTabConnections, socket, liveSettings, requestAccessForAddress?.address) }
 	})
-	if (grant.kind !== 'granted') return 'noAccess'
+	if (grant.kind !== 'granted') return { refused: grant.kind }
 	const { access: liveAccess, followUpFailures } = grant.result
 	if (followUpFailures !== undefined) {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -86,6 +87,19 @@ export async function verifyAccess(websiteTabConnections: WebsiteTabConnections,
 		})
 	}
 	return liveAccess === 'askAccess' && !askAccessIfUnknown ? 'noAccess' : liveAccess
+}
+
+// Passive callers continue their work when cached consent cannot be restored.
+export async function verifyAccess(...args: Parameters<typeof verifyAccessDecision>): Promise<ApprovalState> {
+	const decision = await verifyAccessDecision(...args)
+	return typeof decision === 'string' ? decision : 'noAccess'
+}
+
+// Intercepted requests must receive the reason a grant was interrupted.
+export async function verifyRequestedAccess(...args: Parameters<typeof verifyAccessDecision>): Promise<ApprovalState> {
+	const decision = await verifyAccessDecision(...args)
+	if (typeof decision !== 'string') throw createConnectionGrantRefusal(decision.refused)
+	return decision
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -250,7 +264,7 @@ function disconnectIfApproved(websiteTabConnections: WebsiteTabConnections, conn
 }
 
 // Never throws: every failure of the connection's steps is returned, in order.
-async function reconcileConnection(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, inputs: AccessReconciliationInputs, newlyGranted: Set<WebsiteConnection>): Promise<readonly unknown[]> {
+async function reconcileConnection(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, inputs: AccessReconciliationInputs, newlyGranted: Set<WebsiteConnection>, retryNetworkChange = true): Promise<readonly unknown[]> {
 	let activeAddress: AddressBookEntry | undefined
 	try {
 		activeAddress = await getConnectionActiveAddress(websiteTabConnections, connection, inputs.settings)
@@ -269,7 +283,17 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 			newlyGranted.add(connection)
 			return { followUpFailures: connectToPort(websiteTabConnections, connection.socket, liveSettings, activeAddress?.address) }
 		})
-		if (grant.kind === 'granted' && grant.result !== undefined) {
+		if (grant.kind === 'unavailable') return []
+		if (grant.kind !== 'granted') {
+			// Recompute the active address and its consent when a new network supersedes the run.
+			if (retryNetworkChange) {
+				const current = await readSettingsForAccessReconciliation()
+				if (current.status === 'ready') return await reconcileConnection(websiteTabConnections, connection, { kind: 'grant-and-revoke', settings: current.settings }, newlyGranted, false)
+				if (current.status === 'rejected') return [current.failure]
+			}
+			return [createConnectionGrantRefusal(grant.kind)]
+		}
+		if (grant.result !== undefined) {
 			const failures = await grant.result.followUpFailures
 			if (failures.length > 0) return [...failures, ...disconnectIfApproved(websiteTabConnections, connection)]
 		}
@@ -432,39 +456,6 @@ export async function persistWebsiteAccessChange(
 ): Promise<Settings> {
 	const committedChange = await updateWebsiteAccessWithSnapshots(accessDecision(website, access, address))
 	return await reconcileCommittedAccessChangeAndUpdateUi(simulationServicesOwner, websiteTabConnections, { kind: 'website-access', committedChange }, promptForAccessesIfNeeded)
-}
-
-// A committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Its kind, not the call site, decides which websites' runtime approvals fail closed when settings are unreadable (see getAffectedWebsites).
-export type CommittedAccessChange =
-	// The complete committed or rolled-back snapshots; missing metadata conservatively affects every website.
-	| { readonly kind: 'website-access', readonly committedChange?: CommittedWebsiteAccessChange }
-	// Address-book entries, which can alter any website's effective address policy.
-	| { readonly kind: 'address-book' }
-
-type AffectedWebsites =
-	| { readonly kind: 'every' }
-	| { readonly kind: 'none' }
-	| { readonly kind: 'websites', readonly websiteOrigins: readonly string[] }
-
-function getAffectedWebsites(change: CommittedAccessChange): AffectedWebsites {
-	switch (change.kind) {
-		case 'website-access': {
-			if (change.committedChange === undefined) return { kind: 'every' }
-			const origins = getWebsiteApprovalChangedOrigins(change.committedChange.previousWebsiteAccess, change.committedChange.updatedWebsiteAccess)
-			return origins.length === 0 ? { kind: 'none' } : { kind: 'websites', websiteOrigins: origins }
-		}
-		case 'address-book': return { kind: 'every' }
-		default: return assertNever(change)
-	}
-}
-
-const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: string) => {
-	switch (affectedWebsites.kind) {
-		case 'every': return true
-		case 'none': return false
-		case 'websites': return affectedWebsites.websiteOrigins.includes(websiteOrigin)
-		default: return assertNever(affectedWebsites)
-	}
 }
 
 // The connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
