@@ -20,8 +20,6 @@ import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyO
 import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetRpc.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
-import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { scheduleAddressBookChangePublication } from '../addressBookChangePublication.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
@@ -250,12 +248,12 @@ type ResolutionDependencies = {
 	sendToSigner: (request: StoredWatchAssetRequest) => boolean
 }
 
-export function createWatchAssetResolutionDependencies(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
+export function createWatchAssetResolutionDependencies(websiteTabConnections: WebsiteTabConnections, scheduleAddressBookChanged: () => void): ResolutionDependencies {
 	return {
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
 		updateAddressBook: updateUserAddressBookEntries,
-		scheduleAddressBookChanged: () => scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()),
+		scheduleAddressBookChanged,
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
 		processQueue: async (connections) => await processWatchAssetQueue(connections),

@@ -15,7 +15,7 @@ import { mockSignTransaction } from '../simulation/services/simulationTransactio
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
-import { createLiveProtectorChainReads, readAndRecordProtectorChainReads } from '../simulation/protectorChainReads.js'
+import { createLiveProtectorChainReads, recordProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
@@ -511,7 +511,7 @@ function lookUpVisualisationOnNode<Record>(ethereum: EthereumClientService, toke
 export async function visualizeSimulatorStateAndRecordLookups(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }> {
 	const onChainLookups = lookUpMetadataOnChain(ethereum, requestAbortController)
 	const identification = recordIdentifiedAddresses(onChainLookups.identifyAddress)
-	const lookups = lookUpVisualisationOnNode<RecordedProtectorChainReads>(ethereum, tokenPriceService, requestAbortController, { ...onChainLookups, identifyAddress: identification.identifyAddress }, (state) => readAndRecordProtectorChainReads(ethereum, requestAbortController, state))
+	const lookups = lookUpVisualisationOnNode<RecordedProtectorChainReads>(ethereum, tokenPriceService, requestAbortController, { ...onChainLookups, identifyAddress: identification.identifyAddress }, (state) => recordProtectorChainReads(createLiveProtectorChainReads(ethereum, requestAbortController, state)))
 	const { visualisation, protectorChainReads } = await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookups)
 	return { ...visualisation, recordedVisualisationLookups: { protectorChainReads, identifiedAddressBookEntries: identification.getIdentifiedEntries() } }
 }

@@ -1,4 +1,3 @@
-import { scheduleAddressBookChangePublication } from '../addressBookChangePublication.js'
 import { createImportSettingsFailureReply, type ImportSettings, type ImportSettingsReply, type SetRpcList } from '../../types/popupSettingsRequests.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
@@ -50,7 +49,7 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 }
 
 // The popup command boundary owns admission; this workflow shares the active-settings commit and post-commit effects.
-export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
+export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings, scheduleAddressBookChanged: () => void) {
 	let imported = false
 	try {
 		await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
@@ -60,7 +59,7 @@ export async function importSettingsAndRefresh(simulationServicesOwner: Simulati
 			return imported
 		}, { refreshAlways: true })
 	} finally {
-		if (imported) scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+		if (imported) scheduleAddressBookChanged()
 	}
 }
 

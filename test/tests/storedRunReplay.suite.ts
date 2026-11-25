@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { replayRecordedProtectorChainReads, isMissingRecordedProtectorReadError } from '../../app/ts/simulation/protectorChainReads.js'
+import { recordProtectorChainReads, replayRecordedProtectorChainReads, isMissingRecordedProtectorReadError } from '../../app/ts/simulation/protectorChainReads.js'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, recipientAddress, simulator, modules, fakeRpcNetwork, fakeSafeContract, created } from './confirmTransactionTestHarness.js'
 
@@ -58,6 +58,20 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	assert.deepEqual(relabelled.simulationState, stored.simulationState)
 	assert.equal(relabelled.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.name, 'Edited replay recipient')
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
+})
+
+test('paired protector adapters record and replay each chain read', async () => {
+	const { chainReads, getRecord } = recordProtectorChainReads({
+		readCode: async () => 'unverified',
+		readGasPrice: async () => 0n,
+	})
+	assert.equal(await chainReads.readCode(1n), 'unverified')
+	assert.equal(await chainReads.readGasPrice(), 0n)
+	const record = getRecord()
+	assert.deepEqual(record, { addressCode: [{ address: 1n, code: 'unverified' }], gasPrice: 0n })
+	const replay = replayRecordedProtectorChainReads(record)
+	assert.equal(await replay.readCode(1n), 'unverified')
+	assert.equal(await replay.readGasPrice(), 0n)
 })
 
 test('protector replay uses recorded values and identifies missing compatibility data', async () => {
