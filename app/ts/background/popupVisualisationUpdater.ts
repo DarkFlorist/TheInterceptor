@@ -4,7 +4,7 @@ import type { ActiveStackContext } from '../utils/activeStackContext.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { CompleteVisualizedSimulation, PassthroughState, RecordedVisualisationLookups, SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import type { PassthroughState, RecordedVisualisationLookups, SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toPopupVisualisation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -27,7 +27,7 @@ function invalidatePopupVisualisation() {
 }
 
 // Fresh simulated results must carry lookup records. Retained states may come from older storage.
-type RecordedPopupVisualisation = CompleteVisualizedSimulation & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }
+type RecordedPopupVisualisation = StoredCompleteVisualizedSimulation & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }
 type PassthroughPopupVisualisation = StoredCompleteVisualizedSimulation & { readonly simulationState: PassthroughState, readonly recordedVisualisationLookups: undefined }
 type PopupVisualisationWrite = RecordedPopupVisualisation | PassthroughPopupVisualisation | (StoredCompleteVisualizedSimulation & { readonly simulationUpdatingState: 'updating' | 'failed' })
 

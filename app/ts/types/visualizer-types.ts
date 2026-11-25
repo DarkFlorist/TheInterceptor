@@ -514,8 +514,7 @@ export const isEmptySimulationAndVisualisationResults = (simulationAndVisualisat
 	isEmptyVisualizedSimulationState(simulationAndVisualisationResults.visualizedSimulationState)
 )
 
-export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
-export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
+const CompleteVisualizedSimulationFields = funtypes.ReadonlyObject({
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
@@ -531,17 +530,23 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	metadataRevision: funtypes.Number,
 }))
 
+// Popup codecs reject replay records even if passed through an intermediate object.
+export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
+export const CompleteVisualizedSimulation = CompleteVisualizedSimulationFields.And(funtypes.ReadonlyPartial({
+	recordedVisualisationLookups: funtypes.Never,
+}))
+
 // Stored writes must explicitly supply the lookups or specify that there are none. Display projections cannot satisfy this type.
-export type StoredCompleteVisualizedSimulation = CompleteVisualizedSimulation & {
+export type StoredCompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulationFields> & {
 	readonly recordedVisualisationLookups: RecordedVisualisationLookups | undefined
 }
 
 // Older runs and passthrough states omit the lookups on disk.
-export const StoredCompleteVisualizedSimulationCodec = CompleteVisualizedSimulation.And(funtypes.ReadonlyPartial({
+export const StoredCompleteVisualizedSimulationCodec = CompleteVisualizedSimulationFields.And(funtypes.ReadonlyPartial({
 	recordedVisualisationLookups: RecordedVisualisationLookups,
 }))
 
-export function toPopupVisualisation({ recordedVisualisationLookups: _recordedLookups, ...visualisation }: StoredCompleteVisualizedSimulation): CompleteVisualizedSimulation {
+export function toPopupVisualisation({ recordedVisualisationLookups: _recordedLookups, ...visualisation }: funtypes.Static<typeof StoredCompleteVisualizedSimulationCodec>): CompleteVisualizedSimulation {
 	return visualisation
 }
 

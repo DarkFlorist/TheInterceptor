@@ -77,7 +77,7 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 })
 
-test('display visualisations cannot be written back to storage', async () => {
+test('display messages and stored writes require different visualisation types', async () => {
 	const repositoryRoot = new URL('../../', import.meta.url).pathname
 	const fixturePath = `${ repositoryRoot }test/fixtures/storedVisualisation/projection.ts`
 	const configFile = ts.readConfigFile(`${ repositoryRoot }tsconfig.json`, ts.sys.readFile)
@@ -87,7 +87,7 @@ test('display visualisations cannot be written back to storage', async () => {
 	if (fixture === undefined) throw new Error('Missing stored visualisation fixture')
 	const errorLines = ts.getPreEmitDiagnostics(program, fixture).flatMap((diagnostic) => diagnostic.start === undefined ? [] : [fixture.getLineAndCharacterOfPosition(diagnostic.start).line + 1])
 	const expectedLines = (await Bun.file(fixturePath).text()).split('\n').flatMap((line, index) => line.includes('// expect-type-error') ? [index + 1] : [])
-	assert.equal(expectedLines.length, 2)
+	assert.equal(expectedLines.length, 3)
 	assert.deepEqual([...new Set(errorLines)].sort((first, second) => first - second), expectedLines)
 })
 
