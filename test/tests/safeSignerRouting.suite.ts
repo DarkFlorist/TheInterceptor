@@ -1,3 +1,4 @@
+import { scheduleAddressBookChangePublication } from '../../app/ts/background/addressBookChangePublication.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -964,6 +965,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const reply = await modules.setSafeSimulationSigner(
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
+		() => scheduleAddressBookChangePublication(fakeRpcNetwork),
 		{
 			method: 'popup_setSafeSimulationSigner',
 			data: {
@@ -985,6 +987,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
+		() => scheduleAddressBookChangePublication(fakeRpcNetwork),
 		{
 			method: 'popup_setSafeSimulationSigner',
 			data: {
@@ -1004,6 +1007,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
+		() => scheduleAddressBookChangePublication(fakeRpcNetwork),
 		{
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: createSafeAddressBookEntry({
@@ -1031,6 +1035,7 @@ test('returns an explicit saved-signer error and refreshes the address book afte
 	try {
 		const reply = await withSilencedConsole(async () => await modules.setSafeSimulationSigner(
 			createTestSimulationServicesOwner({ ethereum, tokenPriceService: simulator.tokenPriceService }), connections,
+			() => scheduleAddressBookChangePublication(fakeRpcNetwork),
 			{ method: 'popup_setSafeSimulationSigner', data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: undefined } },
 		))
 		assert.equal(reply.ok, false)
@@ -1056,6 +1061,7 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 	const reply = await modules.setSafeSimulationSigner(
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
+		() => scheduleAddressBookChangePublication(fakeRpcNetwork),
 		{
 			method: 'popup_setSafeSimulationSigner',
 			data: {

@@ -31,7 +31,7 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-import { getInterceptorTransactionStack, getPopupVisualisationState, getPopupVisualisationStateWithRevision, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPopupVisualisationState, getStoredPopupVisualisationStateWithRevision, updateStoredPopupVisualisation } from './storageVariables.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -411,7 +411,7 @@ type SimulationMetadataDependencies = {
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined, dependencies: SimulationMetadataDependencies = {}) => {
-	const { visualisation: prevState, revision: capturedRevision } = await getPopupVisualisationStateWithRevision()
+	const { visualisation: prevState, revision: capturedRevision } = await getStoredPopupVisualisationStateWithRevision()
 	if (prevState.simulationState.kind === 'passthrough' || prevState.simulationState.value.success === false) return prevState
 	// Metadata can require remote reads; leave the storage lock available for local invalidation.
 	let metadata: Awaited<ReturnType<typeof getMetadataForSimulation>>
@@ -440,7 +440,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 		return await getPopupVisualisationState()
 	}
 	// Any write since the read advances the revision, including progress and results stored under the same simulation ID.
-	return await updatePopupVisualisationWithCallBack(async (current, currentRevision) => currentRevision === capturedRevision ? { ...current, ...metadata } : undefined)
+	return await updateStoredPopupVisualisation(async (current, currentRevision) => currentRevision === capturedRevision ? { ...current, ...metadata } : undefined)
 }
 
 // Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.

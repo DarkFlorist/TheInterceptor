@@ -453,11 +453,11 @@ describe('popup settings changes', () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { getSettings } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
-		const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const { setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 		const { getMakeCurrentAddressRich } = await import('../../app/ts/background/settings.js')
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		// No simulation view is open, so the refresh observes the stored visualisation as its outcome.
-		await setPopupVisualisationState(refreshOutcome === 'unavailable'
+		await setStoredPopupVisualisationState(refreshOutcome === 'unavailable'
 			? { ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: 'failed' }
 			: createPassthroughCompleteVisualizedSimulation(5, 'done'))
 		const services = createEthereumWithGetBlockCounter({ count: 0 })

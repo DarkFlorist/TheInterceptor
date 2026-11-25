@@ -226,9 +226,9 @@ describe('active settings concurrency', () => {
 	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
-		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const { getPopupVisualisationState, setStoredPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
 		const previousVisualisation = { ...await getPopupVisualisationState(), simulationId: 42 }
-		await setPopupVisualisationState(previousVisualisation)
+		await setStoredPopupVisualisationState(previousVisualisation)
 		const originalSet = browser.storage.local.set.bind(browser.storage.local)
 		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
 		const failure = new Error(`Injected ${ failurePoint } failure`)

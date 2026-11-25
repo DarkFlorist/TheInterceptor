@@ -15,7 +15,7 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { relabelStoredSimulation, type StackRunToRelabel } from './simulationRelabel.js'
-import { getPopupVisualisationState, getStoredPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { getPopupVisualisationState, getStoredPopupVisualisationState, setStoredPopupVisualisationState, updateStoredPopupVisualisation } from './storageVariables.js'
 
 let abortController = new AbortController()
 // Local invalidation retires every execution path, including direct consumer/bootstrap refreshes.
@@ -137,7 +137,7 @@ export async function publishPendingPopupVisualisation(invalidateOldState: boole
 }
 
 async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, generation: number) {
-	const pending = await updatePopupVisualisationWithCallBack(async previous => generation !== publicationGeneration ? undefined : retainPreviousVisualisation(previous, {
+	const pending = await updateStoredPopupVisualisation(async previous => generation !== publicationGeneration ? undefined : retainPreviousVisualisation(previous, {
 		simulationId: previous.simulationId + 1,
 		simulationUpdatingState: 'updating',
 		simulationResultState: invalidateOldState ? 'invalid' : undefined,
@@ -209,7 +209,7 @@ export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 		await relabelStoredSimulation(rpcNetwork, {
 			stored: await getStoredPopupVisualisationState(),
 			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, rpcNetwork.chainId),
-			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => {
+			updateStored: async (relabel) => await updateStoredPopupVisualisation(async (current) => {
 				relabelledState = relabel(current)
 				return relabelledState
 			}),
@@ -224,7 +224,7 @@ export async function publishFailedPopupVisualisation() {
 	invalidatePopupVisualisation()
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const previous = await getPopupVisualisationState()
-		const failed = await setPopupVisualisationState({
+		const failed = await setStoredPopupVisualisationState({
 			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
 			simulationUpdatingState: 'failed',
 		})
@@ -246,7 +246,7 @@ async function executePopupVisualisationState(ethereum: EthereumClientService, t
 	const isCurrent = () => generation === publicationGeneration && !abortController?.signal.aborted
 	// Check inside the storage lock as well as after remote work: invalidation can arrive while a write waits.
 	const storeCurrentState = async (state: PopupVisualisationWrite) => {
-		await updatePopupVisualisationWithCallBack(async () => isCurrent() ? state : undefined)
+		await updateStoredPopupVisualisation(async () => isCurrent() ? state : undefined)
 		return isCurrent() ? state : undefined
 	}
 	const publishCurrentState = async (state: StoredCompleteVisualizedSimulation | undefined) => {

@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
 import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, prepareLargeStateWrite, removeLargeStateValue, setLargeStateValue, setLargeStateValues } from '../../app/ts/utils/largeStateStore.js'
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
-import { getPopupVisualisationState, updateInterceptorTransactionStack, updatePopupVisualisationWithCallBack, updateTransactionState } from '../../app/ts/background/storageVariables.js'
+import { getPopupVisualisationState, updateInterceptorTransactionStack, updateStoredPopupVisualisation, updateTransactionState } from '../../app/ts/background/storageVariables.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
 import { updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
@@ -480,7 +480,7 @@ describe('large state store helpers', () => {
 		const savedResults = serialize(CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation(77, 'done', 2))
 		indexedDbState.set('popupVisualisation', savedResults)
 
-		await assert.rejects(updatePopupVisualisationWithCallBack(async () => assert.fail('must not update unreadable visualisation')), (caught: unknown) => caught === error)
+		await assert.rejects(updateStoredPopupVisualisation(async () => assert.fail('must not update unreadable visualisation')), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
 		assert.deepEqual(storageState, {})
 	})

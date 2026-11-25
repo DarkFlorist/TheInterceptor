@@ -4,7 +4,7 @@ import { recordProtectorChainReads, replayRecordedProtectorChainReads, isMissing
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, recipientAddress, simulator, modules, fakeRpcNetwork, fakeSafeContract, created } from './confirmTransactionTestHarness.js'
 
-const { getPopupVisualisationState, getStoredPopupVisualisationState, setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+const { getPopupVisualisationState, getStoredPopupVisualisationState, setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 const { updatePopupVisualisationState } = await import('../../app/ts/background/popupVisualisationUpdater.js')
 const { visualizeStoredRunWithoutNode } = await import('../../app/ts/background/storedRunVisualisation.js')
 
@@ -30,7 +30,7 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	assert.equal('recordedVisualisationLookups' in await getPopupVisualisationState(), false)
 	// Make the previous result old enough that only the busy semaphore can suppress a throttled refresh.
 	const stored = { ...current, recordedVisualisationLookups: current.recordedVisualisationLookups, simulationState: { kind: 'simulated' as const, value: { ...current.simulationState.value, simulationConductedTimestamp: new Date(0) } } }
-	await setPopupVisualisationState(stored)
+	await setStoredPopupVisualisationState(stored)
 	await modules.updateUserAddressBookEntries((entries) => [...entries.filter((entry) => entry.address !== recipientAddress), { type: 'contact', name: 'Edited replay recipient', address: recipientAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId }])
 	fakeSafeContract.requestedRpcMethods.length = 0
 	const storedMetadata = { tokenPriceEstimates: stored.tokenPriceEstimates }
@@ -98,10 +98,10 @@ test('protector replay uses recorded values and identifies missing compatibility
 
 test('an empty stack is left unchanged by a metadata re-label', async () => {
 	const { relabelPopupVisualisation } = await import('../../app/ts/background/popupVisualisationUpdater.js')
-	const { getPopupVisualisationState, setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+	const { getPopupVisualisationState, setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 	// This fixture has no chain operations, so it must be left unchanged by a re-label.
 	const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
-	await setPopupVisualisationState(createPassthroughCompleteVisualizedSimulation((await getPopupVisualisationState()).simulationId + 1))
+	await setStoredPopupVisualisationState(createPassthroughCompleteVisualizedSimulation((await getPopupVisualisationState()).simulationId + 1))
 	const before = await getPopupVisualisationState()
 	fakeSafeContract.requestedRpcMethods.length = 0
 	await relabelPopupVisualisation(fakeRpcNetwork)

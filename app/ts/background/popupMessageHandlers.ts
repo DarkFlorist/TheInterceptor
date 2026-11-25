@@ -1,6 +1,5 @@
 import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
-import { scheduleAddressBookChangePublication } from './addressBookChangePublication.js'
 import { identifyAddressWith, lookUpMetadataOnChain } from './metadataUtils.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimulationRefresh, refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
@@ -295,7 +294,7 @@ async function refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner: S
 	}
 }
 
-export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
+export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, scheduleAddressBookChanged: () => void, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
@@ -303,10 +302,10 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner, websiteTabConnections)
 	}
-	scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+	scheduleAddressBookChanged()
 }
 
-export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, scheduleAddressBookChanged: () => void, entry: AddOrEditAddressBookEntry) {
 	const { ethereum } = simulationServicesOwner.getCurrent()
 	try {
 		let entryToStore: AddressBookEntry = entry.data
@@ -356,8 +355,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 			}
 		} finally {
-			const rpcNetwork = simulationServicesOwner.getCurrent().ethereum.getRpcEntry()
-			scheduleAddressBookChangePublication(rpcNetwork)
+			scheduleAddressBookChanged()
 		}
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -377,6 +375,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 export async function setSafeSimulationSigner(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
+	scheduleAddressBookChanged: () => void,
 	request: SetSafeSimulationSigner,
 ) {
 	const { ethereum } = simulationServicesOwner.getCurrent()
@@ -437,7 +436,7 @@ export async function setSafeSimulationSigner(
 	const accessRefreshError = updatedEntry.useAsActiveAddress
 		? await refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner, websiteTabConnections)
 		: undefined
-	scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+	scheduleAddressBookChanged()
 	if (accessRefreshError !== undefined) return {
 		type: 'SetSafeSimulationSignerReply' as const,
 		ok: false as const,
@@ -1029,13 +1028,13 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 }
 
-export async function setEnsNameForHash(simulationServicesOwner: SimulationServicesOwner, parsedRequest: SetEnsNameForHash) {
+export async function setEnsNameForHash(scheduleAddressBookChanged: () => void, parsedRequest: SetEnsNameForHash) {
 	if (parsedRequest.data.type === 'labelHash') {
 		await addEnsLabelHash(parsedRequest.data.name)
 	} else {
 		await addEnsNodeHash(parsedRequest.data.name)
 	}
-	scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+	scheduleAddressBookChanged()
 }
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {

@@ -1,4 +1,4 @@
-import { scheduleAddressBookChangePublication } from './addressBookChangePublication.js'
+import { createAddressBookChangePublisher } from './addressBookChangePublication.js'
 import { createWatchAssetResolutionDependencies, resolveWatchAsset } from './windows/watchAsset.js'
 import { popupSettingsCommandHandlers } from './popupSettingsCommands.js'
 import { runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
@@ -38,10 +38,10 @@ const popupMessageHandlers = {
 	}),
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async ({ websiteTabConnections, simulationServicesOwner }, request) => {
-		const scheduleAddressBookChanged = () => scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+		const scheduleAddressBookChanged = createAddressBookChangePublisher(simulationServicesOwner)
 		await resolveWatchAsset(websiteTabConnections, request, createWatchAssetResolutionDependencies(websiteTabConnections, scheduleAddressBookChanged))
 	}),
-	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.simulationServicesOwner, context.websiteTabConnections, createAddressBookChangePublisher(context.simulationServicesOwner), request)),
 	popup_requestNewHomeData: popupSnapshotMessageHandler('popup_requestNewHomeData', async (context, request) => {
 		const { ethereum } = context.services
 		return await requestNewHomeData(ethereum, context.websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, context.simulationAbortController, bumpPopupRefreshGeneration())
