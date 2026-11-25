@@ -214,15 +214,18 @@ async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections,
 	return { activeAddress, access: getConnectionAccessForAddress(settings.websiteAccess, connection, activeAddress) }
 }
 
-// The current persisted settings: active RPC network, active-address fields and approvals. Anything that keeps them from being available is returned instead of thrown, with the failure a committed write's entry point surfaces: an `unavailable` snapshot (the RPC configuration is unavailable, an expected state the RPC status publishes) as the RPC-configuration-unavailable error, and a `rejected` read (an unexpected failure, for example a failed repair write of a corrupt field) as its rejection.
+// The current persisted settings. A readable network supplies revocation inputs; only ready RPC configuration supplies grant inputs. Anything that keeps them from being available is returned instead of thrown, with the failure a committed write's entry point surfaces: an `unavailable` snapshot (the RPC configuration is unavailable, an expected state the RPC status publishes) as the RPC-configuration-unavailable error, and a `rejected` read (an unexpected failure, for example a failed repair write of a corrupt field) as its rejection.
 type AccessReconciliationSettingsRead =
-	| { readonly status: 'available', readonly settings: Settings }
+	| { readonly status: 'ready', readonly settings: ReadyRpcSettings }
+	| { readonly status: 'readable-network-only', readonly settings: Settings }
 	| { readonly status: 'unavailable' | 'rejected', readonly failure: unknown }
 
 async function readSettingsForAccessReconciliation(): Promise<AccessReconciliationSettingsRead> {
 	try {
 		const snapshot = await getSettingsSnapshot()
-		if (snapshot.status === 'active-network-readable') return { status: 'available', settings: snapshot.settings }
+		const readySettings = settingsIfRpcConfigurationReady(snapshot)
+		if (readySettings !== undefined) return { status: 'ready', settings: readySettings }
+		if (snapshot.status === 'active-network-readable') return { status: 'readable-network-only', settings: snapshot.settings }
 		if (snapshot.websiteApprovals.status === 'unreadable') return { status: 'rejected', failure: snapshot.websiteApprovals.error }
 	} catch (error: unknown) {
 		return { status: 'rejected', failure: error }
@@ -231,10 +234,9 @@ async function readSettingsForAccessReconciliation(): Promise<AccessReconciliati
 }
 
 // What one reconciliation run applies: the current settings read inside the lock, which may grant (each grant still rechecks them immediately before it, see reconcileConnection), or (when they are unavailable) the caller's committed settings, which may only revoke.
-type AccessReconciliationInputs = {
-	readonly settings: Settings
-	readonly grantsAllowed: boolean
-}
+type AccessReconciliationInputs =
+	| { readonly kind: 'grant-and-revoke', readonly settings: ReadyRpcSettings }
+	| { readonly kind: 'revoke-only', readonly settings: Settings }
 
 // Returns the failure instead of throwing, so a failed notification never stops the caller or replaces another failure.
 function disconnectIfApproved(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection): readonly unknown[] {
@@ -258,7 +260,7 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 	}
 	const access = getConnectionAccessForAddress(inputs.settings.websiteAccess, connection, activeAddress)
 	if (access !== 'hasAccess') return disconnectIfApproved(websiteTabConnections, connection)
-	if (connection.approved || !inputs.grantsAllowed) return []
+	if (connection.approved || inputs.kind === 'revoke-only') return []
 	try {
 		// The active-address lookup and the connections before this one awaited, so the grant is decided on a fresh read. connectToPort approves synchronously; its request-block update is returned and awaited after the grant.
 		const grant = await grantWithLiveSettings(inputs.settings, (liveSettings) => {
@@ -342,9 +344,9 @@ async function reconcileWebsiteApprovalAccessesCollectingFailures(
 		// This read inside the lock is authoritative: when it succeeds it may grant from the current persisted state, even if the committing operation's own earlier read-back failed, because that failure only limits what the operation publishes. When it does not, the run is revoke-only; only a rejected read is a failure of the run, while an unavailable RPC configuration is the expected state the RPC status already publishes (and an admitted operation completes under it).
 		const currentSettings = await readSettingsForAccessReconciliation()
 		if (currentSettings.status === 'rejected') runFailures.push(currentSettings.failure)
-		const inputs: AccessReconciliationInputs = currentSettings.status === 'available'
-			? { settings: currentSettings.settings, grantsAllowed: true }
-			: { settings: committedSettings, grantsAllowed: false }
+		const inputs: AccessReconciliationInputs = currentSettings.status === 'ready'
+			? { kind: 'grant-and-revoke', settings: currentSettings.settings }
+			: { kind: 'revoke-only', settings: currentSettings.status === 'readable-network-only' ? currentSettings.settings : committedSettings }
 		// Tabs are reconciled concurrently and connections of a tab in order; reconcileConnection never throws, so every connection is reconciled.
 		const tabFailures = await Promise.all([...websiteTabConnections.values()].map(async (tabConnection) => {
 			const connectionFailures: unknown[] = []
@@ -438,10 +440,6 @@ export type CommittedAccessChange =
 	| { readonly kind: 'website-access', readonly committedChange?: CommittedWebsiteAccessChange }
 	// Address-book entries, which can alter any website's effective address policy.
 	| { readonly kind: 'address-book' }
-	// An imported settings file, which replaces every website's approvals.
-	| { readonly kind: 'settings-import' }
-	// A recovered RPC configuration, whose active network decides every website's chain-specific address consent.
-	| { readonly kind: 'rpc-configuration' }
 
 type AffectedWebsites =
 	| { readonly kind: 'every' }
@@ -456,8 +454,6 @@ function getAffectedWebsites(change: CommittedAccessChange): AffectedWebsites {
 			return origins.length === 0 ? { kind: 'none' } : { kind: 'websites', websiteOrigins: origins }
 		}
 		case 'address-book': return { kind: 'every' }
-		case 'settings-import': return { kind: 'every' }
-		case 'rpc-configuration': return { kind: 'every' }
 		default: return assertNever(change)
 	}
 }
@@ -501,7 +497,7 @@ function refreshIconsAfterFailedReconciliation(websiteTabConnections: WebsiteTab
 // Applies committed authority and request blocks. If reconciliation fails, revokes affected approvals before propagating the failure.
 async function reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange) {
 	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings.status !== 'available') {
+	if (!('settings' in committedSettings)) {
 		const failures = [committedSettings.failure, ...await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))]
 		await surfaceFailures(failures.slice(1), reportAsUnexpectedError, { throwFirst: false })
 		throw committedSettings.failure
@@ -526,8 +522,8 @@ async function reconcileCommittedAccessAndRecoverIcons(websiteTabConnections: We
 	}
 }
 
-// Compatibility for current main's local edits: await authority reconciliation, with prompts/icons explicitly scheduled by its callers.
-export async function reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections: WebsiteTabConnections): Promise<WebsiteAccessUpdate> {
+// Await authorization reconciliation for local address-book edits; callers schedule prompts and icon updates.
+export async function reconcileCommittedAddressBookChange(websiteTabConnections: WebsiteTabConnections): Promise<WebsiteAccessUpdate> {
 	return (await reconcileCommittedAccessAndRecoverIcons(websiteTabConnections, { kind: 'address-book' })).update
 }
 

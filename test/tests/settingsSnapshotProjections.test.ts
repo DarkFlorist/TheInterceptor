@@ -29,8 +29,8 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getSettingsForConfigurationChange, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireReadableSettings } = await import('../../app/ts/background/settings.js')
-const { approvalsOrNoneIfUnreadable, requireReadableApprovals } = await import('../../app/ts/background/websiteAccessPolicy.js')
+const { getSettingsForConfigurationChange, getSettingsSnapshot, getWebsiteApprovalsSnapshot } = await import('../../app/ts/background/settings.js')
+const { approvalsOrNoneIfUnreadable, requireReadableApprovals, settingsIfRpcConfigurationReady } = await import('../../app/ts/background/websiteAccessPolicy.js')
 
 const approvals: WebsiteAccessArray = [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }]
 const settings: Settings = {
@@ -48,10 +48,12 @@ const unavailableWithApprovals = { status: 'active-network-unreadable', rpcConfi
 const unavailableUnreadable = { status: 'active-network-unreadable', rpcConfiguration: { status: 'unavailable', reason: 'read-failed', error: storageError }, websiteApprovals: { status: 'unreadable', error: storageError } } as const
 
 describe('settings snapshot projections', () => {
-	test('requireReadableSettings returns available settings and otherwise throws the unavailable error', () => {
-		assert.equal(requireReadableSettings(available), settings)
-		assert.throws(() => requireReadableSettings(unavailableWithApprovals), isRpcConfigurationUnavailableError)
-		assert.throws(() => requireReadableSettings(unavailableUnreadable), isRpcConfigurationUnavailableError)
+	test('readable settings alone do not admit a decision requiring RPC readiness', () => {
+		assert.ok(settingsIfRpcConfigurationReady(available))
+		assert.equal(settingsIfRpcConfigurationReady({
+			...available,
+			rpcConfiguration: { status: 'unavailable', reason: 'empty', activeRpcNetwork: settings.activeRpcNetwork },
+		}), undefined)
 	})
 
 	test('approvalsOrNoneIfUnreadable keeps readable approvals and fails closed to none when they are unreadable', () => {

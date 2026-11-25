@@ -1,5 +1,5 @@
-// Test shorthand for the latest committed settings; app code composes the snapshot read and its projection explicitly. Imported lazily so tests can install their browser mocks first.
+// Import lazily so tests can install their browser mocks first.
 export async function getRequiredSettings() {
-	const { getSettingsSnapshot, requireReadableSettings } = await import('../../app/ts/background/settings.js')
-	return requireReadableSettings(await getSettingsSnapshot())
+	const { requireSettingsWithReadableNetwork } = await import('../../app/ts/background/settings.js')
+	return await requireSettingsWithReadableNetwork()
 }

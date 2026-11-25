@@ -4,6 +4,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { isExpectedInfrastructureError } from '../utils/errors.js'
+import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
@@ -41,7 +42,7 @@ export async function popupMessageHandler(
 		return PopupReplyOption.serialize(requestReply)
 	} catch(error: unknown) {
 		// Network-dependent reads can stop here while RPC settings are unavailable. Repair requests use a snapshot instead.
-		if (isExpectedInfrastructureError(error)) return
+		if (isExpectedInfrastructureError(error) || isRpcConfigurationUnavailableError(error)) return
 		throw error
 	}
 }

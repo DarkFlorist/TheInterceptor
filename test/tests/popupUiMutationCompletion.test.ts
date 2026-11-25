@@ -240,7 +240,7 @@ describe('UI mutation completion', () => {
 	test('failed reconciliation clears every approval and notifies lifecycle despite a broken port', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { reconcileCommittedWebsiteAccessOrFailClosed } = await import('../../app/ts/background/accessManagement.js')
+		const { reconcileCommittedAddressBookChange } = await import('../../app/ts/background/accessManagement.js')
 		const revokedTabs: number[] = []
 		const connections: WebsiteTabConnections = Object.assign(new Map(), { lifecycle: { approvalChanged: (socket: { tabId: number }, approved: boolean) => { if (!approved) revokedTabs.push(socket.tabId) } } })
 		const healthyPort = createPort(2)
@@ -256,7 +256,7 @@ describe('UI mutation completion', () => {
 			return await originalGet(keys)
 		} })
 		try {
-			await assert.rejects(reconcileCommittedWebsiteAccessOrFailClosed(connections), caught => caught === error)
+			await assert.rejects(reconcileCommittedAddressBookChange(connections), caught => caught === error)
 			assert.equal([...connections.values()].some(tab => Object.values(tab.connections).some(connection => connection.approved)), false)
 			assert.deepEqual(revokedTabs, [1, 2, 3])
 			assert.deepEqual(healthyPort.messages.map(message => message.method), ['accountsChanged', 'disconnect'])

@@ -1,3 +1,4 @@
+import { requireSettingsWithReadableNetwork } from '../settings.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
 import type { PendingFetchSimulationStackRequestPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -45,7 +46,7 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 		case '2.0.0': return { version, payload: getSimulatedStackV2(simulationState) } as const
 		case '1.0.0':
 		case '1.0.1': {
-			const addressToMakeRich = await getAddressToMakeRich()
+			const addressToMakeRich = await getAddressToMakeRich(await requireSettingsWithReadableNetwork())
 			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } as const
 		}
 		default: assertNever(version)

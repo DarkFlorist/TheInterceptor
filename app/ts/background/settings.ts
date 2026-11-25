@@ -147,7 +147,7 @@ export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorr
 }
 
 // The settings fields, required to be readable: throws the RPC-configuration-unavailable error when the active network itself cannot be read. Readable is all it proves; the RPC entries may still be corrupt, emptied or unwritable. A decision that needs a usable RPC configuration (granting, tab blocking, anything trusting the active chain) uses settingsIfRpcConfigurationReady instead.
-export function requireReadableSettings(snapshot: SettingsSnapshot): Settings {
+function requireReadableSettings(snapshot: SettingsSnapshot): Settings {
 	if (snapshot.status === 'active-network-unreadable') throw createRpcConfigurationUnavailableError()
 	return snapshot.settings
 }

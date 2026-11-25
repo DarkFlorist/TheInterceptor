@@ -326,3 +326,22 @@ test('unavailable RPC settings skip deferred access prompts without per-connecti
 	assert.equal(await modules.getLatestUnexpectedError(), undefined)
 	assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), false)
 })
+
+test('reconciliation skips grant attempts when the network is readable but the RPC list is empty', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const websiteOrigin = 'https://approved.example'
+	await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: undefined }])
+	const settings = await modules.requireSettingsWithReadableNetwork()
+	await browser.storage.local.set({ rpcEntries: [] })
+	const { reconcileWebsiteApprovalAccesses } = await importAccessManagement()
+	const grant = spyOn(await import('../../app/ts/background/connectionGrant.js'), 'grantWithLiveSettings')
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId)
+	const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	await reconcileWebsiteApprovalAccesses(connections, settings)
+	assert.equal(grant.mock.calls.length, 0)
+	assert.equal(connection.approved, false)
+	assert.equal(messages.some((message) => message.method === 'connect'), false)
+})

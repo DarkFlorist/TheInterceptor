@@ -14,7 +14,7 @@ import type { PendingTransactionSafeFlow, SimulatedPendingTransaction } from '..
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
-import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
+import { reconcileCommittedAddressBookChange, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
 import { withWebsiteAccessChanges } from './websiteAccessMutations.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -289,7 +289,7 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 // These edits are already persisted. Access recovery still fails closed, but its failure must not suppress the address-book notification or leave a reply request unanswered.
 async function refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
 	try {
-		const accessUpdate = await reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections)
+		const accessUpdate = await reconcileCommittedAddressBookChange(websiteTabConnections)
 		startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 		return undefined
 	} catch (error) {
@@ -355,7 +355,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 		// The entry is persisted, so open address-book views are notified even when the access refresh below fails and the save reports that failure.
 		try {
 			if (entryToStore.useAsActiveAddress) {
-				const accessUpdate = await reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections)
+				const accessUpdate = await reconcileCommittedAddressBookChange(websiteTabConnections)
 				startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 			}
 		} finally {
