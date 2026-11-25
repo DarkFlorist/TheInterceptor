@@ -1,3 +1,5 @@
+import { createAddressBookChangePublisher } from './addressBookChangePublication.js'
+import { createWatchAssetResolutionDependencies, resolveWatchAsset } from './windows/watchAsset.js'
 import { popupSettingsCommandHandlers } from './popupSettingsCommands.js'
 import { runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
@@ -5,7 +7,7 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
+import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass } from './popupMessageHandlers.js'
 import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
@@ -35,8 +37,11 @@ const popupMessageHandlers = {
 		return await refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, context.confirmTransactionAbortController)
 	}),
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
-	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
-	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async ({ websiteTabConnections, simulationServicesOwner }, request) => {
+		const scheduleAddressBookChanged = createAddressBookChangePublisher(simulationServicesOwner)
+		await resolveWatchAsset(websiteTabConnections, request, createWatchAssetResolutionDependencies(websiteTabConnections, scheduleAddressBookChanged))
+	}),
+	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.simulationServicesOwner, context.websiteTabConnections, createAddressBookChangePublisher(context.simulationServicesOwner), request)),
 	popup_requestNewHomeData: popupSnapshotMessageHandler('popup_requestNewHomeData', async (context, request) => {
 		const { ethereum } = context.services
 		return await requestNewHomeData(ethereum, context.websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, context.simulationAbortController, bumpPopupRefreshGeneration())

@@ -3,7 +3,7 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toPopupVisualisation, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
@@ -299,16 +299,16 @@ function getSimulationStateChangedMessages(messages: RuntimeMessage[]) {
 	return messages.filter((message) => message.method === 'popup_simulation_state_changed')
 }
 
-function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVisualizedSimulation) {
+function getExpectedPopupSimulationChangedMessage(popupVisualisation: Parameters<typeof toPopupVisualisation>[0]) {
 	return serialize(PopupSimulationChangedMessage, {
 		role: 'all',
 		method: 'popup_simulation_state_changed',
-		data: { visualizedSimulatorState: popupVisualisation },
+		data: { visualizedSimulatorState: toPopupVisualisation(popupVisualisation) },
 	} as const)
 }
 
 function assertDefinedEmptyPopupVisualisation(
-	popupVisualisation: CompleteVisualizedSimulation,
+	popupVisualisation: Pick<CompleteVisualizedSimulation, 'simulationUpdatingState' | 'simulationResultState' | 'simulationState' | 'visualizedSimulationState'>,
 	_defaultBlockManipulation: TestModules['DEFAULT_BLOCK_MANIPULATION'],
 ) {
 	assert.equal(popupVisualisation.simulationUpdatingState, 'done')

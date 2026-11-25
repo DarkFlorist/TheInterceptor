@@ -241,19 +241,19 @@ type ResolutionDependencies = {
 	getRequests: typeof getPendingWatchAssetRequests
 	updateRequests: typeof updatePendingWatchAssetRequests
 	updateAddressBook: typeof updateUserAddressBookEntries
-	publishAddressBookChanged: () => Promise<void>
+	scheduleAddressBookChanged: () => void
 	publish: typeof publishWatchAssetRequest
 	closeDialog: typeof closePopupOrTabById
 	processQueue: (websiteTabConnections: WebsiteTabConnections) => Promise<void>
 	sendToSigner: (request: StoredWatchAssetRequest) => boolean
 }
 
-function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
+export function createWatchAssetResolutionDependencies(websiteTabConnections: WebsiteTabConnections, scheduleAddressBookChanged: () => void): ResolutionDependencies {
 	return {
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
 		updateAddressBook: updateUserAddressBookEntries,
-		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
+		scheduleAddressBookChanged,
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
 		processQueue: async (connections) => await processWatchAssetQueue(connections),
@@ -311,7 +311,7 @@ function refreshQueuedNftRequests(requests: readonly StoredWatchAssetRequest[], 
 }
 
 let resolutionInProgress = false
-export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies = defaultResolutionDependencies(websiteTabConnections)) {
+export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies: ResolutionDependencies) {
 	if (resolutionInProgress) return
 	resolutionInProgress = true
 	try {
@@ -359,7 +359,7 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 				return updatedAddressBook
 			})
 			if (updatedAddressBook !== undefined) await dependencies.updateRequests((storedRequests) => refreshQueuedNftRequests(storedRequests, updatedAddressBook ?? []))
-			await dependencies.publishAddressBookChanged()
+			dependencies.scheduleAddressBookChanged()
 		}
 		await dependencies.updateRequests((storedRequests) => storedRequests.filter((stored) => !requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)))
 		await dependencies.closeDialog(request.popupOrTabId)

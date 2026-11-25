@@ -93,6 +93,26 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	simulationOptions: TransactionSimulationOptions,
 }))
 
+// The chain state the protectors read for a simulated transaction besides its simulation result: whether an address had code where the transaction ran ('unverified' when that read failed), and the node's gas price. Recorded with the run, so an address-book re-label can run the protectors again without simulating.
+export type RecordedProtectorChainReads = funtypes.Static<typeof RecordedProtectorChainReads>
+export const RecordedProtectorChainReads = funtypes.ReadonlyObject({
+	addressCode: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		code: funtypes.Union(funtypes.Literal('present'), funtypes.Literal('absent'), funtypes.Literal('unverified')),
+	})),
+}).And(funtypes.ReadonlyPartial({
+	gasPrice: EthereumQuantity,
+}))
+
+// What a simulation run recorded of its lookups, kept with the stored run in background storage only: the sender delegations, the protector chain reads of each transaction, by block (none for a failed simulation, which runs no protectors), and every entry its address lookups resolved from the address book, bundled metadata or the chain. An address-book re-label replays it instead of making those lookups (storedRunVisualisation.ts). Popup reads and publications project it out before serialization.
+export type RecordedVisualisationLookups = funtypes.Static<typeof RecordedVisualisationLookups>
+export const RecordedVisualisationLookups = funtypes.ReadonlyObject({
+	protectorChainReads: funtypes.ReadonlyArray(funtypes.ReadonlyArray(RecordedProtectorChainReads)),
+	identifiedAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+}).And(funtypes.ReadonlyPartial({
+	senderDelegations: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ sender: EthereumAddress, delegationAddress: EthereumAddress })),
+}))
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -494,8 +514,7 @@ export const isEmptySimulationAndVisualisationResults = (simulationAndVisualisat
 	isEmptyVisualizedSimulationState(simulationAndVisualisationResults.visualizedSimulationState)
 )
 
-export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
-export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
+const CompleteVisualizedSimulationFields = funtypes.ReadonlyObject({
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
@@ -506,13 +525,36 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	simulationId: funtypes.Number,
 	visualizedSimulationState: VisualizedSimulationState,
 	numberOfAddressesMadeRich: funtypes.Number,
-})
+}).And(funtypes.ReadonlyPartial({
+	// How many address-book re-labels replaced this simulation id's metadata; absent, meaning 0, on a simulation's own result. A re-label keeps the simulation id, so this orders same-id results (predatesVisualisation).
+	metadataRevision: funtypes.Number,
+}))
+
+// Popup codecs reject replay records even if passed through an intermediate object.
+export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
+export const CompleteVisualizedSimulation = CompleteVisualizedSimulationFields.And(funtypes.ReadonlyPartial({
+	recordedVisualisationLookups: funtypes.Never,
+}))
+
+// Stored writes must explicitly supply the lookups or specify that there are none. Display projections cannot satisfy this type.
+export type StoredCompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulationFields> & {
+	readonly recordedVisualisationLookups: RecordedVisualisationLookups | undefined
+}
+
+// Older runs and passthrough states omit the lookups on disk.
+export const StoredCompleteVisualizedSimulationCodec = CompleteVisualizedSimulationFields.And(funtypes.ReadonlyPartial({
+	recordedVisualisationLookups: RecordedVisualisationLookups,
+}))
+
+export function toPopupVisualisation({ recordedVisualisationLookups: _recordedLookups, ...visualisation }: funtypes.Static<typeof StoredCompleteVisualizedSimulationCodec>): CompleteVisualizedSimulation {
+	return visualisation
+}
 
 export const createPassthroughCompleteVisualizedSimulation = (
 	simulationId = 0,
 	simulationResultState: SimulationResultState = 'corrupted',
 	numberOfAddressesMadeRich = 0,
-): CompleteVisualizedSimulation => ({
+): CompleteVisualizedSimulation & { readonly simulationState: PassthroughState } => ({
 	simulationUpdatingState: 'done',
 	simulationResultState,
 	simulationId,

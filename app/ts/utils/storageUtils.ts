@@ -3,7 +3,7 @@ import type { StorageWriteValue } from './storageWriteTracking.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack, StoredCompleteVisualizedSimulationCodec } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -118,7 +118,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
-	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
+	popupVisualisation: funtypes.Union(funtypes.Undefined, StoredCompleteVisualizedSimulationCodec),
 	signerName: SignerName,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,

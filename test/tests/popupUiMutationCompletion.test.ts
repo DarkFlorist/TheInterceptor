@@ -1,3 +1,4 @@
+import { scheduleAddressBookChangePublication } from '../../app/ts/background/addressBookChangePublication.js'
 import * as assert from 'node:assert'
 import { afterEach, describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -87,7 +88,7 @@ describe('UI mutation completion', () => {
 				: modules.activateAddressSelection(owner, new Map(), { type: 'addressBookEntry', entry: { type: 'safe', address: 3n, chainId: context.settings.activeRpcNetwork.chainId, name: 'Safe', entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signedTransaction.from] } }, { simulationMode: false, signerAddress: signedTransaction.from, promptForAccessesIfNeeded: false })
 			await completesPromptly(edit)
 			await completesPromptly(refreshStarted.promise)
-			const state = await modules.getPopupVisualisationState()
+			const state = await modules.getPopupVisualisationForDisplay()
 			assert.equal(state.simulationUpdatingState, 'updating')
 			assert.equal(state.simulationResultState, 'invalid')
 			if (operation === 'reset' || operation === 'remove') assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 0)
@@ -128,7 +129,7 @@ describe('UI mutation completion', () => {
 			assert.equal(reply.ok, true)
 			await completesPromptly(started.promise)
 			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
-			assert.equal((await modules.getPopupVisualisationState()).simulationResultState, 'invalid')
+			assert.equal((await modules.getPopupVisualisationForDisplay()).simulationResultState, 'invalid')
 		} finally { release.resolve(); await waitForBackgroundTasks() }
 	})
 
@@ -372,7 +373,7 @@ describe('UI mutation completion', () => {
 		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
 		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile removed account access') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		await modules.removeAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
+		await modules.removeAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, () => scheduleAddressBookChangePublication(ethereum.getRpcEntry()), {
 			method: 'popup_removeAddressBookEntry', data: { address, addressBookCategory, chainId: 1n },
 		})
 		assert.deepEqual(await modules.getUserAddressBookEntries(), [])
@@ -394,7 +395,7 @@ describe('UI mutation completion', () => {
 		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://blocked.invalid' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
 		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
+		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, () => scheduleAddressBookChangePublication(ethereum.getRpcEntry()), {
 			method: 'popup_addOrModifyAddressBookEntry', data: { type: 'contact', address: 42n, name: 'Saved account', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
 		})
 		assert.equal(reply.ok, false)
@@ -474,7 +475,7 @@ describe('UI mutation completion', () => {
 		const outcome = await refresh
 		if (throwOnUnexpectedError) assert.equal(outcome, error)
 		else assert.equal((await modules.getLatestUnexpectedError())?.data.message, error.message)
-		const stored = await modules.getPopupVisualisationState()
+		const stored = await modules.getPopupVisualisationForDisplay()
 		assert.equal(stored.simulationResultState, 'invalid')
 		assert.equal(stored.simulationUpdatingState, 'updating')
 	})

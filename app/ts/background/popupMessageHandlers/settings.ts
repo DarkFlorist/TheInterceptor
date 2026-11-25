@@ -49,12 +49,18 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 }
 
 // The popup command boundary owns admission; this workflow shares the active-settings commit and post-commit effects.
-export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
-	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
-		const reply = await importSettings(request, websiteTabConnections)
-		await sendPopupMessageToOpenWindows(reply)
-		return reply.data.success
-	}, { refreshAlways: true })
+export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings, scheduleAddressBookChanged: () => void) {
+	let imported = false
+	try {
+		await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+			const reply = await importSettings(request, websiteTabConnections)
+			imported = reply.data.success
+			await sendPopupMessageToOpenWindows(reply)
+			return imported
+		}, { refreshAlways: true })
+	} finally {
+		if (imported) scheduleAddressBookChanged()
+	}
 }
 
 export async function exportSettings() {

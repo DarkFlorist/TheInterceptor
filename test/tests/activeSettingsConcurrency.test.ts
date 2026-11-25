@@ -78,8 +78,8 @@ describe('active settings concurrency', () => {
 			assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: secondAddress.address, access: true }])
 			assert.deepEqual(messages.filter(message => message.method === 'eth_accounts' && message.requestId === 10).map(message => message.result), [['0x0000000000000000000000000000000000000002']])
 			assert.equal(getBlockCalls.count, 0, 'Approval must not wait for simulation blocks')
-			const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
-			assert.equal((await getPopupVisualisationState()).simulationResultState, 'invalid')
+			const { getPopupVisualisationForDisplay } = await import('../../app/ts/background/storageVariables.js')
+			assert.equal((await getPopupVisualisationForDisplay()).simulationResultState, 'invalid')
 			assert.ok(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'))
 		} finally {
 			clearTimeout(approvalTimeout)
@@ -226,9 +226,9 @@ describe('active settings concurrency', () => {
 	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
-		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
-		const previousVisualisation = { ...await getPopupVisualisationState(), simulationId: 42 }
-		await setPopupVisualisationState(previousVisualisation)
+		const { getStoredPopupVisualisationState, setStoredPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const previousVisualisation = { ...await getStoredPopupVisualisationState(), simulationId: 42 }
+		await setStoredPopupVisualisationState(previousVisualisation)
 		const originalSet = browser.storage.local.set.bind(browser.storage.local)
 		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
 		const failure = new Error(`Injected ${ failurePoint } failure`)
@@ -262,7 +262,7 @@ describe('active settings concurrency', () => {
 				await assert.rejects(transition, error => error === failure)
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 			}
-			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
+			assert.deepEqual(await getStoredPopupVisualisationState(), previousVisualisation)
 			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
@@ -273,7 +273,7 @@ describe('active settings concurrency', () => {
 	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
-		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const { getPopupVisualisationForDisplay } = await import('../../app/ts/background/storageVariables.js')
 		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		await updateUserAddressBookEntries(() => [firstAddress, safe])
 		const counter = { count: 0 }
@@ -285,7 +285,7 @@ describe('active settings concurrency', () => {
 		}), error => error === failure)
 		assert.equal((await getSettings()).activeSigningSafeAddress, safe.address)
 		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress: firstAddress.address, selection: 'safe', safeAddress: safe.address, chainId: safe.chainId }])
-		const visualisation = await getPopupVisualisationState()
+		const visualisation = await getPopupVisualisationForDisplay()
 		assert.equal(visualisation.simulationUpdatingState, 'failed')
 		assert.equal(visualisation.simulationResultState, 'invalid')
 		assert.equal(visualisation.simulationState.kind, 'passthrough')

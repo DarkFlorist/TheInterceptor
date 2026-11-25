@@ -13,7 +13,7 @@ import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '..
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { IdentifyAddress, LookUpEnsName, MetadataLookups } from '../types/metadataLookups.js'
-import type { EthereumBytes32 } from '../types/wire-types.js'
+import type { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
@@ -161,6 +161,9 @@ export async function hasAddressBookDuplicate(address: bigint, rpcEntry: RpcNetw
 	return entry !== undefined && entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'
 }
 
+// Identifies an address from the address book and bundled metadata alone, never on chain; undefined when neither knows it.
+export const identifyAddressFromLocalData = async (address: EthereumAddress, rpcEntry: RpcNetwork) => await identifyAddressWithoutNode(address, rpcEntry)
+
 export async function identifyAddress(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
@@ -243,6 +246,19 @@ export const lookUpMetadataOnChain = (ethereumClientService: EthereumClientServi
 	identifyAddress: identifyAddressWith(ethereumClientService, requestAbortController),
 	lookUpEnsName: async (nameHash) => await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, nameHash),
 })
+
+// Records every entry a simulation run's address lookups resolve, to store with the run as its identifiedAddressBookEntries.
+export function recordIdentifiedAddresses(identify: IdentifyAddress) {
+	const identifiedEntries = new Map<bigint, AddressBookEntry>()
+	return {
+		identifyAddress: async (address: EthereumAddress) => {
+			const entry = await identify(address)
+			identifiedEntries.set(entry.address, entry)
+			return entry
+		},
+		getIdentifiedEntries: () => Array.from(identifiedEntries.values()),
+	}
+}
 
 const getAddressesForSolidityType = (typeValue: PureGroupedSolidityType): readonly bigint[] => {
 	switch(typeValue.type) {

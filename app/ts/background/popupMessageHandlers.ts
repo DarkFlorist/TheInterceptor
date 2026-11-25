@@ -6,9 +6,9 @@ import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimu
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationForDisplay, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
-import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
+import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
 import type { PendingTransactionSafeFlow, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
@@ -45,7 +45,7 @@ import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/Si
 import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
+import { updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
@@ -172,7 +172,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 		case 'confirmTransaction': {
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
-			const visualizedSimulatorState = await getPopupVisualisationState()
+			const visualizedSimulatorState = await getPopupVisualisationForDisplay()
 			// The request may be replaced during the lookups; bootstrap carries only the queue stored after them.
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
@@ -218,10 +218,6 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 		default:
 			assertNever(page)
 	}
-}
-
-export async function watchAssetDialog(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation) {
-	await resolveWatchAsset(websiteTabConnections, confirmation)
 }
 
 async function getSignerAccount() {
@@ -298,7 +294,7 @@ async function refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner: S
 	}
 }
 
-export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
+export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, scheduleAddressBookChanged: () => void, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
@@ -306,10 +302,10 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner, websiteTabConnections)
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	scheduleAddressBookChanged()
 }
 
-export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, scheduleAddressBookChanged: () => void, entry: AddOrEditAddressBookEntry) {
 	const { ethereum } = simulationServicesOwner.getCurrent()
 	try {
 		let entryToStore: AddressBookEntry = entry.data
@@ -359,7 +355,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 			}
 		} finally {
-			void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+			scheduleAddressBookChanged()
 		}
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -379,6 +375,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 export async function setSafeSimulationSigner(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
+	scheduleAddressBookChanged: () => void,
 	request: SetSafeSimulationSigner,
 ) {
 	const { ethereum } = simulationServicesOwner.getCurrent()
@@ -439,7 +436,7 @@ export async function setSafeSimulationSigner(
 	const accessRefreshError = updatedEntry.useAsActiveAddress
 		? await refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner, websiteTabConnections)
 		: undefined
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	scheduleAddressBookChanged()
 	if (accessRefreshError !== undefined) return {
 		type: 'SetSafeSimulationSignerReply' as const,
 		ok: false as const,
@@ -1031,13 +1028,13 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 }
 
-export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
+export async function setEnsNameForHash(scheduleAddressBookChanged: () => void, parsedRequest: SetEnsNameForHash) {
 	if (parsedRequest.data.type === 'labelHash') {
 		await addEnsLabelHash(parsedRequest.data.name)
 	} else {
 		await addEnsNodeHash(parsedRequest.data.name)
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	scheduleAddressBookChanged()
 }
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {
@@ -1166,7 +1163,7 @@ async function buildHomePageUpdate(
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
-	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationState())
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationForDisplay())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
 	const latestUnexpectedErrorPromise = silenceChromeUnCaughtPromise(getLatestUnexpectedError())
 	const richDataPromise = silenceChromeUnCaughtPromise(

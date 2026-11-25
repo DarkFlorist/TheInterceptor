@@ -1,9 +1,13 @@
 import * as assert from 'assert'
-import { describe, spyOn, test } from 'bun:test'
+import { afterEach, describe, spyOn, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
+
+// Finish access prompts and refreshes before another test replaces the browser mock.
+afterEach(waitForBackgroundTasks)
 
 async function captureConsoleWarnings(run: () => Promise<unknown>) {
 	const warnings: unknown[][] = []
