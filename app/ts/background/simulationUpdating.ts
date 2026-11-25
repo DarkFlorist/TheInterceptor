@@ -512,8 +512,9 @@ export async function visualizeSimulatorStateAndRecordLookups(simulationState: S
 	const onChainLookups = lookUpMetadataOnChain(ethereum, requestAbortController)
 	const identification = recordIdentifiedAddresses(onChainLookups.identifyAddress)
 	const lookups = lookUpVisualisationOnNode<RecordedProtectorChainReads>(ethereum, tokenPriceService, requestAbortController, { ...onChainLookups, identifyAddress: identification.identifyAddress }, (state) => recordProtectorChainReads(createLiveProtectorChainReads(ethereum, requestAbortController, state)))
-	const { visualisation, protectorChainReads } = await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookups)
-	return { ...visualisation, recordedVisualisationLookups: { protectorChainReads, identifiedAddressBookEntries: identification.getIdentifiedEntries() } }
+	const { visualisation, protectorChainReads, delegationAddressBySender } = await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookups)
+	const senderDelegations = Array.from(delegationAddressBySender, ([sender, entry]) => ({ sender: BigInt(sender), delegationAddress: entry.address }))
+	return { ...visualisation, recordedVisualisationLookups: { protectorChainReads, identifiedAddressBookEntries: identification.getIdentifiedEntries(), senderDelegations } }
 }
 
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
@@ -526,7 +527,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 }
 
 // All chain-dependent lookups come from the caller, so the same visualization can replay a stored run.
-export async function visualizeSimulatorStateWithLookups<Record>(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups<Record>): Promise<{ readonly visualisation: VisualizedSimulatorState, readonly protectorChainReads: readonly (readonly Record[])[] }> {
+export async function visualizeSimulatorStateWithLookups<Record>(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups<Record>): Promise<{ readonly visualisation: VisualizedSimulatorState, readonly protectorChainReads: readonly (readonly Record[])[], readonly delegationAddressBySender: ReadonlyMap<string, AddressBookEntry> }> {
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(rpcNetwork.chainId)
 		if (wethAddr === undefined) return undefined
@@ -592,6 +593,7 @@ export async function visualizeSimulatorStateWithLookups<Record>(simulationState
 				visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks },
 			},
 			protectorChainReads: [],
+			delegationAddressBySender,
 		}
 	}
 
@@ -655,6 +657,7 @@ export async function visualizeSimulatorStateWithLookups<Record>(simulationState
 			simulationState: refreshedSimulationState,
 			visualizedSimulationState: { success: true, visualizedBlocks },
 		},
+		delegationAddressBySender,
 		protectorChainReads: protectorsForEachBlockAndTransaction.map((protectorsForBlock) => protectorsForBlock.map(({ protectorChainReads }) => protectorChainReads)),
 	}
 }

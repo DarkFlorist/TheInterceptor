@@ -3,7 +3,7 @@ import { createMissingRecordedProtectorReadError, replayRecordedProtectorChainRe
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { MetadataLookups } from '../types/metadataLookups.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import type { RecordedVisualisationLookups, SimulationState, VisualizedSimulationState, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import type { RecordedVisualisationLookups, SimulationState, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { addressString } from '../utils/bigint.js'
 import { getAddress } from '../utils/ethereumPrimitives.js'
@@ -11,8 +11,8 @@ import { assertNever } from '../utils/typescript.js'
 import { identifyAddressFromLocalData } from './metadataUtils.js'
 import { type VisualisationLookups, visualizeSimulatorStateWithLookups } from './simulationUpdating.js'
 
-// The parts of a stored run that an address-book re-label starts from: its stored visualisation and what the run recorded of its lookups, which runs stored by older versions lack.
-export type StoredSimulationMetadata = Pick<VisualizedSimulatorState, 'addressBookEntries' | 'tokenPriceEstimates' | 'visualizedSimulationState'> & {
+// The parts of a stored run that an address-book re-label starts from: its stored token prices and what the run recorded of its lookups, which runs stored by older versions lack.
+export type StoredSimulationMetadata = Pick<VisualizedSimulatorState, 'tokenPriceEstimates'> & {
 	readonly recordedVisualisationLookups?: RecordedVisualisationLookups | undefined
 }
 
@@ -43,26 +43,12 @@ export function lookUpMetadataForRelabel(identifiedEntries: readonly AddressBook
 	}
 }
 
-// The delegation each sender had when the run was visualised, by sender.
-function getStoredDelegationAddressBySender(visualizedSimulationState: VisualizedSimulationState) {
-	const delegationAddressBySender = new Map<string, bigint>()
-	for (const block of visualizedSimulationState.visualizedBlocks) {
-		for (const { transaction } of block.simulatedAndVisualizedTransactions) {
-			if (transaction.delegationAddress !== undefined) delegationAddressBySender.set(addressString(transaction.from.address), transaction.delegationAddress.address)
-		}
-	}
-	return delegationAddressBySender
-}
-
 // Answers every lookup of a visualisation without the node: addresses are named from the address book, bundled metadata and the entries the run identified (lookUpMetadataForRelabel), and the delegations, token prices and protector chain reads are those stored with the run.
-function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, rpcNetwork: RpcNetwork): VisualisationLookups<undefined> {
+function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups & Required<Pick<RecordedVisualisationLookups, 'senderDelegations'>>, rpcNetwork: RpcNetwork): VisualisationLookups<undefined> {
 	const metadataLookups = lookUpMetadataForRelabel(recorded.identifiedAddressBookEntries, rpcNetwork)
 	return {
 		...metadataLookups,
-		getDelegationAddressBySender: async () => {
-			const storedDelegations = Array.from(getStoredDelegationAddressBySender(storedMetadata.visualizedSimulationState))
-			return new Map(await Promise.all(storedDelegations.map(async ([sender, delegationAddress]) => [sender, await metadataLookups.identifyAddress(delegationAddress)] as const)))
-		},
+		getDelegationAddressBySender: async () => new Map(await Promise.all(recorded.senderDelegations.map(async ({ sender, delegationAddress }) => [addressString(sender), await metadataLookups.identifyAddress(delegationAddress)] as const))),
 		// A token keeps the stored price only while it is still known with the decimals that price was estimated for.
 		estimateTokenPrices: async (quoteToken, tokens) => storedMetadata.tokenPriceEstimates.filter((estimate) => estimate.quoteToken.address === quoteToken.address && tokens.some((token) => token.address === estimate.token.address && token.decimals === estimate.token.decimals)),
 		getProtectorChainReads: (_slicedSimulationState, blockIndex, transactionIndex) => {
@@ -75,6 +61,9 @@ function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetada
 
 // An address-book re-label visualises a stored run again without any RPC request, so it can neither simulate nor fail with the node; it gets the services' network as plain data, not a client.
 export async function visualizeStoredRunWithoutNode(simulationState: SimulationState, storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, rpcNetwork: RpcNetwork) {
-	const { visualisation } = await visualizeSimulatorStateWithLookups(simulationState, rpcNetwork, lookUpVisualisationFromStoredRun(storedMetadata, recorded, rpcNetwork))
+	const { senderDelegations } = recorded
+	// Older runs did not record delegation lookups. Wait for a new simulation to capture them.
+	if (senderDelegations === undefined) return undefined
+	const { visualisation } = await visualizeSimulatorStateWithLookups(simulationState, rpcNetwork, lookUpVisualisationFromStoredRun(storedMetadata, { ...recorded, senderDelegations }, rpcNetwork))
 	return { ...visualisation, recordedVisualisationLookups: recorded }
 }

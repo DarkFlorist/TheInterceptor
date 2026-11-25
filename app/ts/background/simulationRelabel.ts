@@ -3,7 +3,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './storedRunVisualisation.js'
 
-type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>, 'simulationState'>
+type SimulationMetadata = Omit<NonNullable<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>>, 'simulationState'>
 
 export type StackRunToRelabel = {
 	readonly simulationId: number
@@ -17,7 +17,9 @@ async function readRelabelledStackMetadata(run: StackRunToRelabel, rpcNetwork: R
 	const recorded = run.storedMetadata.recordedVisualisationLookups
 	if (recorded === undefined) return undefined
 	try {
-		const { simulationState: _simulationState, ...metadata } = await visualizeStoredRunWithoutNode(run.simulationState, run.storedMetadata, recorded, rpcNetwork)
+		const visualisation = await visualizeStoredRunWithoutNode(run.simulationState, run.storedMetadata, recorded, rpcNetwork)
+		if (visualisation === undefined) return undefined
+		const { simulationState: _simulationState, ...metadata } = visualisation
 		return metadata
 	} catch (error: unknown) {
 		if (isMissingRecordedProtectorReadError(error)) return undefined

@@ -104,12 +104,14 @@ export const RecordedProtectorChainReads = funtypes.ReadonlyObject({
 	gasPrice: EthereumQuantity,
 }))
 
-// What a simulation run recorded of its lookups, kept with the stored run in background storage only: the protector chain reads of each transaction, by block (none for a failed simulation, which runs no protectors), and every entry its address lookups resolved from the address book, bundled metadata or the chain. An address-book re-label replays it instead of making those lookups (storedRunVisualisation.ts). Popup messages carry the run without it: their codecs have no field for it, so serializing a message drops it.
+// What a simulation run recorded of its lookups, kept with the stored run in background storage only: the sender delegations, the protector chain reads of each transaction, by block (none for a failed simulation, which runs no protectors), and every entry its address lookups resolved from the address book, bundled metadata or the chain. An address-book re-label replays it instead of making those lookups (storedRunVisualisation.ts). Popup messages carry the run without it: their codecs have no field for it, so serializing a message drops it.
 export type RecordedVisualisationLookups = funtypes.Static<typeof RecordedVisualisationLookups>
 export const RecordedVisualisationLookups = funtypes.ReadonlyObject({
 	protectorChainReads: funtypes.ReadonlyArray(funtypes.ReadonlyArray(RecordedProtectorChainReads)),
 	identifiedAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-})
+}).And(funtypes.ReadonlyPartial({
+	senderDelegations: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ sender: EthereumAddress, delegationAddress: EthereumAddress })),
+}))
 
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(

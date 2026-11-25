@@ -1,5 +1,5 @@
 import * as assert from 'node:assert'
-import { test } from 'bun:test'
+import { spyOn, test } from 'bun:test'
 import { recordProtectorChainReads, replayRecordedProtectorChainReads, isMissingRecordedProtectorReadError } from '../../app/ts/simulation/protectorChainReads.js'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, recipientAddress, simulator, modules, fakeRpcNetwork, fakeSafeContract, created } from './confirmTransactionTestHarness.js'
@@ -18,15 +18,26 @@ test('stored visualization replay uses edited local names and recorded chain rea
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: activeAddress, to: recipientAddress, value: 1n }] },
 	} }] }))
-	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
+	const delegationLookup = spyOn(simulator.ethereum, 'getDelegation').mockResolvedValue(recipientAddress)
+	try {
+		await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
+	} finally {
+		delegationLookup.mockRestore()
+	}
 	const current = await getPopupVisualisationState()
 	if (current.simulationState.kind !== 'simulated' || current.recordedVisualisationLookups === undefined) throw new Error('Expected a recorded simulation')
+	assert.deepEqual(current.recordedVisualisationLookups.senderDelegations, [{ sender: activeAddress, delegationAddress: recipientAddress }])
 	// Make the previous result old enough that only the busy semaphore can suppress a throttled refresh.
 	const stored = { ...current, recordedVisualisationLookups: current.recordedVisualisationLookups, simulationState: { kind: 'simulated' as const, value: { ...current.simulationState.value, simulationConductedTimestamp: new Date(0) } } }
 	await setPopupVisualisationState(stored)
 	await modules.updateUserAddressBookEntries((entries) => [...entries.filter((entry) => entry.address !== recipientAddress), { type: 'contact', name: 'Edited replay recipient', address: recipientAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId }])
 	fakeSafeContract.requestedRpcMethods.length = 0
-	const replayed = await visualizeStoredRunWithoutNode(stored.simulationState.value, stored, stored.recordedVisualisationLookups, fakeRpcNetwork)
+	const storedMetadata = { tokenPriceEstimates: stored.tokenPriceEstimates }
+	const { senderDelegations: _senderDelegations, ...legacyLookups } = stored.recordedVisualisationLookups
+	assert.equal(await visualizeStoredRunWithoutNode(stored.simulationState.value, storedMetadata, legacyLookups, fakeRpcNetwork), undefined)
+	const replayed = await visualizeStoredRunWithoutNode(stored.simulationState.value, storedMetadata, stored.recordedVisualisationLookups, fakeRpcNetwork)
+	assert.ok(replayed)
+	assert.equal(replayed.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.delegationAddress?.name, 'Edited replay recipient')
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 	assert.equal(replayed.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.name, 'Edited replay recipient')
 	assert.deepEqual(replayed.recordedVisualisationLookups, stored.recordedVisualisationLookups)

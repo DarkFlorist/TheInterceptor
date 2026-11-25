@@ -53,7 +53,7 @@ function buildDefinedEmptyVisualizedState(
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
 		namedTokenIds: [],
-		recordedVisualisationLookups: { protectorChainReads: [], identifiedAddressBookEntries: [] },
+		recordedVisualisationLookups: { protectorChainReads: [], identifiedAddressBookEntries: [], senderDelegations: [] },
 		visualizedSimulationState: {
 			success: true,
 			visualizedBlocks: simulationState.simulationStateInput.map((block) => ({
