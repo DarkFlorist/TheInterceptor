@@ -9,7 +9,7 @@ type RetainedVisualisationChange = {
 }
 
 // The state published while a refresh runs, while it cannot reach the node, or after it fails: the previous visualisation under a new simulation id, so its address book entries may predate the current stack. It is never 'done', which hasCurrentAddressBookEntries relies on.
-export function retainPreviousVisualisation(previous: CompleteVisualizedSimulation, { simulationId, simulationUpdatingState, simulationResultState }: RetainedVisualisationChange): CompleteVisualizedSimulation {
+export function retainPreviousVisualisation<Previous extends CompleteVisualizedSimulation>(previous: Previous, { simulationId, simulationUpdatingState, simulationResultState }: RetainedVisualisationChange) {
 	return { ...previous, simulationId, simulationUpdatingState, simulationResultState: simulationResultState ?? previous.simulationResultState }
 }
 

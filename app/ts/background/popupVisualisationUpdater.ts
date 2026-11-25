@@ -4,17 +4,16 @@ import type { ActiveStackContext } from '../utils/activeStackContext.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { CompleteVisualizedSimulation, SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import type { CompleteVisualizedSimulation, PassthroughState, RecordedVisualisationLookups, SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState, visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
-import { visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
 import { relabelStoredSimulation, type StackRunToRelabel } from './simulationRelabel.js'
 import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
@@ -27,11 +26,16 @@ function invalidatePopupVisualisation() {
 	return ++publicationGeneration
 }
 
+// Fresh simulated results must carry lookup records. Retained states may come from older storage.
+type RecordedPopupVisualisation = CompleteVisualizedSimulation & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }
+type PassthroughPopupVisualisation = CompleteVisualizedSimulation & { readonly simulationState: PassthroughState }
+type PopupVisualisationWrite = RecordedPopupVisualisation | PassthroughPopupVisualisation | (StoredCompleteVisualizedSimulation & { readonly simulationUpdatingState: 'updating' | 'failed' })
+
 function buildPassthroughVisualizedState(
 	simulationId: number,
 	numberOfAddressesMadeRich: number,
 	simulationResultState: 'done' | 'corrupted' = 'done',
-): CompleteVisualizedSimulation {
+): PassthroughPopupVisualisation {
 	return createPassthroughCompleteVisualizedSimulation(simulationId, simulationResultState, numberOfAddressesMadeRich)
 }
 
@@ -39,7 +43,7 @@ function buildDefinedEmptyVisualizedState(
 	simulationState: Extract<SimulationState, { success: true }>,
 	simulationId: number,
 	numberOfAddressesMadeRich: number,
-): CompleteVisualizedSimulation {
+): RecordedPopupVisualisation {
 	return {
 		simulationUpdatingState: 'done',
 		simulationResultState: 'done',
@@ -49,6 +53,7 @@ function buildDefinedEmptyVisualizedState(
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
 		namedTokenIds: [],
+		recordedVisualisationLookups: { protectorChainReads: [], identifiedAddressBookEntries: [] },
 		visualizedSimulationState: {
 			success: true,
 			visualizedBlocks: simulationState.simulationStateInput.map((block) => ({
@@ -81,7 +86,7 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 	const isCurrent = () => generation === publicationGeneration
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
-		if (onlyIfNotAlreadyUpdating && runningSimulations > 0) return popupVisualisation
+		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
 		if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState.kind === 'simulated') {
 			const ageSeconds = (Date.now()- popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
@@ -103,6 +108,7 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
 		if (!isCurrent()) return await getPopupVisualisationState()
+		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return await getPopupVisualisationState()
 		if (invalidateOldState) {
 			generation = invalidatePopupVisualisation()
 			await publishUpdatingPopupVisualisation(true, generation)
@@ -120,17 +126,6 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
-
-// Counts only real simulations running under the semaphore. Metadata re-labels and the failure write in publishFailedPopupVisualisation hold the semaphore too but are not counted, so onlyIfNotAlreadyUpdating callers still refresh while only those run, queueing behind them; a queued refresh leaves a re-label running, as re-labels are not cancellable.
-let runningSimulations = 0
-async function countAsRunningSimulation(simulate: () => Promise<void>) {
-	runningSimulations += 1
-	try {
-		await simulate()
-	} finally {
-		runningSimulations -= 1
-	}
-}
 
 // Publish progress using the storage lock, without waiting for an in-flight RPC simulation.
 export async function publishPendingPopupVisualisation(invalidateOldState: boolean) {
@@ -192,14 +187,6 @@ export async function preparePopupVisualisationRefresh(services: SimulationServi
 	}
 }
 
-// Serializes visualisation work with every other refresh. Work whose captured abort controller was aborted while it waited is skipped, because the refresh that aborted it stores its own result.
-async function executeVisualisationUpdate(capturedAbortController: AbortController | undefined, update: () => Promise<void>) {
-	await updateSimulationVisualisationSemaphore.execute(async () => {
-		if (capturedAbortController?.signal.aborted) return
-		await update()
-	})
-}
-
 // A stored simulation result that is still valid, with operations on the services' chain, can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and an invalidated result is about to be replaced by a simulation that resolves the current metadata itself. That includes a previous result a refresh kept ('updating' while the node cannot be reached, or 'failed'): it stays shown until a refresh succeeds, so it must show the current names too. Re-labels run under the simulation semaphore, so no refresh is in progress when one reads the stored state.
 function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation, chainId: bigint): StackRunToRelabel | undefined {
 	if (visualisation.simulationResultState !== 'done') return undefined
@@ -213,7 +200,7 @@ function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation,
 // Re-labels the stored stack simulation without simulating, and publishes the re-labelled state; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 	// Not cancellable: a newer refresh may store no fresh names (it keeps the previous result while the node cannot be reached), so the re-label runs in semaphore order instead. Running before a refresh, its names are what the refresh keeps or replaces; running after one, it re-labels the stored result, which costs no RPC request.
-	await executeVisualisationUpdate(undefined, async () => {
+	await updateSimulationVisualisationSemaphore.execute(async () => {
 		let relabelledState: StoredCompleteVisualizedSimulation | undefined
 		await relabelStoredSimulation(rpcNetwork, {
 			stored: await getPopupVisualisationState(),
@@ -254,7 +241,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 async function executePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError: boolean, snapshot: SimulationSnapshot | undefined, generation: number, dependencies: PopupVisualisationExecutionDependencies = {}) {
 	const isCurrent = () => generation === publicationGeneration && !abortController?.signal.aborted
 	// Check inside the storage lock as well as after remote work: invalidation can arrive while a write waits.
-	const storeCurrentState = async (state: StoredCompleteVisualizedSimulation) => {
+	const storeCurrentState = async (state: PopupVisualisationWrite) => {
 		await updatePopupVisualisationWithCallBack(async () => isCurrent() ? state : undefined)
 		return isCurrent() ? state : undefined
 	}
@@ -262,7 +249,7 @@ async function executePopupVisualisationState(ethereum: EthereumClientService, t
 		if (state !== undefined && isCurrent()) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state } })
 	}
 	try {
-		return await updateSimulationVisualisationSemaphore.execute(async () => await countAsRunningSimulation(async () => {
+		return await updateSimulationVisualisationSemaphore.execute(async () => {
 			if (!isCurrent()) return
 			const popupVisualisation = await getPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
@@ -312,7 +299,7 @@ async function executePopupVisualisationState(ethereum: EthereumClientService, t
 				await publishCurrentState(state)
 				await reportUnexpectedError(error)
 			}
-		}))
+		})
 	} catch (error) {
 		if (throwOnUnexpectedError) throw error
 		if (isExpectedInfrastructureError(error)) return

@@ -55,7 +55,7 @@ function getStoredDelegationAddressBySender(visualizedSimulationState: Visualize
 }
 
 // Answers every lookup of a visualisation without the node: addresses are named from the address book, bundled metadata and the entries the run identified (lookUpMetadataForRelabel), and the delegations, token prices and protector chain reads are those stored with the run.
-function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, rpcNetwork: RpcNetwork): VisualisationLookups {
+function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, rpcNetwork: RpcNetwork): VisualisationLookups<undefined> {
 	const metadataLookups = lookUpMetadataForRelabel(recorded.identifiedAddressBookEntries, rpcNetwork)
 	return {
 		...metadataLookups,
@@ -68,14 +68,13 @@ function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetada
 		getProtectorChainReads: (_slicedSimulationState, blockIndex, transactionIndex) => {
 			const record = recorded.protectorChainReads[blockIndex]?.[transactionIndex]
 			if (record === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded protector chain reads for this transaction')
-			return replayRecordedProtectorChainReads(record)
+			return { chainReads: replayRecordedProtectorChainReads(record), getRecord: () => undefined }
 		},
-		// The re-label keeps the run's record, as it identifies nothing new on chain.
-		getIdentifiedAddressBookEntries: () => recorded.identifiedAddressBookEntries,
 	}
 }
 
 // An address-book re-label visualises a stored run again without any RPC request, so it can neither simulate nor fail with the node; it gets the services' network as plain data, not a client.
 export async function visualizeStoredRunWithoutNode(simulationState: SimulationState, storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, rpcNetwork: RpcNetwork) {
-	return await visualizeSimulatorStateWithLookups(simulationState, rpcNetwork, lookUpVisualisationFromStoredRun(storedMetadata, recorded, rpcNetwork))
+	const { visualisation } = await visualizeSimulatorStateWithLookups(simulationState, rpcNetwork, lookUpVisualisationFromStoredRun(storedMetadata, recorded, rpcNetwork))
+	return { ...visualisation, recordedVisualisationLookups: recorded }
 }

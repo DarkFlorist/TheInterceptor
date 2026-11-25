@@ -539,7 +539,7 @@ export const createPassthroughCompleteVisualizedSimulation = (
 	simulationId = 0,
 	simulationResultState: SimulationResultState = 'corrupted',
 	numberOfAddressesMadeRich = 0,
-): CompleteVisualizedSimulation => ({
+): CompleteVisualizedSimulation & { readonly simulationState: PassthroughState } => ({
 	simulationUpdatingState: 'done',
 	simulationResultState,
 	simulationId,

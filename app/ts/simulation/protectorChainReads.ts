@@ -41,21 +41,18 @@ export const createMissingRecordedProtectorReadError = (message: string) => crea
 export const isMissingRecordedProtectorReadError = (error: unknown) => getInterceptorInternalErrorCode(error) === 'missing_recorded_protector_read'
 
 // An address-book re-label answers from the reads recorded with the stored run, so it never simulates again. A missing read means the run cannot be re-labelled without fresh chain data, for example after an extension update.
-export function replayRecordedProtectorChainReads(record: RecordedProtectorChainReads): ProtectorChainReadsWithRecord {
+export function replayRecordedProtectorChainReads(record: RecordedProtectorChainReads): ProtectorChainReads {
 	return {
-		chainReads: {
-			readCode: async (address) => {
-				// Protectors reading the same address within a run send identical requests, which the RPC request cache answers once, so the first recorded read stands for every read of that address.
-				const recordedRead = record.addressCode.find((read) => read.address === address)
-				if (recordedRead === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded code read for this address')
-				return recordedRead.code
-			},
-			readGasPrice: async () => {
-				if (record.gasPrice === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded gas price')
-				return record.gasPrice
-			},
+		readCode: async (address) => {
+			// Protectors reading the same address within a run send identical requests, which the RPC request cache answers once, so the first recorded read stands for every read of that address.
+			const recordedRead = record.addressCode.find((read) => read.address === address)
+			if (recordedRead === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded code read for this address')
+			return recordedRead.code
 		},
-		getRecord: () => record,
+		readGasPrice: async () => {
+			if (record.gasPrice === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded gas price')
+			return record.gasPrice
+		},
 	}
 }
 

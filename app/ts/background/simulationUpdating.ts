@@ -1,3 +1,4 @@
+import type { ProtectorChainReads } from '../simulation/protectorTypes.js'
 import { buildSimulationStateInput } from './simulationInputBuilding.js'
 import type { IdentifyAddress, MetadataLookups } from '../types/metadataLookups.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -14,12 +15,12 @@ import { mockSignTransaction } from '../simulation/services/simulationTransactio
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
-import { readAndRecordProtectorChainReads } from '../simulation/protectorChainReads.js'
+import { createLiveProtectorChainReads, readAndRecordProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type RecordedVisualisationLookups, type TokenPriceEstimate, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type RecordedProtectorChainReads, type RecordedVisualisationLookups, type TokenPriceEstimate, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
@@ -487,44 +488,45 @@ export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationI
 	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 
-type GetProtectorChainReads = (slicedSimulationState: SimulationState, blockIndex: number, transactionIndex: number) => ReturnType<typeof readAndRecordProtectorChainReads>
-
-// The lookups a visualisation makes besides the simulation result. A simulation run builds them on the node (lookUpVisualisationOnNode) and an address-book re-label from stored data (storedRunVisualisation.ts); both builders return this type and every member is required, so a member added here fails typecheck until both supply it.
-export type VisualisationLookups = MetadataLookups & {
-	readonly getDelegationAddressBySender: (simulationStateInput: SimulationStateInput) => Promise<ReadonlyMap<string, AddressBookEntry>>
-	readonly estimateTokenPrices: (quoteToken: Erc20TokenEntry, tokens: { address: bigint, decimals: bigint }[]) => Promise<readonly TokenPriceEstimate[]>
-	readonly getProtectorChainReads: GetProtectorChainReads
-	// The entries to store with the run in its recordedVisualisationLookups.
-	readonly getIdentifiedAddressBookEntries: () => readonly AddressBookEntry[]
+type GetProtectorChainReads<Record> = (slicedSimulationState: SimulationState, blockIndex: number, transactionIndex: number) => {
+	readonly chainReads: ProtectorChainReads
+	readonly getRecord: () => Record
 }
 
-// A simulation run makes the lookups on the node, and records the protectors' chain reads and the entries its address lookups resolve with the run.
-function lookUpVisualisationOnNode(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): VisualisationLookups {
-	const onChainLookups = lookUpMetadataOnChain(ethereum, requestAbortController)
-	const identification = recordIdentifiedAddresses(onChainLookups.identifyAddress)
+export type VisualisationLookups<Record> = MetadataLookups & {
+	readonly getDelegationAddressBySender: (simulationStateInput: SimulationStateInput) => Promise<ReadonlyMap<string, AddressBookEntry>>
+	readonly estimateTokenPrices: (quoteToken: Erc20TokenEntry, tokens: { address: bigint, decimals: bigint }[]) => Promise<readonly TokenPriceEstimate[]>
+	readonly getProtectorChainReads: GetProtectorChainReads<Record>
+}
+
+function lookUpVisualisationOnNode<Record>(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, metadata: MetadataLookups, getProtectorChainReads: GetProtectorChainReads<Record>): VisualisationLookups<Record> {
 	return {
-		...onChainLookups,
-		identifyAddress: identification.identifyAddress,
-		getDelegationAddressBySender: async (simulationStateInput) => await getDelegationAddressesForSimulation(simulationStateInput, ethereum, requestAbortController, identification.identifyAddress),
+		...metadata,
+		getDelegationAddressBySender: async (simulationStateInput) => await getDelegationAddressesForSimulation(simulationStateInput, ethereum, requestAbortController, metadata.identifyAddress),
 		estimateTokenPrices: async (quoteToken, tokens) => await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, quoteToken, tokens),
-		getProtectorChainReads: (slicedSimulationState) => readAndRecordProtectorChainReads(ethereum, requestAbortController, slicedSimulationState),
-		getIdentifiedAddressBookEntries: identification.getIdentifiedEntries,
+		getProtectorChainReads,
 	}
 }
 
-// For the callers that store the run, the stack and the confirmation runs: the visualisation and, beside it, the run's record of its lookups, which only background storage keeps.
-export async function visualizeSimulatorStateAndRecordLookups(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
-	return await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookUpVisualisationOnNode(ethereum, tokenPriceService, requestAbortController))
+export async function visualizeSimulatorStateAndRecordLookups(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }> {
+	const onChainLookups = lookUpMetadataOnChain(ethereum, requestAbortController)
+	const identification = recordIdentifiedAddresses(onChainLookups.identifyAddress)
+	const lookups = lookUpVisualisationOnNode<RecordedProtectorChainReads>(ethereum, tokenPriceService, requestAbortController, { ...onChainLookups, identifyAddress: identification.identifyAddress }, (state) => readAndRecordProtectorChainReads(ethereum, requestAbortController, state))
+	const { visualisation, protectorChainReads } = await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookups)
+	return { ...visualisation, recordedVisualisationLookups: { protectorChainReads, identifiedAddressBookEntries: identification.getIdentifiedEntries() } }
 }
 
-// For the callers that only reply with the visualisation and store no run, so the result carries no record of the run's lookups.
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
-	const { recordedVisualisationLookups: _recordedVisualisationLookups, ...visualisation } = await visualizeSimulatorStateAndRecordLookups(simulationState, ethereum, tokenPriceService, requestAbortController)
+	const lookups = lookUpVisualisationOnNode(ethereum, tokenPriceService, requestAbortController, lookUpMetadataOnChain(ethereum, requestAbortController), (state) => ({
+		chainReads: createLiveProtectorChainReads(ethereum, requestAbortController, state),
+		getRecord: () => undefined,
+	}))
+	const { visualisation } = await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookups)
 	return visualisation
 }
 
-// Every lookup goes through lookups, so the visualisation itself reads nothing from the node; rpcNetwork is the services' network. The run's record of its lookups is returned beside the visualisation, for background storage only.
-export async function visualizeSimulatorStateWithLookups(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups): Promise<VisualizedSimulatorState & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }> {
+// All chain-dependent lookups come from the caller, so the same visualization can replay a stored run.
+export async function visualizeSimulatorStateWithLookups<Record>(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups<Record>): Promise<{ readonly visualisation: VisualizedSimulatorState, readonly protectorChainReads: readonly (readonly Record[])[] }> {
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(rpcNetwork.chainId)
 		if (wethAddr === undefined) return undefined
@@ -581,13 +583,15 @@ export async function visualizeSimulatorStateWithLookups(simulationState: Simula
 		})
 
 		return {
-			addressBookEntries: updatedMetadata.addressBookEntries,
-			tokenPriceEstimates: [],
-			tokenPriceQuoteToken: weth,
-			namedTokenIds: updatedMetadata.namedTokenIds,
-			simulationState: refreshedSimulationState,
-			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks },
-			recordedVisualisationLookups: { protectorChainReads: [], identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries() },
+			visualisation: {
+				addressBookEntries: updatedMetadata.addressBookEntries,
+				tokenPriceEstimates: [],
+				tokenPriceQuoteToken: weth,
+				namedTokenIds: updatedMetadata.namedTokenIds,
+				simulationState: refreshedSimulationState,
+				visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks },
+			},
+			protectorChainReads: [],
 		}
 	}
 
@@ -643,15 +647,14 @@ export async function visualizeSimulatorStateWithLookups(simulationState: Simula
 	})
 
 	return {
-		namedTokenIds: updatedMetadata.namedTokenIds,
-		addressBookEntries: updatedMetadata.addressBookEntries,
-		tokenPriceEstimates,
-		tokenPriceQuoteToken: weth,
-		simulationState: refreshedSimulationState,
-		visualizedSimulationState: { success: true, visualizedBlocks },
-		recordedVisualisationLookups: {
-			protectorChainReads: protectorsForEachBlockAndTransaction.map((protectorsForBlock) => protectorsForBlock.map(({ protectorChainReads }) => protectorChainReads)),
-			identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries(),
+		visualisation: {
+			namedTokenIds: updatedMetadata.namedTokenIds,
+			addressBookEntries: updatedMetadata.addressBookEntries,
+			tokenPriceEstimates,
+			tokenPriceQuoteToken: weth,
+			simulationState: refreshedSimulationState,
+			visualizedSimulationState: { success: true, visualizedBlocks },
 		},
+		protectorChainReads: protectorsForEachBlockAndTransaction.map((protectorsForBlock) => protectorsForBlock.map(({ protectorChainReads }) => protectorChainReads)),
 	}
 }
