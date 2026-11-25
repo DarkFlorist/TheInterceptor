@@ -36,6 +36,7 @@ export const popupMessageProtocol = {
 	popup_requestSettingsChangeStatus: { domain: 'home' },
 	popup_refreshHomeData: { domain: 'home' },
 	popup_requestSettings: { domain: 'settings' },
+	popup_requestRpcList: { domain: 'settings' },
 	popup_refreshInterceptorAccessMetadata: { domain: 'website-access' },
 	popup_interceptorAccessChangeAddress: { domain: 'website-access' },
 	popup_interceptorAccessRefresh: { domain: 'website-access' },

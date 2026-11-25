@@ -13,6 +13,12 @@ export type StoredValueRepository<T> = {
 	update: (updateValue: (previous: T) => T | Promise<T>) => Promise<{ previous: T, current: T }>
 }
 
+// The default recover option: a corrupt stored value is replaced by its default, so it is only worth a warning.
+export const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
+	console.warn(`${ label } was corrupt:`)
+	console.warn(error)
+}
+
 /** Owns the defaulting, corrupt-value recovery, and atomic update policy for one stored value. */
 export function createStoredValueRepository<T>(options: StoredValueRepositoryOptions<T>): StoredValueRepository<T> {
 	const updateSemaphore = new Semaphore(1)

@@ -44,6 +44,7 @@ function createBrowserMock() {
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
+				if (isRecord(message) && message.method === 'popup_requestRpcList') return { method: 'popup_requestRpcList', rpcEntries: [] }
 				if (message?.method === 'popup_readyAndListening') return readyAndListeningReply()
 				if (message?.method === 'popup_confirmDialog') await confirmDialogHandler?.(message)
 				return undefined
@@ -527,7 +528,7 @@ async function tickSendAnyway(dom: RenderedDom) {
 
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
-const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS, getConfirmTransactionBootstrapRetryDelay } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 // The background sends the popup its copies of stored requests, stamped with their reviewed-result ids.
 const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) {
@@ -542,15 +543,13 @@ async function dispatchPendingTransactions(browser: ReturnType<typeof createBrow
 	})
 }
 
-// Runs every timer immediately while recording the requested delays, so retry backoff can be exercised without waiting for it.
+// Runs timers on the next turn so handshake retries do not have to wait through backoff.
 function runTimersImmediately() {
 	const originalSetTimeout = globalThis.setTimeout
-	const requestedDelays: number[] = []
-	Reflect.set(globalThis, 'setTimeout', (callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
-		requestedDelays.push(delay ?? 0)
+	Reflect.set(globalThis, 'setTimeout', (callback: (...args: unknown[]) => void, _delay?: number, ...args: unknown[]) => {
 		return originalSetTimeout(callback, 0, ...args)
 	})
-	return { requestedDelays, restore: () => { Reflect.set(globalThis, 'setTimeout', originalSetTimeout) } }
+	return { restore: () => { Reflect.set(globalThis, 'setTimeout', originalSetTimeout) } }
 }
 
 // Lets queued timers, messages and renders run until the condition holds or the turns run out.
@@ -943,9 +942,7 @@ describe('ConfirmTransaction', () => {
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -980,9 +977,7 @@ describe('ConfirmTransaction', () => {
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
@@ -1030,9 +1025,7 @@ describe('ConfirmTransaction', () => {
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		// Stored without transactionCreationFailureReason, so the popup derives it from the field the Safe layer wrote on the estimate error.
 		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
@@ -1142,9 +1135,7 @@ describe('ConfirmTransaction', () => {
 			popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, failedTransactionPreview } },
 		}
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
@@ -1229,7 +1220,18 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
-	test('keeps retrying the bootstrap handshake with capped backoff after the storage first paint until the background copy makes a signature request confirmable', async () => {
+	test('backs off confirmation bootstrap retries and keeps the remaining delays at the cap', () => {
+		const retryDelays = Array.from({ length: CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS }, (_, attempt) => getConfirmTransactionBootstrapRetryDelay(attempt))
+		assert.equal(retryDelays[0], CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+		const firstCappedRetry = retryDelays.indexOf(CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
+		assert.ok(firstCappedRetry > 1)
+		assert.ok(retryDelays.slice(0, firstCappedRetry).some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS))
+		const cappedDelays = retryDelays.slice(firstCappedRetry)
+		assert.ok(cappedDelays.length >= 3)
+		assert.ok(cappedDelays.every((delay) => delay === CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS))
+	})
+
+	test('retries after the storage first paint until the background copy makes a signature request confirmable', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
 		const timers = runTimersImmediately()
@@ -1250,12 +1252,6 @@ describe('ConfirmTransaction', () => {
 
 			assert.equal(readyHandshakes, emptyHandshakesBeforeReady + 1, 'the handshake is retried past the rapid attempts until the background copy arrives')
 			assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
-			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay !== CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS)
-			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), true, 'later retries back off')
-			const firstCappedRetry = retryDelays.indexOf(CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
-			assert.notEqual(firstCappedRetry, -1, 'the backoff reaches the cap')
-			assert.deepEqual(retryDelays.slice(firstCappedRetry), retryDelays.slice(firstCappedRetry).map(() => CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), 'the backoff stays at the cap')
-			assert.equal(retryDelays.length - firstCappedRetry >= 3, true, 'several retries run at the cap')
 		} finally {
 			try {
 				await unmountConfirmTransaction(dom)

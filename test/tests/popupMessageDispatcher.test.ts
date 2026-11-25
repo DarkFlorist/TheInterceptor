@@ -822,12 +822,13 @@ describe('settings import installs the imported network', () => {
 	})
 
 	for (const selection of ['custom', 'same endpoint', 'signer-only'] as const) test(`unrelated list edits preserve an imported ${ selection } selection and its installed services`, async () => {
-		const { getRpcList, setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		const { getRpcList } = await import('../../app/ts/background/rpcListStorage.js')
+		const { setRpcListAndNotifyPages } = await import('../../app/ts/background/rpcList.js')
 		const { getSettings } = await import('../../app/ts/background/settings.js')
 		const context = createDispatcherContextWithInstalledServices()
 		const configured = settings.activeRpcNetwork
 		if (configured.httpsRpc === undefined) throw new Error('Expected a configured RPC')
-		await setRpcList([configured])
+		await setRpcListAndNotifyPages([configured])
 		const importedNetwork = selection === 'signer-only'
 			? { name: 'Independent signer-only selection', chainId: '0x1', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 			: { ...importedSepoliaNetwork, name: 'Independent imported selection', chainId: '0x1', httpsRpc: selection === 'same endpoint' ? configured.httpsRpc : 'https://imported.example' }
