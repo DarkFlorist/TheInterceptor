@@ -13,12 +13,12 @@ import { resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.j
 import { runActiveSettingsTransition } from '../activeSettings.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
-export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
+export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
 	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
 	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()))
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettingsForConfigurationChange())
 
 	const configuration = await settingsPromise
 	await sendPopupMessageToOpenWindows({
@@ -28,7 +28,7 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
 			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
 			rpcEntries: await rpcEntriesPromise,
-			activeRpcNetwork: configuration.hasReadableActiveNetwork ? configuration.settings.activeRpcNetwork : undefined
+			activeRpcNetwork: configuration.activeRpcNetwork
 		}
 	})
 }
@@ -68,10 +68,12 @@ export async function exportSettings() {
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList) {
 	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
-		const [{ settings, hasReadableActiveNetwork }, previousEntries] = await Promise.all([getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()), getRpcList()])
+		const [settings, previousEntries] = await Promise.all([getSettingsForConfigurationChange(), getRpcList()])
 		await setRpcList(request.data)
 		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-		const network = hasReadableActiveNetwork ? resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, previousEntries, request.data) : request.data.find((entry) => entry.primary) ?? request.data[0]
+		const network = settings.activeRpcNetwork === undefined
+			? request.data.find((entry) => entry.primary) ?? request.data[0]
+			: resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, previousEntries, request.data)
 		if (network === undefined) return false
 		await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
 		return true

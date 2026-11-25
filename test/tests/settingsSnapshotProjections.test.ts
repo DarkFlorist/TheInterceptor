@@ -29,8 +29,9 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getSettingsForConfigurationChange, getSettingsSnapshot, getWebsiteApprovalsSnapshot } = await import('../../app/ts/background/settings.js')
-const { approvalsOrNoneIfUnreadable, requireReadableApprovals, settingsIfRpcConfigurationReady } = await import('../../app/ts/background/websiteAccessPolicy.js')
+const { getSettingsForConfigurationChange, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireSettingsWithReadableNetwork } = await import('../../app/ts/background/settings.js')
+const { approvalsOrNoneIfUnreadable, requireReadableApprovals } = await import('../../app/ts/background/websiteAccessPolicy.js')
+const { requireRpcReadySettings, settingsIfRpcConfigurationReady } = await import('../../app/ts/background/rpcReadySettings.js')
 
 const approvals: WebsiteAccessArray = [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }]
 const settings: Settings = {
@@ -100,17 +101,26 @@ describe('website approvals snapshot', () => {
 	})
 })
 
+test('network admission rejects an empty RPC list despite a readable active network', async () => {
+	Object.assign(storageState, { activeRpcNetwork: { ...settings.activeRpcNetwork, chainId: '0x1' }, rpcEntries: [] })
+	try {
+		assert.deepEqual((await requireSettingsWithReadableNetwork()).activeRpcNetwork, settings.activeRpcNetwork)
+		await assert.rejects(requireRpcReadySettings(), isRpcConfigurationUnavailableError)
+	} finally {
+		delete storageState.activeRpcNetwork
+		delete storageState.rpcEntries
+	}
+})
+
 describe('RPC configuration comparison', () => {
-	test('uses the installed network for comparison when the stored selection is unavailable', async () => {
+	test('leaves the comparison network absent when the stored selection is unavailable', async () => {
 		const persistedRpcNetwork = { ...settings.activeRpcNetwork, chainId: '0x1' }
 		Object.assign(storageState, { activeRpcNetwork: 'corrupt', rpcEntries: [persistedRpcNetwork], simulationMode: false, websiteAccess: approvals })
-		const installedNetwork = { ...settings.activeRpcNetwork, name: 'Installed network', chainId: 10n }
 		try {
-			const comparison = await withSilencedWarnings(async () => await getSettingsForConfigurationChange(installedNetwork))
-			assert.equal(comparison.hasReadableActiveNetwork, false)
-			assert.equal(comparison.settings.activeRpcNetwork.chainId, 10n)
-			assert.equal(comparison.settings.simulationMode, false)
-			assert.equal('websiteAccess' in comparison.settings, false)
+			const comparison = await withSilencedWarnings(async () => await getSettingsForConfigurationChange())
+			assert.equal(comparison.activeRpcNetwork, undefined)
+			assert.equal(comparison.simulationMode, false)
+			assert.equal('websiteAccess' in comparison, false)
 			assert.equal((await withSilencedWarnings(getSettingsSnapshot)).status, 'active-network-unreadable')
 		} finally {
 			for (const key of ['activeRpcNetwork', 'rpcEntries', 'simulationMode', 'websiteAccess']) delete storageState[key]
@@ -120,7 +130,7 @@ describe('RPC configuration comparison', () => {
 	test('propagates the storage failure rather than comparing against fallback settings', async () => {
 		storageReadError = storageError
 		try {
-			await assert.rejects(getSettingsForConfigurationChange(settings.activeRpcNetwork), (error: unknown) => error === storageError)
+			await assert.rejects(getSettingsForConfigurationChange(), (error: unknown) => error === storageError)
 		} finally {
 			storageReadError = undefined
 		}

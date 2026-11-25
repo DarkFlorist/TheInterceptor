@@ -438,9 +438,9 @@ describe('popup settings changes', () => {
 		await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }] }))
 		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
 		await assert.rejects(modules.requireSettingsWithReadableNetwork(), /RPC configuration is unavailable/u)
-		const projection = await getSettingsForConfigurationChange(services.ethereum.getRpcEntry())
-		assert.equal(projection.hasReadableActiveNetwork, false)
-		assert.equal(Object.hasOwn(projection.settings, 'websiteAccess'), false)
+		const projection = await getSettingsForConfigurationChange()
+		assert.equal(projection.activeRpcNetwork, undefined)
+		assert.equal(Object.hasOwn(projection, 'websiteAccess'), false)
 		const reply = await popupMessageHandler(new Map(), services.simulationServicesOwner, PopupMessage.serialize(recovery === 'RPC selection'
 			? { method: 'popup_changeActiveRpc', data: { ...initial.activeRpcNetwork, chainId: 2n } }
 			: { method: 'popup_import_settings', data: { fileContents: JSON.stringify(ExportedSettings.serialize(backup)) } }), async () => undefined)

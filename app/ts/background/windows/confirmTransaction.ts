@@ -1,4 +1,4 @@
-import { settingsIfRpcConfigurationReady } from '../websiteAccessPolicy.js'
+import { settingsIfRpcConfigurationReady } from '../rpcReadySettings.js'
 import { getUnsimulatedGasLimitEdit, isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
@@ -31,7 +31,7 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettingsSnapshot, getStoredSimulationMode, requireSettingsWithReadableNetwork } from '../settings.js'
+import { getSettingsSnapshot, getStoredSimulationMode } from '../settings.js'
 import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -554,7 +554,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 			await updatePendingTransactionOrMessageInstance(pendingTransactionOrMessage, async (transaction) => modifyObject(transaction, { approvalStatus }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 		}
-		if ((await requireSettingsWithReadableNetwork()).simulationMode || !simulationModeGuard.allowsSignerForward()) {
+		if (await getStoredSimulationMode() || !simulationModeGuard.allowsSignerForward()) {
 			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
 			return false
 		}

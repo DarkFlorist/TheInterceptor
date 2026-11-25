@@ -3,7 +3,7 @@ import { ERROR_ACTIVE_RPC_ENDPOINT_CHANGED, ERROR_ACTIVE_RPC_NETWORK_CHANGED } f
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot } from './settings.js'
-import { type ReadyRpcSettings, settingsIfRpcConfigurationReady } from './websiteAccessPolicy.js'
+import { type ReadyRpcSettings, settingsIfRpcConfigurationReady } from './rpcReadySettings.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 
 // A result that is not a promise: a grant that returns one would continue after an await, when the live settings may no longer hold.

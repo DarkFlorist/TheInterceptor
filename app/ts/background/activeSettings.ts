@@ -82,11 +82,13 @@ export async function runActiveSettingsTransition(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			const { settings: previousSettings, hasReadableActiveNetwork } = await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+			const previousSettings = await getSettingsForConfigurationChange()
+			const previousNetwork = previousSettings.activeRpcNetwork
+			const previousStackContext = previousNetwork === undefined ? undefined : getActiveStackContext({ ...previousSettings, activeRpcNetwork: previousNetwork })
 			if (!await commit()) return
 
 			const updatedSettings = await requireSettingsWithReadableNetwork()
-			const rpcChainChanged = !hasReadableActiveNetwork || getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork).chainChanged
+			const rpcChainChanged = previousNetwork === undefined || getRpcNetworkChange(previousNetwork, updatedSettings.activeRpcNetwork).chainChanged
 			let networkOutcome: SimulationNetworkReconciliation = 'unchanged'
 			try {
 				try {
@@ -115,7 +117,7 @@ export async function runActiveSettingsTransition(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || previousStackContext === undefined || !activeStackContextsEqual(previousStackContext, getActiveStackContext(updatedSettings)))) {
 				await startPopupSimulationRefreshInBackground(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await requireSettingsWithReadableNetwork())

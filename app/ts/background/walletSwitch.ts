@@ -1,3 +1,4 @@
+import { requireRpcReadySettings } from './rpcReadySettings.js'
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { requireSettingsWithReadableNetwork, getSettingsForConfigurationChange } from './settings.js'
@@ -93,14 +94,13 @@ export type RpcSwitchRequest =
 
 // One command owns routing, Safe network restrictions, local promotion and correlated wallet dispatch.
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
-	const { settings, hasReadableActiveNetwork } = request.source === 'popup'
-		? await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
-		: { settings: await requireSettingsWithReadableNetwork(), hasReadableActiveNetwork: true }
+	const settings = request.source === 'popup' ? await getSettingsForConfigurationChange() : await requireRpcReadySettings()
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
-	// Restoring an unreadable selection is local configuration repair, not a wallet switch from the dormant comparison network.
-	const route = hasReadableActiveNetwork ? getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode) : 'local'
-	if (route !== 'wallet') {
-		if (route === 'local' || !hasReadableActiveNetwork) {
+	const { activeRpcNetwork } = settings
+	// Restoring an unreadable selection is a local edit; there is no existing network to switch away from.
+	const route = activeRpcNetwork === undefined ? 'local' : getRpcChangeRoute(activeRpcNetwork, rpcNetwork, simulationMode)
+	if (route !== 'wallet' || activeRpcNetwork === undefined) {
+		if (route === 'local') {
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
 		}
 		await promoteRpcAsPrimary(rpcNetwork)
@@ -108,7 +108,7 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 	}
 	if (request.signerTabId === undefined) return { error: signerUnavailableError }
 	// A selected Safe pins the active chain for both popup and dapp requests. Reject before the wallet can diverge.
-	if (await getConfiguredSigningSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
+	if (await getConfiguredSigningSafe({ ...settings, activeRpcNetwork }, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
 		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } }
 	}
 	return await requestSignerChainChange(websiteTabConnections, rpcNetwork, request.signerTabId, timeoutMs)

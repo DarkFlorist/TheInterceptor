@@ -358,15 +358,14 @@ export async function requireSettingsWithReadableNetwork(): Promise<Settings> {
 	return requireReadableSettings(await getSettingsSnapshot())
 }
 
-// Comparison fields have no websiteAccess member: absence of authority is represented in the type, never as a fictitious revocation of every approval.
-export type ConfigurationComparisonSettings = Omit<Settings, 'websiteAccess'>
-const configurationComparisonSettings = ({ websiteAccess: _websiteAccess, ...fields }: Settings): ConfigurationComparisonSettings => fields
+// Configuration editing can recover a missing selection without inheriting the dormant client's network or website approvals.
+export type ConfigurationComparisonSettings = Omit<Settings, 'websiteAccess' | 'activeRpcNetwork'> & {
+	readonly activeRpcNetwork: RpcNetwork | undefined
+}
 
-// Configuration editors may compare an unavailable selection with the installed dormant client. This never establishes an active selection or grants provider authority.
-export async function getSettingsForConfigurationChange(installedNetwork: RpcNetwork): Promise<{ readonly settings: ConfigurationComparisonSettings, readonly hasReadableActiveNetwork: boolean }> {
+export async function getSettingsForConfigurationChange(): Promise<ConfigurationComparisonSettings> {
 	const { storedItems, rpcConfiguration, storageReadError } = await readSettingsStorage()
 	if (storageReadError !== undefined) throw storageReadError.error
-	const activeNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
-	const settings = await getSettingsFromStorageItems(storedItems, activeNetwork ?? installedNetwork)
-	return { settings: configurationComparisonSettings(settings), hasReadableActiveNetwork: activeNetwork !== undefined }
+	const { websiteAccess: _websiteAccess, ...fields } = await getSettingsFieldsFromStorageItems(storedItems)
+	return { ...fields, activeRpcNetwork: 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined }
 }

@@ -1,3 +1,4 @@
+import { requireRpcReadySettings, type ReadyRpcSettings } from './rpcReadySettings.js'
 import { buildSimulationStateInput } from './simulationInputBuilding.js'
 import type { IdentifyAddress, MetadataLookups } from '../types/metadataLookups.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -24,7 +25,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressWith, lookUpMetadataOnChain, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, requireSettingsWithReadableNetwork, getWethForChainId } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -47,9 +48,9 @@ const getAddressesbeingMadeRich = async (settings: Settings) => {
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
+export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: ReadyRpcSettings): Promise<SimulationStateInput> => {
 	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? requireSettingsWithReadableNetwork(),
+		settingsSnapshot ?? requireRpcReadySettings(),
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
@@ -66,7 +67,7 @@ export type SimulationSnapshot = {
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
-	const settings = await requireSettingsWithReadableNetwork()
+	const settings = await requireRpcReadySettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,

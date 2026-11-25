@@ -11,7 +11,8 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getSafeAppsCompatibilityMode, getSettingsSnapshot } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { hasAccess, hasAddressAccess, settingsIfRpcConfigurationReady } from './websiteAccessPolicy.js'
+import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
+import { settingsIfRpcConfigurationReady } from './rpcReadySettings.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
 

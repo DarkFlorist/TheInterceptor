@@ -164,7 +164,7 @@ test('the simulation layer imports neither the Gnosis Safe layer, which imports 
 test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
 	assert.match(activeSettingsSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
 	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(activeSettingsSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
+	assert.match(activeSettingsSource, /!activeStackContextsEqual\(previousStackContext, getActiveStackContext\(updatedSettings\)\)/u)
 	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
 	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
 	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
