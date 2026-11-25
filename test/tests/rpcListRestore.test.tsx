@@ -25,7 +25,11 @@ test('RPC restore shows a rejected admission reply and keeps the retry action av
 	const listeners = new Set<Parameters<typeof browser.runtime.onMessage.addListener>[0]>()
 	browser.runtime.onMessage.addListener = (listener) => { listeners.add(listener) }
 	browser.runtime.onMessage.removeListener = (listener) => { listeners.delete(listener) }
-	browser.runtime.sendMessage = async () => { requests++; return { type: 'PopupSettingsChangeReply', ok: false, message: busy } }
+	browser.runtime.sendMessage = async (message) => {
+		requests += 1
+		if (message.method === 'popup_requestRpcList') return undefined
+		return { type: 'PopupSettingsChangeReply', ok: false, message: busy }
+	}
 	const { RpcListings } = await import('../../app/ts/components/pages/SettingsView.js')
 	const dom = installDomMock()
 	const createElement = dom.document.createElement.bind(dom.document)

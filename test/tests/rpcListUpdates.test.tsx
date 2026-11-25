@@ -46,30 +46,20 @@ function getMessageMethod(message: unknown) {
 	return message.method
 }
 
-function getRequestId(message: unknown) {
-	if (typeof message !== 'object' || message === null || !('data' in message)) return undefined
-	const { data } = message
-	if (typeof data !== 'object' || data === null || !('requestId' in data) || typeof data.requestId !== 'string') return undefined
-	return data.requestId
-}
-
-// The background answers popup_requestRpcList by broadcasting popup_requestRpcListReply; the mock answers synchronously, so a page that requested before subscribing would miss the answer.
 function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequestAnswer }: {
 	replyToMessage?: (message: unknown) => unknown
 	rpcListRequestAnswer: RpcEntries | undefined
 }) {
 	const listeners: RuntimeMessageListener[] = []
 	const previousBrowser = globalThis.browser
-	const rpcListRequestIds: string[] = []
+	const pendingRpcReplies: ((entries: RpcEntries) => void)[] = []
+	let rpcListRequests = 0
+	const rpcListReply = (rpcEntries: RpcEntries) => PopupRequestsReplies.popup_requestRpcList.serialize({ method: 'popup_requestRpcList', rpcEntries })
 	const sendMessage = async (message: unknown) => {
 		if (getMessageMethod(message) !== 'popup_requestRpcList') return replyToMessage(message)
-		const requestId = getRequestId(message)
-		if (requestId === undefined) throw new Error('popup_requestRpcList was sent without a requestId')
-		rpcListRequestIds.push(requestId)
-		if (rpcListRequestAnswer === undefined) return undefined
-		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId, rpcEntries: rpcListRequestAnswer } })
-		for (const listener of [...listeners]) listener(answer)
-		return undefined
+		rpcListRequests += 1
+		if (rpcListRequestAnswer !== undefined) return rpcListReply(rpcListRequestAnswer)
+		return await new Promise((resolve) => pendingRpcReplies.push((entries) => resolve(rpcListReply(entries))))
 	}
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
@@ -105,12 +95,13 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequ
 	return {
 		deliverSerialized,
 		countMessageListeners: () => listeners.length,
-		getLastRpcListRequestId: () => {
-			const requestId = rpcListRequestIds.at(-1)
-			assert.ok(requestId)
-			return requestId
-		},
-		countRpcListRequests: () => rpcListRequestIds.length,
+		replyToRpcListRequest: async (index: number, entries: RpcEntries) => await act(async () => {
+			const reply = pendingRpcReplies[index]
+			assert.ok(reply)
+			reply(entries)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		}),
+		countRpcListRequests: () => rpcListRequests,
 		deliver: async (message: MessageToPopup) => await deliverSerialized(MessageToPopup.serialize(message)),
 		restore() {
 			Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: previousBrowser })
@@ -325,10 +316,8 @@ function readRenderedRpcEntryNames(root: RenderedTreeNode) {
 async function renderRpcEntryNames(rpcListRequestAnswer: RpcEntries | undefined) {
 	const dom = installDomMock()
 	const browserMock = installPopupBrowserMock({ rpcListRequestAnswer })
-	await act(async () => {
-		render(h(RpcEntryNames, {}), dom.document.body)
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	})
+	await act(() => { render(h(RpcEntryNames, {}), dom.document.body) })
+	await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 	const unmount = async () => {
 		await act(() => { render(null, dom.document.body) })
 	}
@@ -340,9 +329,8 @@ async function renderRpcEntryNames(rpcListRequestAnswer: RpcEntries | undefined)
 	return { root: dom.document.body, browserMock, unmount, cleanup }
 }
 
-// Ordering between the request answer and RPC list writes is enforced in the background, see rpcListConcurrency.test.ts.
 describe('useRpcConnectionsList', () => {
-	test('requests the RPC list once on mount and shows the broadcast answer', async () => {
+	test('requests the RPC list once on mount and shows the direct reply', async () => {
 		const page = await renderRpcEntryNames(rpcEntriesWhenPageOpened)
 		try {
 			assert.equal(page.browserMock.countRpcListRequests(), 1)
@@ -368,10 +356,10 @@ describe('useRpcConnectionsList', () => {
 		const dom = installDomMock()
 		const browserMock = installPopupBrowserMock({ rpcListRequestAnswer: rpcEntriesWhenPageOpened })
 		try {
-			await act(async () => {
+			await act(() => {
 				render(<RpcConnectionsProvider><RpcEntryNames /><RpcEntryNames /></RpcConnectionsProvider>, dom.document.body)
-				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 			assert.equal(browserMock.countRpcListRequests(), 1)
 			assert.equal(browserMock.countMessageListeners(), 1)
 			assert.deepEqual(readRenderedRpcEntryNames(dom.document.body), ['Ethereum Mainnet', 'Ethereum Mainnet', 'Sepolia', 'Sepolia'])
@@ -383,27 +371,25 @@ describe('useRpcConnectionsList', () => {
 		}
 	})
 
-	test('ignores the reply to another page\'s RPC list request', async () => {
+	test('a delayed direct reply cannot replace a live list update', async () => {
 		const page = await renderRpcEntryNames(undefined)
 		try {
-			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: 'another-page-request', rpcEntries: rpcEntriesAfterSettingsChange } })
-			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
+			await page.browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesAfterSettingsChange })
+			await page.browserMock.replyToRpcListRequest(0, rpcEntriesWhenPageOpened)
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
 		} finally {
 			await page.cleanup()
 		}
 	})
 
-	test('retries a lost reply and accepts the response for the new request', async () => {
+	test('retries a stalled request and ignores its late reply', async () => {
 		const page = await renderRpcEntryNames(undefined)
 		try {
-			const firstRequestId = page.browserMock.getLastRpcListRequestId()
 			await new Promise((resolve) => setTimeout(resolve, RPC_LIST_INITIAL_RETRY_DELAY_MS + 50))
 			assert.equal(page.browserMock.countRpcListRequests(), 2)
-			const secondRequestId = page.browserMock.getLastRpcListRequestId()
-			assert.notEqual(firstRequestId, secondRequestId)
-			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: firstRequestId, rpcEntries: rpcEntriesWhenPageOpened } })
+			await page.browserMock.replyToRpcListRequest(0, rpcEntriesWhenPageOpened)
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
-			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: secondRequestId, rpcEntries: rpcEntriesAfterSettingsChange } })
+			await page.browserMock.replyToRpcListRequest(1, rpcEntriesAfterSettingsChange)
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
 		} finally {
 			await page.cleanup()

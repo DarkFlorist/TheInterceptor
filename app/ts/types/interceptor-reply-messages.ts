@@ -9,6 +9,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
+import { RpcEntries } from './rpc.js'
 import { SafeStackExport } from './safeTypes.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
@@ -35,6 +36,12 @@ const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestMakeMeRichData'),
 	richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 	makeCurrentAddressRich: funtypes.Boolean,
+})
+
+type RequestRpcListReply = funtypes.Static<typeof RequestRpcListReply>
+const RequestRpcListReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestRpcList'),
+	rpcEntries: RpcEntries,
 })
 
 type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
@@ -289,6 +296,7 @@ type PopupSettingsRepliesMap = {
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
+	popup_requestRpcList: typeof RequestRpcListReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
 	popup_requestLatestUnexpectedError: typeof RequestLatestUnexpectedErrorReply
@@ -312,6 +320,7 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
+	popup_requestRpcList: RequestRpcListReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
@@ -355,6 +364,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestRpcList') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
@@ -392,6 +402,7 @@ export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['m
 
 export type PopupReplyOption =
 	| RequestMakeMeRichDataReply
+	| RequestRpcListReply
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
 	| RequestLatestUnexpectedErrorReply
@@ -416,6 +427,7 @@ export type PopupReplyOption =
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
 	RequestMakeMeRichDataReply,
+	RequestRpcListReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
 	RequestLatestUnexpectedErrorReply,

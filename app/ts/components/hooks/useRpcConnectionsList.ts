@@ -3,49 +3,48 @@ import { useContext, useEffect } from 'preact/hooks'
 import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import type { RpcEntries } from '../../types/rpc.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 const RpcConnectionsContext = createContext<ReadonlySignal<RpcEntries | undefined> | undefined>(undefined)
 const emptyRpcEntries: RpcEntries = []
 export const RPC_LIST_INITIAL_RETRY_DELAY_MS = 1000
-const rpcListMaxRetryDelayMs = 10_000
 
 function useRpcConnectionsSubscription(enabled: boolean) {
 	const entries = useSignal<RpcEntries | undefined>(undefined)
 	useEffect(() => {
 		if (!enabled) return
-		let awaitedRequestId: string | undefined
-		let retryTimer: ReturnType<typeof setTimeout> | undefined
-		let retryDelay = RPC_LIST_INITIAL_RETRY_DELAY_MS
-		const clearRequest = () => {
-			clearTimeout(retryTimer)
-			awaitedRequestId = undefined
+		const retry = createBackoffRetryScheduler(RPC_LIST_INITIAL_RETRY_DELAY_MS)
+		let loading = true
+		let attempt = 0
+		const finishLoading = () => {
+			loading = false
+			retry.reset()
 		}
 		const unsubscribe = noReplyExpectingBrowserRuntimeOnMessageListener((message: unknown): false => {
 			const parsed = MessageToPopup.safeParse(message)
-			if (!parsed.success) return false
-			if (parsed.value.method === 'popup_update_rpc_list') {
-				clearRequest()
+			if (parsed.success && parsed.value.method === 'popup_update_rpc_list') {
+				// Live updates own the list from here. A delayed bootstrap reply could be older.
+				finishLoading()
 				entries.value = parsed.value.data
-			} else if (parsed.value.method === 'popup_requestRpcListReply' && parsed.value.data.requestId === awaitedRequestId) {
-				clearRequest()
-				entries.value = parsed.value.data.rpcEntries
 			}
 			return false
 		})
 
-		// Subscribe before sending. A correlated reply or a real list update finishes loading.
 		const requestRpcList = () => {
-			const requestId = crypto.randomUUID()
-			awaitedRequestId = requestId
-			retryTimer = setTimeout(requestRpcList, retryDelay)
-			retryDelay = Math.min(retryDelay * 2, rpcListMaxRetryDelayMs)
-			void sendPopupMessageToBackgroundPage({ method: 'popup_requestRpcList', data: { requestId } })
+			const currentAttempt = ++attempt
+			// Retry even if the runtime request never settles.
+			retry.schedule(requestRpcList)
+			void sendPopupMessageWithReply({ method: 'popup_requestRpcList' }).then((reply) => {
+				if (!loading || currentAttempt !== attempt || reply === undefined) return
+				finishLoading()
+				entries.value = reply.rpcEntries
+			})
 		}
 		requestRpcList()
 		return () => {
-			clearRequest()
+			finishLoading()
 			unsubscribe()
 		}
 	}, [enabled, entries])
