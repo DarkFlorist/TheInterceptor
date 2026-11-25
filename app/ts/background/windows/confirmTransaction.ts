@@ -1,3 +1,4 @@
+import { settingsIfRpcConfigurationReady } from '../websiteAccessPolicy.js'
 import { getUnsimulatedGasLimitEdit, isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
@@ -30,7 +31,7 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { requireSettingsWithReadableNetwork } from '../settings.js'
+import { getSettingsSnapshot, requireSettingsWithReadableNetwork } from '../settings.js'
 import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -316,8 +317,10 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 	try {
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
+		const settings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
+		if (settings === undefined) return false
 		const dialog = await buildConfirmTransactionDialogState(ethereum, {
-			simulationMode: 'activeSettings',
+			simulationMode: settings.simulationMode,
 			getVisualisation: async () => await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating }),
 			blockNumberSource: { kind: 'fetch', abortController: undefined },
 		})

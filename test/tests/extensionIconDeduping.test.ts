@@ -148,11 +148,11 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test', 0)
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test', 0)
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
 	})
@@ -170,7 +170,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test', 0)
 		assert.equal(setIconCalls.length, 0)
 		assert.equal(setTitleCalls.length, 1)
 		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
@@ -189,7 +189,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test', 0)
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 0)
 		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
@@ -214,7 +214,7 @@ describe('extension icon deduping', () => {
 		}))
 
 		await updateDeclarativeNetRequestBlocks(new Map())
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(1, 'example.test', 0)
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
@@ -493,7 +493,7 @@ describe('extension icon deduping', () => {
 			activeSigningAddress: signerAccount,
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(1, 'example.test', 0)
 		return setTitleCalls.at(-1)?.title ?? ''
 	}
 

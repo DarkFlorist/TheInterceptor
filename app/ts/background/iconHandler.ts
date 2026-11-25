@@ -5,7 +5,7 @@ import { hasAccess, hasAddressAccess, settingsIfRpcConfigurationReady, approvals
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
-import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabIcon, TabState } from '../types/user-interface-types.js'
 import { getSettingsSnapshot, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
@@ -112,7 +112,7 @@ async function waitForLoadedTab(tabId: number) {
 
 const runTabIconUpdate = createScopedKeyedSerialExecutor<object, number>()
 
-export async function updateExtensionIcon(_websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
+export async function updateExtensionIcon(tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
 	// Keep a tab's stored state and browser action writes ordered, without blocking active settings or other tabs.
 	await runTabIconUpdate(browser, tabId, async () => {
 		if (!(await doesTabExist(tabId))) {

@@ -11,7 +11,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
 import { withSuppressedUnscopedConnectionEventsForSocketAsync } from './websiteConnectionEvents.js'
-import { clearWebsiteConnectionIntent, reconcileCommittedAccessChangeOrFailClosed, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, reconcileCommittedAccessChangeAndUpdateUi, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -341,7 +341,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, { kind: 'website-access', committedChange }, { simulationServicesOwner, promptForAccesses: false, notifyWebsiteAccessChanged: true })
+	await reconcileCommittedAccessChangeAndUpdateUi(simulationServicesOwner, websiteTabConnections, { kind: 'website-access', committedChange }, false)
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 

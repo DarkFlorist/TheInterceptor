@@ -1,30 +1,34 @@
 import { getActiveAddressesForAllTabs } from './backgroundUtils.js'
 import { getActiveAddresses } from './metadataUtils.js'
-import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettingsSnapshot, getWebsiteApprovalsSnapshot } from './settings.js'
-import { requireReadableApprovals, settingsIfRpcConfigurationReady, type ReadyRpcSettings } from './websiteAccessPolicy.js'
+import { getWebsiteAccessForAddress, requireReadableApprovals, settingsIfRpcConfigurationReady, type ReadyRpcSettings } from './websiteAccessPolicy.js'
 import { getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { getWebsiteAccessForAddress, hasAccess } from './websiteAccessPolicy.js'
 
 // Request blocking: which tabs and sites the user's block-all settings block, and the MV2/MV3 rules that enforce it. Connection approval stays in accessManagement.ts, which updates the blocks whenever approvals change (connectToPort, reconcileWebsiteApprovalAccessesCollectingFailures); this module only reads the approvals.
 
-// Tab blocking fails closed: a tab is blocked while any of its connections is approved at runtime or has persisted consent for the tab's active address. A connection whose consent was just denied stays approved until a reconciliation disconnects it (including while the access-update workflow reloads tabs before reconciliation), so the block must not be lifted while the connection can still make requests; a connection that is consented but not yet approved is about to be.
-const tabHasApprovedOrConsentedConnection = (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray, tabId: number, activeAddress: AddressBookEntry | undefined) => Object.values(websiteTabConnections.get(tabId)?.connections ?? {}).some((connection) => connection.approved || getWebsiteAccessForAddress(websiteAccess, connection.websiteOrigin, activeAddress) === 'hasAccess')
+// An undefined address applies site-level consent while the RPC selection is unavailable. A stored origin also counts when keeping an existing block across a restart.
+function getTabConsent(websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray, tabId: number, activeAddress: AddressBookEntry | undefined, storedWebsiteOrigin?: string) {
+	const connections = Object.values(websiteTabConnections.get(tabId)?.connections ?? {})
+	const hasConsent = (websiteOrigin: string) => getWebsiteAccessForAddress(websiteAccess, websiteOrigin, activeAddress) === 'hasAccess'
+	return {
+		hasRuntimeApproval: connections.some((connection) => connection.approved),
+		hasPersistedConsent: connections.some((connection) => hasConsent(connection.websiteOrigin)) || (storedWebsiteOrigin !== undefined && hasConsent(storedWebsiteOrigin)),
+	}
+}
 
-// Without a ready RPC configuration a tab's active address cannot be trusted for its chain, and runtime connection approval is not restored either (connections register unapproved and requests are refused before access checks). Tab blocking is a user privacy control that must not depend on RPC availability, so fail closed: block every connected tab that is approved at runtime or whose website has persisted consent, while any active address blocks all external requests.
+// Privacy blocking remains in effect while the RPC configuration is unavailable and no chain-specific address can be selected.
 const getTabIdsToBlockWithoutReadyRpcConfiguration = async (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray) => {
 	const anyActiveAddressBlocksAll = (await getActiveAddresses()).some((entry) => entry.declarativeNetRequestBlockMode === 'block-all')
 	if (!anyActiveAddressBlocksAll) return []
-	const tabIdsToBlock: number[] = []
-	for (const [tabId, tabConnection] of websiteTabConnections.entries()) {
-		const tabHasConsentedConnection = Object.values(tabConnection.connections).some((connection) => connection.approved || hasAccess(websiteAccess, connection.websiteOrigin) === 'hasAccess')
-		if (tabHasConsentedConnection) tabIdsToBlock.push(tabId)
-	}
-	return tabIdsToBlock
+	return [...websiteTabConnections.keys()].filter((tabId) => {
+		const consent = getTabConsent(websiteTabConnections, websiteAccess, tabId, undefined)
+		return consent.hasRuntimeApproval || consent.hasPersistedConsent
+	})
 }
 
 type RequestBlocks = {
@@ -42,16 +46,11 @@ const getSettingsForTabBlocking = async () => settingsIfRpcConfigurationReady(aw
 // Runtime approvals return only after recovery: a tab registered during an outage, or reconnecting after a restart, is unapproved at first, so approvals alone would lift a block that persisted consent put in place. Such a block stays while the tab's website has that consent and its active address blocks everything or is not known yet; the grant that follows reconciles it (see connectToPort). A restarted worker has no connections yet, so the tab's stored website counts too.
 const getConsentedTabIdsAwaitingApproval = async (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray, tabAddresses: readonly { readonly tabId: number, readonly activeAddress: AddressBookEntry | undefined }[]) => {
 	const anyActiveAddressBlocksAll = (await getActiveAddresses()).some((entry) => entry.declarativeNetRequestBlockMode === 'block-all')
-	const addressMayBlockAll = (tabId: number) => {
+	return new Set((await getAllTabStates()).filter(({ tabId, website }) => {
 		const activeAddress = tabAddresses.find((tabData) => tabData.tabId === tabId)?.activeAddress
-		return activeAddress === undefined ? anyActiveAddressBlocksAll : activeAddress.declarativeNetRequestBlockMode === 'block-all'
-	}
-	const getTabWebsiteOrigins = (tabState: TabState) => [tabState.website?.websiteOrigin, ...Object.values(websiteTabConnections.get(tabState.tabId)?.connections ?? {}).map((connection) => connection.websiteOrigin)]
-	const tabHasConsent = (tabState: TabState) => {
-		const activeAddress = tabAddresses.find((tabData) => tabData.tabId === tabState.tabId)?.activeAddress
-		return getTabWebsiteOrigins(tabState).some((websiteOrigin) => websiteOrigin !== undefined && getWebsiteAccessForAddress(websiteAccess, websiteOrigin, activeAddress) === 'hasAccess')
-	}
-	return new Set((await getAllTabStates()).filter((tabState) => addressMayBlockAll(tabState.tabId) && tabHasConsent(tabState)).map((tabState) => tabState.tabId))
+		const addressMayBlockAll = activeAddress === undefined ? anyActiveAddressBlocksAll : activeAddress.declarativeNetRequestBlockMode === 'block-all'
+		return addressMayBlockAll && getTabConsent(websiteTabConnections, websiteAccess, tabId, activeAddress, website?.websiteOrigin).hasPersistedConsent
+	}).map((tabState) => tabState.tabId))
 }
 
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections): Promise<RequestBlocks> => {
@@ -68,7 +67,12 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 const getRequestBlocksWithReadyRpcConfiguration = async (websiteTabConnections: WebsiteTabConnections, settings: ReadyRpcSettings): Promise<RequestBlocks> => {
 	const tabAddresses = await getActiveAddressesForAllTabs(settings)
 	const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
-	const tabIdsToBlock = tabAddresses.filter(({ tabId, activeAddress }) => activeAddress?.declarativeNetRequestBlockMode === 'block-all' && tabHasApprovedOrConsentedConnection(websiteTabConnections, websiteAccess, tabId, activeAddress)).map((tabData) => tabData.tabId)
+	const tabIdsToBlock = tabAddresses.filter(({ tabId, activeAddress }) => {
+		if (activeAddress?.declarativeNetRequestBlockMode !== 'block-all') return false
+		// Runtime approval keeps the block in place until reconciliation disconnects a revoked connection.
+		const consent = getTabConsent(websiteTabConnections, websiteAccess, tabId, activeAddress)
+		return consent.hasRuntimeApproval || consent.hasPersistedConsent
+	}).map((tabData) => tabData.tabId)
 	const tabIdsAwaitingApproval = await getConsentedTabIdsAwaitingApproval(websiteTabConnections, websiteAccess, tabAddresses)
 	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlock: (tabId) => tabIdsAwaitingApproval.has(tabId) }
 }

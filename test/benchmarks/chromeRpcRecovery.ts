@@ -2,6 +2,7 @@ import * as assert from 'node:assert'
 import { mkdtemp, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import { PopupMessage } from '../../app/ts/types/interceptor-messages.js'
 import { RpcEntry } from '../../app/ts/types/rpc.js'
@@ -28,6 +29,24 @@ const rpcServer = Bun.serve({
 const network: RpcEntry = { name: 'Recovery RPC', chainId: 2n, httpsRpc: `http://127.0.0.1:${ rpcServer.port }`, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 const storedNetwork = RpcEntry.serialize(network)
 const websiteAccess = [{ website: { websiteOrigin: 'recovery-block.test' }, declarativeNetRequestBlockMode: 'block-all' as const }]
+// Chrome cannot restore this confirmation window. Recovery must retire the request before settings are repaired.
+const missingWindowId = 2_147_000_000
+const orphanedConfirmation = PendingTransactionOrSignableMessage.serialize({
+	type: 'Transaction',
+	transactionOrMessageCreationStatus: 'Crafting',
+	popupOrTabId: { type: 'popup', id: missingWindowId },
+	originalRequestParameters: { method: 'eth_sendTransaction', params: [{ to: 1n }] },
+	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: missingWindowId, connectionName: 1n } },
+	simulationMode: false,
+	activeAddress: 2n,
+	created: new Date(),
+	instanceId: 'rpc-recovery-orphan',
+	transactionIdentifier: 1n,
+	website: { websiteOrigin: 'https://recovery.example', icon: undefined, title: undefined },
+	approvalStatus: { status: 'WaitingForUser' },
+	safeFlow: { kind: 'ordinary' },
+})
+
 const importedSettings = ExportedSettings.serialize({
 	name: 'InterceptorSettingsAndAddressBook', version: '1.6', exportedDate: '2026-11-20',
 	settings: {
@@ -48,7 +67,7 @@ try {
 				const worker = await connectTarget(initialChrome.browserDebugPort, target.id)
 				try {
 					await waitForPerformanceMarks(worker, ['interceptor:background:startup-ready'], 30_000)
-					await worker.evaluate(`browser.storage.local.set(${ JSON.stringify({ activeRpcNetwork: 'corrupt', rpcEntries: [storedNetwork, { ...storedNetwork, name: 'Recovery fallback RPC', primary: false }], websiteAccess, simulationMode: false }) })`)
+					await worker.evaluate(`browser.storage.local.set(${ JSON.stringify({ activeRpcNetwork: 'corrupt', rpcEntries: [storedNetwork, { ...storedNetwork, name: 'Recovery fallback RPC', primary: false }], websiteAccess, simulationMode: false, pendingTransactionsAndMessages: [orphanedConfirmation] }) })`)
 					await worker.evaluate(`browser.declarativeNetRequest.updateDynamicRules({ addRules: [{ id: 1, priority: 1, action: { type: 'block' }, condition: { initiatorDomains: ['recovery-block.test'], domainType: 'thirdParty' } }] })`)
 				} finally { worker.close() }
 			} finally { await initialChrome.close() }
@@ -62,6 +81,7 @@ try {
 				try {
 					await waitForPerformanceMarks(worker, ['interceptor:background:startup-ready'], 30_000)
 					assert.equal(await worker.evaluate('(async()=> (await browser.storage.local.get("activeRpcNetwork")).activeRpcNetwork)()'), 'corrupt')
+					assert.deepEqual(await worker.evaluate('(async()=> (await browser.storage.local.get("pendingTransactionsAndMessages")).pendingTransactionsAndMessages)()'), [], 'startup retires an orphaned confirmation before RPC repair')
 					assert.equal(await worker.evaluate('browser.action.getBadgeText({})'), '!')
 					assert.equal(await worker.evaluate(`(async()=> (await browser.declarativeNetRequest.getDynamicRules()).some(rule => rule.condition.initiatorDomains?.includes('recovery-block.test')))()`), true)
 					const pageId = await createTargetPage(chrome.browserConnection, `chrome-extension://${ extensionId }/html3/settingsViewV3.html`)

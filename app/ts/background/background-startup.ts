@@ -218,7 +218,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 				})
 			})
-			void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
+			void catchAllErrorsAndCall(async () => updateExtensionIcon(socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 		}
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
@@ -290,13 +290,13 @@ async function startup() {
 	bumpPopupRefreshGeneration()
 	const startupSnapshot = await getSettingsSnapshot()
 	const startupSettings = startupSnapshot.status === 'available' ? startupSnapshot.settings : undefined
-	const startupConfigurationReady = settingsIfRpcConfigurationReady(startupSnapshot) !== undefined
 	// A dormant bootstrap client keeps configuration commands reachable; it is not persisted as the active selection and is never authority for provider admission. Constructors perform no RPC.
 	const bootstrapNetwork = startupSettings?.activeRpcNetwork ?? DEFAULT_RPCS[0]
 	const userSpecifiedSimulatorNetwork = bootstrapNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : bootstrapNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-	if (startupConfigurationReady) await recoverPendingTerminalState()
+	// Missing confirmation windows must be resolved even while the RPC configuration is unavailable.
+	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => {
 			const ethereum = getSimulationServices().ethereum
@@ -352,7 +352,7 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, bumpPopupRefreshGeneration())
+	await updateExtensionIcon(tabId, websiteOrigin, bumpPopupRefreshGeneration())
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
