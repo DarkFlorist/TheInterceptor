@@ -1,10 +1,11 @@
 import * as assert from 'node:assert'
 import { spyOn, test } from 'bun:test'
+import * as ts from 'typescript'
 import { recordProtectorChainReads, replayRecordedProtectorChainReads, isMissingRecordedProtectorReadError } from '../../app/ts/simulation/protectorChainReads.js'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, recipientAddress, simulator, modules, fakeRpcNetwork, fakeSafeContract, created } from './confirmTransactionTestHarness.js'
 
-const { getPopupVisualisationState, getStoredPopupVisualisationState, setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+const { getPopupVisualisationForDisplay, getStoredPopupVisualisationState, setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 const { updatePopupVisualisationState } = await import('../../app/ts/background/popupVisualisationUpdater.js')
 const { visualizeStoredRunWithoutNode } = await import('../../app/ts/background/storedRunVisualisation.js')
 
@@ -27,7 +28,9 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	const current = await getStoredPopupVisualisationState()
 	if (current.simulationState.kind !== 'simulated' || current.recordedVisualisationLookups === undefined) throw new Error('Expected a recorded simulation')
 	assert.deepEqual(current.recordedVisualisationLookups.senderDelegations, [{ sender: activeAddress, delegationAddress: recipientAddress }])
-	assert.equal('recordedVisualisationLookups' in await getPopupVisualisationState(), false)
+	assert.equal('recordedVisualisationLookups' in await getPopupVisualisationForDisplay(), false)
+	await setStoredPopupVisualisationState(current)
+	assert.deepEqual(await getStoredPopupVisualisationState(), current)
 	// Make the previous result old enough that only the busy semaphore can suppress a throttled refresh.
 	const stored = { ...current, recordedVisualisationLookups: current.recordedVisualisationLookups, simulationState: { kind: 'simulated' as const, value: { ...current.simulationState.value, simulationConductedTimestamp: new Date(0) } } }
 	await setStoredPopupVisualisationState(stored)
@@ -65,13 +68,27 @@ test('stored visualization replay uses edited local names and recorded chain rea
 		releasePublication.resolve()
 		try { await relabel } finally { browser.runtime.sendMessage = sendMessage }
 	}
-	const relabelled = await getPopupVisualisationState()
+	const relabelled = await getPopupVisualisationForDisplay()
 	assert.equal(relabelled.simulationId, stored.simulationId)
 	assert.equal(relabelled.metadataRevision, 1)
 	assert.deepEqual((await getStoredPopupVisualisationState()).recordedVisualisationLookups, stored.recordedVisualisationLookups)
 	assert.deepEqual(relabelled.simulationState, stored.simulationState)
 	assert.equal(relabelled.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.name, 'Edited replay recipient')
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
+})
+
+test('display visualisations cannot be written back to storage', async () => {
+	const repositoryRoot = new URL('../../', import.meta.url).pathname
+	const fixturePath = `${ repositoryRoot }test/fixtures/storedVisualisation/projection.ts`
+	const configFile = ts.readConfigFile(`${ repositoryRoot }tsconfig.json`, ts.sys.readFile)
+	const { options } = ts.parseJsonConfigFileContent(configFile.config, ts.sys, repositoryRoot)
+	const program = ts.createProgram([fixturePath], { ...options, noEmit: true, rootDir: repositoryRoot })
+	const fixture = program.getSourceFile(fixturePath)
+	if (fixture === undefined) throw new Error('Missing stored visualisation fixture')
+	const errorLines = ts.getPreEmitDiagnostics(program, fixture).flatMap((diagnostic) => diagnostic.start === undefined ? [] : [fixture.getLineAndCharacterOfPosition(diagnostic.start).line + 1])
+	const expectedLines = (await Bun.file(fixturePath).text()).split('\n').flatMap((line, index) => line.includes('// expect-type-error') ? [index + 1] : [])
+	assert.equal(expectedLines.length, 2)
+	assert.deepEqual([...new Set(errorLines)].sort((first, second) => first - second), expectedLines)
 })
 
 test('paired protector adapters record and replay each chain read', async () => {
@@ -98,13 +115,13 @@ test('protector replay uses recorded values and identifies missing compatibility
 
 test('an empty stack is left unchanged by a metadata re-label', async () => {
 	const { relabelPopupVisualisation } = await import('../../app/ts/background/popupVisualisationUpdater.js')
-	const { getPopupVisualisationState, setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+	const { getPopupVisualisationForDisplay, setStoredPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 	// This fixture has no chain operations, so it must be left unchanged by a re-label.
 	const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
-	await setStoredPopupVisualisationState(createPassthroughCompleteVisualizedSimulation((await getPopupVisualisationState()).simulationId + 1))
-	const before = await getPopupVisualisationState()
+	await setStoredPopupVisualisationState({ ...createPassthroughCompleteVisualizedSimulation((await getPopupVisualisationForDisplay()).simulationId + 1), recordedVisualisationLookups: undefined })
+	const before = await getPopupVisualisationForDisplay()
 	fakeSafeContract.requestedRpcMethods.length = 0
 	await relabelPopupVisualisation(fakeRpcNetwork)
-	assert.deepEqual(await getPopupVisualisationState(), before)
+	assert.deepEqual(await getPopupVisualisationForDisplay(), before)
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 })

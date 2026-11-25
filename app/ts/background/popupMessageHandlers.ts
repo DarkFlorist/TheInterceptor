@@ -6,7 +6,7 @@ import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimu
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationForDisplay, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
@@ -172,7 +172,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 		case 'confirmTransaction': {
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
-			const visualizedSimulatorState = await getPopupVisualisationState()
+			const visualizedSimulatorState = await getPopupVisualisationForDisplay()
 			// The request may be replaced during the lookups; bootstrap carries only the queue stored after them.
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
@@ -1163,7 +1163,7 @@ async function buildHomePageUpdate(
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
-	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationState())
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationForDisplay())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
 	const latestUnexpectedErrorPromise = silenceChromeUnCaughtPromise(getLatestUnexpectedError())
 	const richDataPromise = silenceChromeUnCaughtPromise(

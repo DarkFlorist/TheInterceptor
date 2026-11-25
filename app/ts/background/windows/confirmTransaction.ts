@@ -16,7 +16,7 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../type
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationForDisplay, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
@@ -239,7 +239,7 @@ export type ConfirmTransactionDialogStateOptions = {
 }
 
 // The only builder of the confirmation dialog state: it owns the simulation-mode/passthrough rule, the block number source and the RPC status read.
-export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationState, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
+export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationForDisplay, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
 	const getVisualizedSimulatorState = async () => {
 		const isSimulationMode = simulationMode === 'activeSettings' ? (await getSettings()).simulationMode : simulationMode
 		return isSimulationMode ? await getVisualisation() : createPassthroughCompleteVisualizedSimulation()

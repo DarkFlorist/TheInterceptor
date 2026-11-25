@@ -88,7 +88,7 @@ describe('UI mutation completion', () => {
 				: modules.activateAddressSelection(owner, new Map(), { type: 'addressBookEntry', entry: { type: 'safe', address: 3n, chainId: context.settings.activeRpcNetwork.chainId, name: 'Safe', entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signedTransaction.from] } }, { simulationMode: false, signerAddress: signedTransaction.from, promptForAccessesIfNeeded: false })
 			await completesPromptly(edit)
 			await completesPromptly(refreshStarted.promise)
-			const state = await modules.getPopupVisualisationState()
+			const state = await modules.getPopupVisualisationForDisplay()
 			assert.equal(state.simulationUpdatingState, 'updating')
 			assert.equal(state.simulationResultState, 'invalid')
 			if (operation === 'reset' || operation === 'remove') assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 0)
@@ -129,7 +129,7 @@ describe('UI mutation completion', () => {
 			assert.equal(reply.ok, true)
 			await completesPromptly(started.promise)
 			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
-			assert.equal((await modules.getPopupVisualisationState()).simulationResultState, 'invalid')
+			assert.equal((await modules.getPopupVisualisationForDisplay()).simulationResultState, 'invalid')
 		} finally { release.resolve(); await waitForBackgroundTasks() }
 	})
 
@@ -475,7 +475,7 @@ describe('UI mutation completion', () => {
 		const outcome = await refresh
 		if (throwOnUnexpectedError) assert.equal(outcome, error)
 		else assert.equal((await modules.getLatestUnexpectedError())?.data.message, error.message)
-		const stored = await modules.getPopupVisualisationState()
+		const stored = await modules.getPopupVisualisationForDisplay()
 		assert.equal(stored.simulationResultState, 'invalid')
 		assert.equal(stored.simulationUpdatingState, 'updating')
 	})

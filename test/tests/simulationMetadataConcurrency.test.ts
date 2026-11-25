@@ -1,16 +1,17 @@
 import * as assert from 'node:assert'
 import { afterEach, describe, test } from 'bun:test'
-import { createPassthroughCompleteVisualizedSimulation, type CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
+import { createPassthroughCompleteVisualizedSimulation, toPopupVisualisation, type CompleteVisualizedSimulation, type StoredCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { createDeferredSignal, createEthereumWithGetBlockCounter, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { pendingTransaction } from './confirmTransactionTestHarness.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
-import { getPopupVisualisationState, getStoredPopupVisualisationStateWithRevision, setStoredPopupVisualisationState, updateStoredPopupVisualisation } from '../../app/ts/background/storageVariables.js'
+import { getPopupVisualisationForDisplay, getStoredPopupVisualisationState, getStoredPopupVisualisationStateWithRevision, setStoredPopupVisualisationState, updateStoredPopupVisualisation } from '../../app/ts/background/storageVariables.js'
 import { updateSimulationMetadata } from '../../app/ts/background/simulationUpdating.js'
 import { startPopupSimulationRefreshInBackground } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
 afterEach(waitForBackgroundTasks)
 
-const capturedVisualisation: CompleteVisualizedSimulation = {
+const capturedVisualisation: StoredCompleteVisualizedSimulation = {
+	recordedVisualisationLookups: undefined,
 	...createPassthroughCompleteVisualizedSimulation(10, 'done'),
 	simulationState: { kind: 'simulated', value: pendingTransaction.popupVisualisation.data.simulationState },
 }
@@ -48,7 +49,7 @@ describe('simulation metadata concurrency', () => {
 				? startPopupSimulationRefreshInBackground({ ...services, invalidateOldState: true })
 				: setStoredPopupVisualisationState({ ...capturedVisualisation, simulationState: { kind: 'simulated', value: { ...pendingTransaction.popupVisualisation.data.simulationState, blockNumber: 124n } } })
 			await completesPromptly(localUpdate)
-			committed = await getPopupVisualisationState()
+			committed = await getPopupVisualisationForDisplay()
 			if (update === 'pending invalidation') {
 				assert.equal(committed.simulationResultState, 'invalid')
 				assert.equal(committed.simulationUpdatingState, 'updating')
@@ -64,8 +65,8 @@ describe('simulation metadata concurrency', () => {
 			await localUpdate
 			await waitForBackgroundTasks()
 		}
-		assert.deepEqual(await getPopupVisualisationState(), committed)
-		assert.deepEqual(await metadata, committed)
+		assert.deepEqual(await getPopupVisualisationForDisplay(), committed)
+		assert.deepEqual(toPopupVisualisation(await metadata), committed)
 	})
 
 	test('drops metadata after a concurrent write that leaves the stored state unchanged', async () => {
@@ -78,10 +79,10 @@ describe('simulation metadata concurrency', () => {
 			getMetadata: async () => { started.resolve(); await release.promise; return refreshedMetadata },
 		})
 		await started.promise
-		await setStoredPopupVisualisationState(await getPopupVisualisationState())
+		await setStoredPopupVisualisationState(await getStoredPopupVisualisationState())
 		release.resolve()
 		assert.deepEqual(await metadata, capturedVisualisation)
-		assert.deepEqual((await getPopupVisualisationState()).addressBookEntries, capturedVisualisation.addressBookEntries)
+		assert.deepEqual((await getPopupVisualisationForDisplay()).addressBookEntries, capturedVisualisation.addressBookEntries)
 	})
 
 	test('drops metadata after a concurrent write to a field unrelated to the enrichment', async () => {
@@ -97,7 +98,7 @@ describe('simulation metadata concurrency', () => {
 		const concurrent = await setStoredPopupVisualisationState({ ...capturedVisualisation, numberOfAddressesMadeRich: capturedVisualisation.numberOfAddressesMadeRich + 1 })
 		release.resolve()
 		assert.deepEqual(await metadata, concurrent)
-		assert.deepEqual(await getPopupVisualisationState(), concurrent)
+		assert.deepEqual(await getPopupVisualisationForDisplay(), toPopupVisualisation(concurrent))
 	})
 
 	test('advances the visualisation revision on every committed write, including one that changes nothing', async () => {
@@ -119,6 +120,6 @@ describe('simulation metadata concurrency', () => {
 		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
 		const updated = await updateSimulationMetadata(ethereum, undefined, { getMetadata: async () => refreshedMetadata })
 		assert.equal(updated.simulationId, capturedVisualisation.simulationId)
-		assert.deepEqual((await getPopupVisualisationState()).addressBookEntries, refreshedMetadata.addressBookEntries)
+		assert.deepEqual((await getPopupVisualisationForDisplay()).addressBookEntries, refreshedMetadata.addressBookEntries)
 	})
 })

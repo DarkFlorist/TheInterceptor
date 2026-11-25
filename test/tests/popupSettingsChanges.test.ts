@@ -458,8 +458,8 @@ describe('popup settings changes', () => {
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		// No simulation view is open, so the refresh observes the stored visualisation as its outcome.
 		await setStoredPopupVisualisationState(refreshOutcome === 'unavailable'
-			? { ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: 'failed' }
-			: createPassthroughCompleteVisualizedSimulation(5, 'done'))
+			? { ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: 'failed', recordedVisualisationLookups: undefined }
+			: { ...createPassthroughCompleteVisualizedSimulation(5, 'done'), recordedVisualisationLookups: undefined })
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const context = {
 			...services, settings: await getSettings(), websiteTabConnections: new Map(),

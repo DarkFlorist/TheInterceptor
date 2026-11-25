@@ -31,7 +31,7 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-import { getInterceptorTransactionStack, getPopupVisualisationState, getStoredPopupVisualisationStateWithRevision, updateStoredPopupVisualisation } from './storageVariables.js'
+import { getInterceptorTransactionStack, getStoredPopupVisualisationState, getStoredPopupVisualisationStateWithRevision, updateStoredPopupVisualisation } from './storageVariables.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -437,7 +437,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 		metadata = await (dependencies.getMetadata ?? getMetadataForSimulation)(prevState.simulationState.value, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
-		return await getPopupVisualisationState()
+		return await getStoredPopupVisualisationState()
 	}
 	// Any write since the read advances the revision, including progress and results stored under the same simulation ID.
 	return await updateStoredPopupVisualisation(async (current, currentRevision) => currentRevision === capturedRevision ? { ...current, ...metadata } : undefined)

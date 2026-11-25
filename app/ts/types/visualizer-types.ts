@@ -531,9 +531,13 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	metadataRevision: funtypes.Number,
 }))
 
-// The stack simulation as background storage keeps it: what popups are sent, and what its run recorded of its lookups. Missing on states that no simulation run visualised and on runs stored by versions that did not record it.
-export type StoredCompleteVisualizedSimulation = funtypes.Static<typeof StoredCompleteVisualizedSimulation>
-export const StoredCompleteVisualizedSimulation = CompleteVisualizedSimulation.And(funtypes.ReadonlyPartial({
+// Stored writes must explicitly supply the lookups or specify that there are none. Display projections cannot satisfy this type.
+export type StoredCompleteVisualizedSimulation = CompleteVisualizedSimulation & {
+	readonly recordedVisualisationLookups: RecordedVisualisationLookups | undefined
+}
+
+// Older runs and passthrough states omit the lookups on disk.
+export const StoredCompleteVisualizedSimulationCodec = CompleteVisualizedSimulation.And(funtypes.ReadonlyPartial({
 	recordedVisualisationLookups: RecordedVisualisationLookups,
 }))
 

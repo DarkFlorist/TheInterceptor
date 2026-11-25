@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
 import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, prepareLargeStateWrite, removeLargeStateValue, setLargeStateValue, setLargeStateValues } from '../../app/ts/utils/largeStateStore.js'
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
-import { getPopupVisualisationState, updateInterceptorTransactionStack, updateStoredPopupVisualisation, updateTransactionState } from '../../app/ts/background/storageVariables.js'
+import { getPopupVisualisationForDisplay, updateInterceptorTransactionStack, updateStoredPopupVisualisation, updateTransactionState } from '../../app/ts/background/storageVariables.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
 import { updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
@@ -446,13 +446,13 @@ describe('large state store helpers', () => {
 			storageState['interceptorLargeStateMigrated:popupVisualisation'] = true
 			const previousLocalState = { ...storageState }
 
-			await assert.rejects(getPopupVisualisationState(), (caught: unknown) => caught === error)
+			await assert.rejects(getPopupVisualisationForDisplay(), (caught: unknown) => caught === error)
 			assert.deepEqual(indexedDbState.get('popupVisualisation'), serializedResults)
 			assert.deepEqual(storageState, previousLocalState)
 
 			// A later successful read must still return the saved results, not an empty replacement.
 			installFakeIndexedDb(indexedDbState, {})
-			assert.deepEqual(await getPopupVisualisationState(), savedResults)
+			assert.deepEqual(await getPopupVisualisationForDisplay(), savedResults)
 		})
 	}
 

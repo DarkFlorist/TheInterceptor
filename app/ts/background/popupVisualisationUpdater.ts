@@ -15,7 +15,7 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { relabelStoredSimulation, type StackRunToRelabel } from './simulationRelabel.js'
-import { getPopupVisualisationState, getStoredPopupVisualisationState, setStoredPopupVisualisationState, updateStoredPopupVisualisation } from './storageVariables.js'
+import { getPopupVisualisationForDisplay, getStoredPopupVisualisationState, setStoredPopupVisualisationState, updateStoredPopupVisualisation } from './storageVariables.js'
 
 let abortController = new AbortController()
 // Local invalidation retires every execution path, including direct consumer/bootstrap refreshes.
@@ -28,15 +28,15 @@ function invalidatePopupVisualisation() {
 
 // Fresh simulated results must carry lookup records. Retained states may come from older storage.
 type RecordedPopupVisualisation = CompleteVisualizedSimulation & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }
-type PassthroughPopupVisualisation = CompleteVisualizedSimulation & { readonly simulationState: PassthroughState }
+type PassthroughPopupVisualisation = StoredCompleteVisualizedSimulation & { readonly simulationState: PassthroughState, readonly recordedVisualisationLookups: undefined }
 type PopupVisualisationWrite = RecordedPopupVisualisation | PassthroughPopupVisualisation | (StoredCompleteVisualizedSimulation & { readonly simulationUpdatingState: 'updating' | 'failed' })
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
 	numberOfAddressesMadeRich: number,
-	simulationResultState: 'done' | 'corrupted' = 'done',
+	simulationResultState: PassthroughPopupVisualisation['simulationResultState'] = 'done',
 ): PassthroughPopupVisualisation {
-	return createPassthroughCompleteVisualizedSimulation(simulationId, simulationResultState, numberOfAddressesMadeRich)
+	return { ...createPassthroughCompleteVisualizedSimulation(simulationId, simulationResultState, numberOfAddressesMadeRich), recordedVisualisationLookups: undefined }
 }
 
 function buildDefinedEmptyVisualizedState(
@@ -85,20 +85,20 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 	let generation = expectedGeneration
 	const isCurrent = () => generation === publicationGeneration
 	try {
-		const popupVisualisation = await getPopupVisualisationState()
+		const popupVisualisation = await getPopupVisualisationForDisplay()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
 		if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState.kind === 'simulated') {
 			const ageSeconds = (Date.now()- popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
-		if (!isCurrent()) return await getPopupVisualisationState()
+		if (!isCurrent()) return await getPopupVisualisationForDisplay()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
 		const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
-			if (!isCurrent()) return await getPopupVisualisationState()
+			if (!isCurrent()) return await getPopupVisualisationForDisplay()
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
 				popupVisualisation.simulationState.value.simulationStateInput,
@@ -107,22 +107,22 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 			)
 			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
-		if (!isCurrent()) return await getPopupVisualisationState()
-		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return await getPopupVisualisationState()
+		if (!isCurrent()) return await getPopupVisualisationForDisplay()
+		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return await getPopupVisualisationForDisplay()
 		if (invalidateOldState) {
 			generation = invalidatePopupVisualisation()
 			await publishUpdatingPopupVisualisation(true, generation)
 		}
-		if (!isCurrent()) return await getPopupVisualisationState()
+		if (!isCurrent()) return await getPopupVisualisationForDisplay()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
 		await executePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot, generation)
 	} catch(error: unknown) {
-		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
+		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationForDisplay()
 		await reportUnexpectedError(error)
 	}
-	return await getPopupVisualisationState()
+	return await getPopupVisualisationForDisplay()
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
@@ -223,9 +223,9 @@ export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 export async function publishFailedPopupVisualisation() {
 	invalidatePopupVisualisation()
 	await updateSimulationVisualisationSemaphore.execute(async () => {
-		const previous = await getPopupVisualisationState()
+		const previous = await getPopupVisualisationForDisplay()
 		const failed = await setStoredPopupVisualisationState({
-			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
+			...buildPassthroughVisualizedState(previous.simulationId + 1, 0, 'invalid'),
 			simulationUpdatingState: 'failed',
 		})
 		await publishPopupVisualisation(failed)
@@ -321,7 +321,7 @@ async function getCurrentSimulationStateInput(ethereum: EthereumClientService, s
 
 export type OpenConsumerVisualisationDependencies = {
 	readonly update?: typeof updatePopupVisualisationState
-	readonly getStored?: typeof getPopupVisualisationState
+	readonly getForDisplay?: typeof getPopupVisualisationForDisplay
 	readonly reportError?: typeof reportUnexpectedError
 }
 
@@ -332,5 +332,5 @@ export async function refreshPopupVisualisationForOpenConsumer(ethereum: Ethereu
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await (dependencies.reportError ?? reportUnexpectedError)(error)
 	}
-	return await (dependencies.getStored ?? getPopupVisualisationState)()
+	return await (dependencies.getForDisplay ?? getPopupVisualisationForDisplay)()
 }

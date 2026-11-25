@@ -159,7 +159,7 @@ async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
-		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
+		getPopupVisualisationForDisplay: storageVariables.getPopupVisualisationForDisplay,
 		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
@@ -404,13 +404,13 @@ describe('SafeTx confirm transaction metadata', () => {
 			async jsonRpcRequest() { throw new Error('RPC should not be called') },
 		}, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
-		const storedVisualisation = await modules.getPopupVisualisationState()
+		const storedVisualisation = await modules.getPopupVisualisationForDisplay()
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 
 		const result = await modules.refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, {
 			async update() { throw refreshError },
-			async getStored() { return storedVisualisation },
+			async getForDisplay() { return storedVisualisation },
 			async reportError(error) {
 				reportedError = error
 				return undefined
@@ -453,7 +453,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
-		const storedVisualisation = { ...await modules.getPopupVisualisationState(), simulationId: 77 }
+		const storedVisualisation = { ...await modules.getPopupVisualisationForDisplay(), simulationId: 77 }
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 		let reportCalls = 0
@@ -461,7 +461,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
 			visualisation: {
 				async update() { throw refreshError },
-				async getStored() { return storedVisualisation },
+				async getForDisplay() { return storedVisualisation },
 				async reportError(error) {
 					reportCalls += 1
 					reportedError = error
@@ -524,7 +524,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
-		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
+		assert.equal((await modules.getPopupVisualisationForDisplay()).simulationId, 1)
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 
