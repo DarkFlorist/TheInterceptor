@@ -3,7 +3,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, StoredCompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, StoredCompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, toPopupVisualisation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -155,14 +155,16 @@ const simulationResultsSemaphore = new Semaphore(1)
 // Advanced by every committed write in updatePopupVisualisationWithCallBack, the only writer of the popup visualisation, even when the written state equals the old one. Kept in memory because readers compare it within one background lifetime, and a restart discards both the counter and every in-flight reader.
 let popupVisualisationRevision = 0
 
-export async function getPopupVisualisationState() {
+export async function getStoredPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	return await getLargeStateValue('popupVisualisation', StoredCompleteVisualizedSimulation) ?? emptyResults
 }
 
+export const getPopupVisualisationState = async () => toPopupVisualisation(await getStoredPopupVisualisationState())
+
 // Reads the state and its revision under the write lock, so the revision always names the state returned with it.
 export async function getPopupVisualisationStateWithRevision() {
-	return await simulationResultsSemaphore.execute(async () => ({ visualisation: await getPopupVisualisationState(), revision: popupVisualisationRevision }))
+	return await simulationResultsSemaphore.execute(async () => ({ visualisation: await getStoredPopupVisualisationState(), revision: popupVisualisationRevision }))
 }
 
 export const setPopupVisualisationState = async (newResults: StoredCompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
@@ -170,7 +172,7 @@ export const setPopupVisualisationState = async (newResults: StoredCompleteVisua
 // The callback receives the current revision, so a caller can commit only onto the state it read with getPopupVisualisationStateWithRevision.
 export async function updatePopupVisualisationWithCallBack(update: (oldResults: StoredCompleteVisualizedSimulation, revision: number) => Promise<StoredCompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
-		const oldResults = await getPopupVisualisationState()
+		const oldResults = await getStoredPopupVisualisationState()
 		const newRequests = await update(oldResults, popupVisualisationRevision)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
 		await setLargeStateValue('popupVisualisation', StoredCompleteVisualizedSimulation, newRequests)

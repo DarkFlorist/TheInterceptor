@@ -5,7 +5,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { RpcNetwork } from '../types/rpc.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, PassthroughState, RecordedVisualisationLookups, SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { createPassthroughCompleteVisualizedSimulation, toPopupVisualisation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -15,7 +15,7 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { relabelStoredSimulation, type StackRunToRelabel } from './simulationRelabel.js'
-import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { getPopupVisualisationState, getStoredPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
 let abortController = new AbortController()
 // Local invalidation retires every execution path, including direct consumer/bootstrap refreshes.
@@ -127,6 +127,10 @@ async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
 
+async function publishPopupVisualisation(state: StoredCompleteVisualizedSimulation) {
+	await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: toPopupVisualisation(state) } })
+}
+
 // Publish progress using the storage lock, without waiting for an in-flight RPC simulation.
 export async function publishPendingPopupVisualisation(invalidateOldState: boolean) {
 	await publishUpdatingPopupVisualisation(invalidateOldState, invalidatePopupVisualisation())
@@ -138,7 +142,7 @@ async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, ge
 		simulationUpdatingState: 'updating',
 		simulationResultState: invalidateOldState ? 'invalid' : undefined,
 	}))
-	if (generation === publicationGeneration) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: pending } })
+	if (generation === publicationGeneration) await publishPopupVisualisation(pending)
 }
 
 // What a prepared refresh would compute, as plain data; the queue in popupSimulationRefreshQueue.ts decides from it which requests are equivalent.
@@ -203,7 +207,7 @@ export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		let relabelledState: StoredCompleteVisualizedSimulation | undefined
 		await relabelStoredSimulation(rpcNetwork, {
-			stored: await getPopupVisualisationState(),
+			stored: await getStoredPopupVisualisationState(),
 			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, rpcNetwork.chainId),
 			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => {
 				relabelledState = relabel(current)
@@ -211,7 +215,7 @@ export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 			}),
 		})
 		// Views that render publications, such as the FetchSimulationStack sharing dialog, get the new names this way. Published under the semaphore, as every refresh's result is, so it reaches views in order with them; views render a publication without requesting a simulation (components/simulationStatePublications.ts).
-		if (relabelledState !== undefined) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: relabelledState } })
+		if (relabelledState !== undefined) await publishPopupVisualisation(relabelledState)
 	})
 }
 
@@ -224,7 +228,7 @@ export async function publishFailedPopupVisualisation() {
 			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
 			simulationUpdatingState: 'failed',
 		})
-		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
+		await publishPopupVisualisation(failed)
 	})
 }
 
@@ -245,13 +249,13 @@ async function executePopupVisualisationState(ethereum: EthereumClientService, t
 		await updatePopupVisualisationWithCallBack(async () => isCurrent() ? state : undefined)
 		return isCurrent() ? state : undefined
 	}
-	const publishCurrentState = async (state: CompleteVisualizedSimulation | undefined) => {
-		if (state !== undefined && isCurrent()) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state } })
+	const publishCurrentState = async (state: StoredCompleteVisualizedSimulation | undefined) => {
+		if (state !== undefined && isCurrent()) await publishPopupVisualisation(state)
 	}
 	try {
 		return await updateSimulationVisualisationSemaphore.execute(async () => {
 			if (!isCurrent()) return
-			const popupVisualisation = await getPopupVisualisationState()
+			const popupVisualisation = await getStoredPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 			const simulationState = await (dependencies.getUpdatedState ?? getUpdatedSimulationState)(ethereum, capturedSnapshot)

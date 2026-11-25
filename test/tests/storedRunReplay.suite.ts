@@ -4,7 +4,7 @@ import { recordProtectorChainReads, replayRecordedProtectorChainReads, isMissing
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, recipientAddress, simulator, modules, fakeRpcNetwork, fakeSafeContract, created } from './confirmTransactionTestHarness.js'
 
-const { getPopupVisualisationState, setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+const { getPopupVisualisationState, getStoredPopupVisualisationState, setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 const { updatePopupVisualisationState } = await import('../../app/ts/background/popupVisualisationUpdater.js')
 const { visualizeStoredRunWithoutNode } = await import('../../app/ts/background/storedRunVisualisation.js')
 
@@ -24,9 +24,10 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	} finally {
 		delegationLookup.mockRestore()
 	}
-	const current = await getPopupVisualisationState()
+	const current = await getStoredPopupVisualisationState()
 	if (current.simulationState.kind !== 'simulated' || current.recordedVisualisationLookups === undefined) throw new Error('Expected a recorded simulation')
 	assert.deepEqual(current.recordedVisualisationLookups.senderDelegations, [{ sender: activeAddress, delegationAddress: recipientAddress }])
+	assert.equal('recordedVisualisationLookups' in await getPopupVisualisationState(), false)
 	// Make the previous result old enough that only the busy semaphore can suppress a throttled refresh.
 	const stored = { ...current, recordedVisualisationLookups: current.recordedVisualisationLookups, simulationState: { kind: 'simulated' as const, value: { ...current.simulationState.value, simulationConductedTimestamp: new Date(0) } } }
 	await setPopupVisualisationState(stored)
@@ -50,6 +51,7 @@ test('stored visualization replay uses edited local names and recorded chain rea
 		if (message.method === 'popup_isSimulationVisualizerOpen') visibilityProbes += 1
 		if (message.method === 'popup_simulation_state_changed') {
 			publicationStarted.resolve()
+			assert.equal('recordedVisualisationLookups' in message.data.visualizedSimulatorState, false)
 			await releasePublication.promise
 		}
 		return await sendMessage(message)
@@ -66,6 +68,7 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	const relabelled = await getPopupVisualisationState()
 	assert.equal(relabelled.simulationId, stored.simulationId)
 	assert.equal(relabelled.metadataRevision, 1)
+	assert.deepEqual((await getStoredPopupVisualisationState()).recordedVisualisationLookups, stored.recordedVisualisationLookups)
 	assert.deepEqual(relabelled.simulationState, stored.simulationState)
 	assert.equal(relabelled.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.name, 'Edited replay recipient')
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])

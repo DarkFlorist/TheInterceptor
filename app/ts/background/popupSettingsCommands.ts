@@ -1,3 +1,4 @@
+import { scheduleAddressBookChangePublication } from './addressBookChangePublication.js'
 import { createPopupSettingsCoordinator } from './popupSettingsCoordinator.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { popupSettingsOperations, type PopupSettingsAdmittedRequest } from '../types/popupSettingsProtocol.js'
@@ -26,13 +27,13 @@ function settingsCommand<Method extends PopupSettingsAdmittedRequest['method']>(
 }
 
 // The protocol descriptor is the exhaustive operation/reply source; this boundary owns admission and command completion.
-export const createPopupSettingsCommandHandlers = (scheduleAddressBookChanged: (owner: PopupMessageDispatcherContext['simulationServicesOwner']) => void) => ({
+export const popupSettingsCommandHandlers = {
 	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await settingsCoordinator.publish()),
 	popup_set_rpc_list: settingsCommand('popup_set_rpc_list', async (context, request) => {
 		await setNewRpcList(context.simulationServicesOwner, context.websiteTabConnections, request)
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
-	popup_import_settings: settingsCommand('popup_import_settings', async (context, request) => await importSettingsAndRefresh(context.simulationServicesOwner, context.websiteTabConnections, request, () => scheduleAddressBookChanged(context.simulationServicesOwner))),
+	popup_import_settings: settingsCommand('popup_import_settings', async (context, request) => await importSettingsAndRefresh(context.simulationServicesOwner, context.websiteTabConnections, request, () => scheduleAddressBookChangePublication(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry()))),
 	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_changeActiveRpc: settingsCommand('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_enableSimulationMode: settingsCommand('popup_enableSimulationMode', async (context, request) => {
@@ -49,4 +50,4 @@ export const createPopupSettingsCommandHandlers = (scheduleAddressBookChanged: (
 		}
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
-} satisfies Pick<PopupMessageHandlerMap, PopupSettingsAdmittedRequest['method'] | 'popup_requestSettingsChangeStatus'>)
+} satisfies Pick<PopupMessageHandlerMap, PopupSettingsAdmittedRequest['method'] | 'popup_requestSettingsChangeStatus'>

@@ -1,6 +1,6 @@
 import { scheduleAddressBookChangePublication } from './addressBookChangePublication.js'
 import { createWatchAssetResolutionDependencies, resolveWatchAsset } from './windows/watchAsset.js'
-import { createPopupSettingsCommandHandlers } from './popupSettingsCommands.js'
+import { popupSettingsCommandHandlers } from './popupSettingsCommands.js'
 import { runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
@@ -15,9 +15,6 @@ import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.j
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
-
-const scheduleAddressBookChangeForOwner = (owner: PopupMessageDispatcherContext['simulationServicesOwner']) =>
-	scheduleAddressBookChangePublication(owner.getCurrent().ethereum.getRpcEntry())
 
 const popupMessageHandlers = {
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
@@ -41,7 +38,7 @@ const popupMessageHandlers = {
 	}),
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async ({ websiteTabConnections, simulationServicesOwner }, request) => {
-		const scheduleAddressBookChanged = () => scheduleAddressBookChangeForOwner(simulationServicesOwner)
+		const scheduleAddressBookChanged = () => scheduleAddressBookChangePublication(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 		await resolveWatchAsset(websiteTabConnections, request, createWatchAssetResolutionDependencies(websiteTabConnections, scheduleAddressBookChanged))
 	}),
 	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.simulationServicesOwner, context.websiteTabConnections, request)),
@@ -122,7 +119,7 @@ const popupMessageHandlers = {
 	...addressBookPopupMessageHandlers,
 	...safePopupMessageHandlers,
 	...settingsPopupMessageHandlers,
-	...createPopupSettingsCommandHandlers(scheduleAddressBookChangeForOwner),
+	...popupSettingsCommandHandlers,
 	...websiteAccessPopupMessageHandlers,
 } satisfies PopupMessageHandlerMap
 

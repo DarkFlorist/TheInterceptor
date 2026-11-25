@@ -395,11 +395,13 @@ describe('popup settings changes', () => {
 			assert.deepEqual((await getSettings()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
 			assert.notEqual(owner.getCurrent(), captured)
 			assert.deepEqual(captured.ethereum.getRpcEntry(), settings.activeRpcNetwork)
+			await waitForBackgroundTasks()
 			assert.ok(refreshCount() > before)
 			const installed = owner.getCurrent()
 			const refreshed = refreshCount()
 			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, { ...edited, minimized: !edited.minimized }] })
 			assert.equal(owner.getCurrent(), installed, 'List preferences do not reinstall services')
+			await waitForBackgroundTasks()
 			assert.equal(refreshCount(), refreshed)
 		} finally { owner.getCurrent().ethereum.cleanup() }
 	})
