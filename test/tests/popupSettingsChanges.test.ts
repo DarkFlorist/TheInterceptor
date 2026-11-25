@@ -486,7 +486,7 @@ describe('popup settings changes', () => {
 			const originalRpcList = [currentRpc, primaryRpc, requestedRpc]
 			await setRpcList(originalRpcList)
 			await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: outcome === 'safe' ? 3n : undefined })
-			await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+			await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Gnosis Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
 			await updateTabState(1, (previous) => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 			await saveCurrentTabId(1)
 			const socket = { tabId: 1, connectionName: 0n }
@@ -529,13 +529,13 @@ describe('popup settings changes', () => {
 				assert.deepEqual(await getRpcList(), originalRpcList)
 				if (outcome === 'safe') {
 					assert.equal(messages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
-					assert.ok(!reply.ok && reply.message.includes('Safe'))
+					assert.ok(!reply.ok && reply.message.includes('Gnosis Safe'))
 				}
 			}
 		})
 	}
 
-	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Safe chain (crossChain=${ crossChain })`, async () => {
+	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Gnosis Safe chain (crossChain=${ crossChain })`, async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
 		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
@@ -545,7 +545,7 @@ describe('popup settings changes', () => {
 		const rpcList = [currentRpc, requestedRpc]
 		await setRpcList(rpcList)
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: 3n })
-		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Gnosis Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
@@ -560,7 +560,7 @@ describe('popup settings changes', () => {
 		assert.equal(isSignerChainChangePending(), false)
 		if (crossChain) {
 			assert.equal(reply.error?.code, 4001)
-			assert.match(reply.error?.message ?? '', /Safe.*current network/u)
+			assert.match(reply.error?.message ?? '', /Gnosis Safe.*current network/u)
 			assert.deepEqual(settings.activeRpcNetwork, currentRpc)
 			assert.deepEqual(await getRpcList(), rpcList)
 		} else {

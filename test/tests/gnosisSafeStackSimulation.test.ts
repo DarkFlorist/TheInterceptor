@@ -1,13 +1,13 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import type { GnosisSafeTx, VisualizedPersonalSignRequestGnosisSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
 import { addressString, dataStringWith0xStart, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
-import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
+import { GNOSIS_SAFE_ABI } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -163,7 +163,7 @@ async function loadModules() {
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		getActiveAddresses: metadataUtils.getActiveAddresses,
-		SafeSignatureRequirementLabel: gnosisSafeVisualizer.SafeSignatureRequirementLabel,
+		GnosisSafeSignatureRequirementLabel: gnosisSafeVisualizer.GnosisSafeSignatureRequirementLabel,
 		signaturesTheSignerProvides: gnosisSafeVisualizer.signaturesTheSignerProvides,
 	}
 }
@@ -219,15 +219,15 @@ function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Arra
 }
 
 // Answers the owner reads of the Safe preview check the way a Safe does.
-function getNamedSafeCallReply(callParameters: unknown, owners: readonly bigint[]) {
+function getNamedGnosisSafeCallReply(callParameters: unknown, owners: readonly bigint[]) {
 	if (typeof callParameters !== 'object' || callParameters === null || !('data' in callParameters) || !(callParameters.data instanceof Uint8Array)) throw new Error('Missing eth_call data')
 	const callData = dataStringWith0xStart(callParameters.data)
-	if (callData === encodeFunctionCall(SAFE_ABI, 'getOwners', [])) return encodeFunctionReturn(SAFE_ABI, 'getOwners', [owners.map(addressString)])
-	if (callData === encodeFunctionCall(SAFE_ABI, 'getThreshold', [])) return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [1n])
+	if (callData === encodeFunctionCall(GNOSIS_SAFE_ABI, 'getOwners', [])) return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getOwners', [owners.map(addressString)])
+	if (callData === encodeFunctionCall(GNOSIS_SAFE_ABI, 'getThreshold', [])) return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getThreshold', [1n])
 	throw new Error(`Unexpected eth_call: ${ callData }`)
 }
 
-function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules['defaultActiveAddresses'][number], recipient: TestModules['defaultActiveAddresses'][number], operation: 0n | 1n = 0n) {
+function createGnosisSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules['defaultActiveAddresses'][number], recipient: TestModules['defaultActiveAddresses'][number], operation: 0n | 1n = 0n) {
 	const zeroAddressEntry = {
 		address: 0n,
 		name: '0x0 Address',
@@ -236,7 +236,7 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 		chainId: fakeRpcNetwork.chainId,
 	} as const
 
-	const safeTxMessage: SafeTx = {
+	const safeTxMessage: GnosisSafeTx = {
 		types: {
 			SafeTx: [
 				{ name: 'to', type: 'address' },
@@ -274,7 +274,7 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 		},
 	}
 
-	const safeMessage: VisualizedPersonalSignRequestSafeTx = {
+	const safeMessage: VisualizedPersonalSignRequestGnosisSafeTx = {
 		activeAddress,
 		rpcNetwork: fakeRpcNetwork,
 		simulationMode: true,
@@ -305,11 +305,11 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 }
 
 // Answers the owner reads of the Safe signature requirement as a Safe with the given owners and threshold, and undefined for any other call.
-function getSafeOwnerReadReply(call: unknown, safeAddress: bigint, owners: readonly bigint[], threshold: bigint) {
+function getGnosisSafeOwnerReadReply(call: unknown, safeAddress: bigint, owners: readonly bigint[], threshold: bigint) {
 	if (typeof call !== 'object' || call === null || !('to' in call) || call.to !== safeAddress || !('input' in call) || !(call.input instanceof Uint8Array)) return undefined
 	const callData = dataStringWith0xStart(call.input)
-	if (callData === encodeFunctionCall(SAFE_ABI, 'getOwners', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getOwners', [owners.map(addressString)]))
-	if (callData === encodeFunctionCall(SAFE_ABI, 'getThreshold', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getThreshold', [threshold]))
+	if (callData === encodeFunctionCall(GNOSIS_SAFE_ABI, 'getOwners', [])) return stringToUint8Array(encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getOwners', [owners.map(addressString)]))
+	if (callData === encodeFunctionCall(GNOSIS_SAFE_ABI, 'getThreshold', [])) return stringToUint8Array(encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getThreshold', [threshold]))
 	return undefined
 }
 
@@ -456,9 +456,9 @@ describe('Gnosis Safe stack simulation', () => {
 	})
 
 	const refusedPreviews = [
-		['a contract that does not answer as a Safe', 0n, async () => '0x', /is not a Gnosis Safe on this network/u],
-		['a delegatecall to a contract that does not answer as a Safe', 1n, async () => '0x', /is not a Gnosis Safe on this network/u],
-		['a Safe the active address is not an owner of', 0n, async (parameters: unknown) => getNamedSafeCallReply(parameters, [0x1234n]), /is not an owner of Gnosis Safe/u],
+		['a contract that does not answer as a Gnosis Safe', 0n, async () => '0x', /is not a Gnosis Safe on this network/u],
+		['a delegatecall to a contract that does not answer as a Gnosis Safe', 1n, async () => '0x', /is not a Gnosis Safe on this network/u],
+		['a Gnosis Safe the active address is not an owner of', 0n, async (parameters: unknown) => getNamedGnosisSafeCallReply(parameters, [0x1234n]), /is not an owner of Gnosis Safe/u],
 	] as const
 	for (const [name, operation, answerCall, message] of refusedPreviews) test(`shows no outcome for ${ name }`, async () => {
 		await browserMock.reset()
@@ -482,7 +482,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		}
 		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
-		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, recipient, operation)
+		const safeMessage = createGnosisSafeMessage(fakeRpcNetwork, activeAddress, recipient, operation)
 		const namedContract = { ...recipient, address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n }
 
 		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: namedContract }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
@@ -493,9 +493,9 @@ describe('Gnosis Safe stack simulation', () => {
 	})
 
 	const safeSimulationCases = [
-		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true },
-		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true },
-		{ name: 'applies Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false },
+		{ name: 'simulates a normal Gnosis Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true },
+		{ name: 'applies Gnosis Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true },
+		{ name: 'applies Gnosis Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false },
 	] as const
 
 	for (const { name, operation, seedStack } of safeSimulationCases) test(name, async () => {
@@ -534,7 +534,7 @@ describe('Gnosis Safe stack simulation', () => {
 					case 'eth_getCode':
 						return '0x6000'
 					case 'eth_call':
-						return getNamedSafeCallReply(rpcRequest.params?.[0], [activeAddress.address])
+						return getNamedGnosisSafeCallReply(rpcRequest.params?.[0], [activeAddress.address])
 					case 'eth_gasPrice':
 						return serializeForRpc(EthereumQuantity, 1n)
 					case 'eth_blockNumber':
@@ -551,7 +551,7 @@ describe('Gnosis Safe stack simulation', () => {
 							throw new Error('Missing calls in eth_simulateV1 block')
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const ownerReadReply = getSafeOwnerReadReply(lastCall, activeAddress.address, [activeAddress.address], 1n)
+						const ownerReadReply = getGnosisSafeOwnerReadReply(lastCall, activeAddress.address, [activeAddress.address], 1n)
 						if (ownerReadReply !== undefined) {
 							ownerReadBlockCounts.push(callCount)
 							return makeEthSimulateBlocks(callCount, ownerReadReply)
@@ -563,14 +563,14 @@ describe('Gnosis Safe stack simulation', () => {
 							&& lastCall.to === activeAddress.address
 						if (hasSafeDelegateCallTarget) {
 							delegateCallSimulationCount += 1
-							if (typeof stateOverrides !== 'object' || stateOverrides === null) throw new Error('Missing Safe state overrides during delegatecall simulation')
+							if (typeof stateOverrides !== 'object' || stateOverrides === null) throw new Error('Missing Gnosis Safe state overrides during delegatecall simulation')
 							const safeOverride = Object.entries(stateOverrides).find(([address]) => address === addressString(activeAddress.address))?.[1]
 							if (typeof safeOverride !== 'object' || safeOverride === null || !('code' in safeOverride) || !(safeOverride.code instanceof Uint8Array) || safeOverride.code.length === 0) {
-								throw new Error('Missing Safe wrapper code during delegatecall simulation')
+								throw new Error('Missing Gnosis Safe wrapper code during delegatecall simulation')
 							}
 							const relocatedSafeOverride = Object.entries(stateOverrides).find(([address]) => address === '0x0000000000000000000000000000000000920515')?.[1]
 							if (typeof relocatedSafeOverride !== 'object' || relocatedSafeOverride === null || !('code' in relocatedSafeOverride) || !(relocatedSafeOverride.code instanceof Uint8Array) || relocatedSafeOverride.code.length === 0) {
-								throw new Error('Missing relocated Safe code during delegatecall simulation')
+								throw new Error('Missing relocated Gnosis Safe code during delegatecall simulation')
 							}
 						}
 						const blockOverrides = 'blockOverrides' in lastBlock ? lastBlock.blockOverrides : undefined
@@ -585,7 +585,7 @@ describe('Gnosis Safe stack simulation', () => {
 						if (isGasEstimation) {
 							gasEstimationCount += 1
 							if (operation === 0n && typeof stateOverrides === 'object' && stateOverrides !== null && Object.keys(stateOverrides).length !== 0) {
-								throw new Error('Normal Safe call gas estimation received unexpected state overrides')
+								throw new Error('Normal Gnosis Safe call gas estimation received unexpected state overrides')
 							}
 						}
 						const isGetCodeCall = typeof lastCall === 'object'
@@ -649,7 +649,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		})
 
-		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
+		const safeMessage = createGnosisSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
 		const simulationInput = await modules.getCurrentSimulationInput()
 		assert.equal(simulationInput.length, seedStack ? 1 : 0)
 		assert.equal(simulationInput[0]?.transactions.length, seedStack ? 1 : undefined)
@@ -666,7 +666,7 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(Object.keys(safeSimulationBlock?.stateOverrides ?? {}).length, operation === 1n ? 2 : 0)
 		if (seedStack) assert.equal(Object.keys(reply.result.simulationState.simulationStateInput[0]?.stateOverrides ?? {}).length, 0)
 		assert.equal(reply.result.visualizedSimulationState.success, true)
-		if (!reply.result.visualizedSimulationState.success) throw new Error('unexpected Safe visualization failure')
+		if (!reply.result.visualizedSimulationState.success) throw new Error('unexpected Gnosis Safe visualization failure')
 		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks.length, seedStack ? 2 : 1)
 		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions.length, 1)
 		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[1]?.simulatedAndVisualizedTransactions.length, seedStack ? 1 : undefined)
@@ -674,7 +674,7 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(delegateCallSimulationCount, operation === 1n ? 2 : 0)
 		// Both owner reads run on top of the stack the preview runs on: one block for the read, after the seeded stack block.
 		assert.deepEqual(ownerReadBlockCounts, seedStack ? [2, 2] : [1, 1])
-		assert.deepEqual(reply.result.safeSignatureRequirement, { threshold: 1n, ownerCount: 1n, signerIsOwner: true })
+		assert.deepEqual(reply.result.gnosisSafeSignatureRequirement, { threshold: 1n, ownerCount: 1n, signerIsOwner: true })
 	})
 	test('a default demo account among the owners does not count as a signature the user can provide', async () => {
 		// Fresh storage: the user has configured no accounts, so the default demo accounts are the active addresses.
@@ -684,7 +684,7 @@ describe('Gnosis Safe stack simulation', () => {
 		if (demoAccount === undefined) throw new Error('missing default test addresses')
 		assert.equal((await modules.getActiveAddresses()).some((entry) => entry.address === demoAccount.address), true)
 		const connectedUser = { ...demoAccount, name: 'Connected User', address: 0x7a16ff8270133f063aab6c9977183d9e72835428n }
-		const sharedSafe = { ...demoAccount, name: 'Shared Safe', address: 0x5afe5afe5afe5afe5afe5afe5afe5afe5afe5afen }
+		const sharedSafe = { ...demoAccount, name: 'Shared Gnosis Safe', address: 0x5afe5afe5afe5afe5afe5afe5afe5afe5afe5afen }
 		const fakeRpcNetwork: RpcEntry = { name: 'Test Chain', chainId: 1337n, httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: true }
 		await modules.browserStorageLocalSet({ simulationMode: true, independentActiveSimulationAddress: connectedUser.address, activeRpcNetwork: fakeRpcNetwork })
 		const fakeBlock = makeFakeBlock(123n)
@@ -699,7 +699,7 @@ describe('Gnosis Safe stack simulation', () => {
 					case 'eth_getBalance': return serializeForRpc(EthereumQuantity, 0n)
 					case 'eth_getCode': return '0x6000'
 					// The preview guard checks on-chain ownership before the stack-based signature requirement read.
-					case 'eth_call': return getNamedSafeCallReply(rpcRequest.params?.[0], [connectedUser.address, demoAccount.address])
+					case 'eth_call': return getNamedGnosisSafeCallReply(rpcRequest.params?.[0], [connectedUser.address, demoAccount.address])
 					case 'eth_gasPrice': return serializeForRpc(EthereumQuantity, 1n)
 					case 'eth_simulateV1': {
 						const firstParam = rpcRequest.params?.[0]
@@ -708,7 +708,7 @@ describe('Gnosis Safe stack simulation', () => {
 						const lastBlock = firstParam.blockStateCalls[callCount - 1]
 						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) throw new Error('Missing calls in eth_simulateV1 block')
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const ownerReadReply = getSafeOwnerReadReply(lastCall, sharedSafe.address, [connectedUser.address, demoAccount.address], 2n)
+						const ownerReadReply = getGnosisSafeOwnerReadReply(lastCall, sharedSafe.address, [connectedUser.address, demoAccount.address], 2n)
 						if (ownerReadReply !== undefined) return makeEthSimulateBlocks(callCount, ownerReadReply)
 						const isAggregate3BalanceCall = typeof lastCall === 'object' && lastCall !== null && 'to' in lastCall && lastCall.to === MULTICALL3
 						if (isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount, stringToUint8Array(encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{ success: true, returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]) }]])))
@@ -721,16 +721,16 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		}
 		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
-		const safeMessage = createSafeMessage(fakeRpcNetwork, connectedUser, connectedUser)
+		const safeMessage = createGnosisSafeMessage(fakeRpcNetwork, connectedUser, connectedUser)
 		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: sharedSafe, message: { ...safeMessage.message, domain: { ...safeMessage.message.domain, verifyingContract: sharedSafe.address } } }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
 		if (!reply.success) throw new Error(reply.errorMessage)
 
-		const requirement = reply.result.safeSignatureRequirement
+		const requirement = reply.result.gnosisSafeSignatureRequirement
 		assert.deepEqual(requirement, { threshold: 2n, ownerCount: 2n, signerIsOwner: true })
-		if (requirement === undefined) throw new Error('missing Safe signature requirement')
+		if (requirement === undefined) throw new Error('missing Gnosis Safe signature requirement')
 		assert.equal(modules.signaturesTheSignerProvides(requirement), 1n)
 		const dom = installDomMock()
-		await act(() => { render(h(modules.SafeSignatureRequirementLabel, { requirement }), dom.document.body) })
+		await act(() => { render(h(modules.GnosisSafeSignatureRequirementLabel, { requirement }), dom.document.body) })
 		const labelText = dom.document.body.textContent ?? ''
 		dom.restore()
 		assert.equal(labelText.includes('Needs 2 of 2 owner signatures'), true)

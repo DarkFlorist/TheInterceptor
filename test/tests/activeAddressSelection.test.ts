@@ -7,10 +7,10 @@ import { getActiveAddressEntry } from '../../app/ts/components/subcomponents/add
 
 const EOA_ADDRESS = 0x1000000000000000000000000000000000000001n
 const OTHER_EOA_ADDRESS = 0x1000000000000000000000000000000000000002n
-const SAFE_ADDRESS = 0x2000000000000000000000000000000000000002n
-const OTHER_CHAIN_SAFE_ADDRESS = 0x3000000000000000000000000000000000000003n
-const UNOWNED_SAFE_ADDRESS = 0x4000000000000000000000000000000000000004n
-const UNKNOWN_OWNERS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
+const GNOSIS_SAFE_ADDRESS = 0x2000000000000000000000000000000000000002n
+const OTHER_CHAIN_GNOSIS_SAFE_ADDRESS = 0x3000000000000000000000000000000000000003n
+const UNOWNED_GNOSIS_SAFE_ADDRESS = 0x4000000000000000000000000000000000000004n
+const UNKNOWN_OWNERS_GNOSIS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
 const simulationAddressInput = (activeAddress: bigint | undefined) => ({ mode: 'simulation' as const, activeAddress })
 const signingAddressInput = (selectedAddress: SigningAddressSelection | undefined, signerAccounts: readonly bigint[], walletFallbackAddress: bigint | undefined) => ({ mode: 'signing' as const, selectedAddress, signerAccounts, walletFallbackAddress })
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
@@ -29,10 +29,10 @@ const modeActiveAddressHookSource = await Bun.file(new URL('../../app/ts/compone
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
-	{ type: 'safe', name: 'Current-chain Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [EOA_ADDRESS] },
-	{ type: 'safe', name: 'Other-chain Safe', address: OTHER_CHAIN_SAFE_ADDRESS, chainId: 10n, entrySource: 'User', useAsActiveAddress: true },
-	{ type: 'safe', name: 'Unowned Safe', address: UNOWNED_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [OTHER_CHAIN_SAFE_ADDRESS] },
-	{ type: 'safe', name: 'Unknown owners Safe', address: UNKNOWN_OWNERS_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true },
+	{ type: 'safe', name: 'Current-chain Gnosis Safe', address: GNOSIS_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [EOA_ADDRESS] },
+	{ type: 'safe', name: 'Other-chain Gnosis Safe', address: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS, chainId: 10n, entrySource: 'User', useAsActiveAddress: true },
+	{ type: 'safe', name: 'Unowned Gnosis Safe', address: UNOWNED_GNOSIS_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [OTHER_CHAIN_GNOSIS_SAFE_ADDRESS] },
+	{ type: 'safe', name: 'Unknown owners Gnosis Safe', address: UNKNOWN_OWNERS_GNOSIS_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true },
 ]
 
 describe('active address selection', () => {
@@ -45,7 +45,7 @@ describe('active address selection', () => {
 	})
 
 	test('keeps optimistic simulation and signing selections in separate state', () => {
-		assert.deepEqual(getOptimisticActiveAddressSelection(EOA_ADDRESS, true, [SAFE_ADDRESS]), {
+		assert.deepEqual(getOptimisticActiveAddressSelection(EOA_ADDRESS, true, [GNOSIS_SAFE_ADDRESS]), {
 			mode: 'simulation',
 			activeSimulationAddress: EOA_ADDRESS,
 			useSignersAddressAsActiveAddress: false,
@@ -55,29 +55,29 @@ describe('active address selection', () => {
 			activeSimulationAddress: EOA_ADDRESS,
 			useSignersAddressAsActiveAddress: true,
 		})
-		assert.deepEqual(getOptimisticActiveAddressSelection(SAFE_ADDRESS, false, [EOA_ADDRESS]), {
+		assert.deepEqual(getOptimisticActiveAddressSelection(GNOSIS_SAFE_ADDRESS, false, [EOA_ADDRESS]), {
 			mode: 'signing',
-			displayedSigningAddress: SAFE_ADDRESS,
+			displayedSigningAddress: GNOSIS_SAFE_ADDRESS,
 		})
 	})
 
-	test('resolves one mode-aware address and Safe-signing state for every popup consumer', () => {
+	test('resolves one mode-aware address and Gnosis Safe-signing state for every popup consumer', () => {
 		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, simulationAddressInput(EOA_ADDRESS)), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, simulationAddressInput(OTHER_CHAIN_SAFE_ADDRESS)), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, simulationAddressInput(OTHER_CHAIN_GNOSIS_SAFE_ADDRESS)), {
 			activeAddress: undefined,
 			activeAddressBookEntry: undefined,
 			safeSigningMode: false,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [EOA_ADDRESS], EOA_ADDRESS)), {
-			activeAddress: SAFE_ADDRESS,
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: GNOSIS_SAFE_ADDRESS }, [EOA_ADDRESS], EOA_ADDRESS)), {
+			activeAddress: GNOSIS_SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
 			safeSigningMode: true,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: OTHER_CHAIN_SAFE_ADDRESS }, [EOA_ADDRESS], EOA_ADDRESS)), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS }, [EOA_ADDRESS], EOA_ADDRESS)), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
@@ -94,17 +94,17 @@ describe('active address selection', () => {
 		assert.doesNotMatch(simulationStackPageSource, /simulationMode\.value \? activeSimulationAddress\.value : displayedSigningAddress\.value/u)
 	})
 
-	test('prefers the current-chain Safe over an earlier contact with the same signing address', () => {
-		const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: SAFE_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
-		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [EOA_ADDRESS], EOA_ADDRESS)), {
-			activeAddress: SAFE_ADDRESS,
+	test('prefers the current-chain Gnosis Safe over an earlier contact with the same signing address', () => {
+		const contactWithSafeAddress = { type: 'contact', name: 'Gnosis Safe address contact', address: GNOSIS_SAFE_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
+		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], 1n, signingAddressInput({ type: 'safe', address: GNOSIS_SAFE_ADDRESS }, [EOA_ADDRESS], EOA_ADDRESS)), {
+			activeAddress: GNOSIS_SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
 			safeSigningMode: true,
 		})
 	})
 
-	test('falls back to the wallet account instead of presenting an unowned Safe as the active signing account', () => {
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [OTHER_CHAIN_SAFE_ADDRESS], EOA_ADDRESS)), {
+	test('falls back to the wallet account instead of presenting an unowned Gnosis Safe as the active signing account', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: GNOSIS_SAFE_ADDRESS }, [OTHER_CHAIN_GNOSIS_SAFE_ADDRESS], EOA_ADDRESS)), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
@@ -119,7 +119,7 @@ describe('active address selection', () => {
 		})
 	})
 
-	test('does not mistake a wallet EOA for a same-address Safe on another chain', () => {
+	test('does not mistake a wallet EOA for a same-address Gnosis Safe on another chain', () => {
 		const sameAddressOtherChainSafe = { ...activeAddresses[2], address: EOA_ADDRESS }
 		assert.deepEqual(resolveActiveAddressForMode([...activeAddresses, sameAddressOtherChainSafe], 1n, signingAddressInput({ type: 'walletAccount', address: EOA_ADDRESS }, [EOA_ADDRESS, OTHER_EOA_ADDRESS], OTHER_EOA_ADDRESS)), {
 			activeAddress: EOA_ADDRESS,
@@ -128,27 +128,27 @@ describe('active address selection', () => {
 		})
 	})
 
-	test('classifies the displayed wallet account separately from a displayed Safe', () => {
+	test('classifies the displayed wallet account separately from a displayed Gnosis Safe', () => {
 		assert.deepEqual(getDisplayedSigningAddressSelection(EOA_ADDRESS, undefined), { type: 'walletAccount', address: EOA_ADDRESS })
-		assert.deepEqual(getDisplayedSigningAddressSelection(SAFE_ADDRESS, SAFE_ADDRESS), { type: 'safe', address: SAFE_ADDRESS })
-		assert.equal(getDisplayedSigningAddressSelection(undefined, SAFE_ADDRESS), undefined)
+		assert.deepEqual(getDisplayedSigningAddressSelection(GNOSIS_SAFE_ADDRESS, GNOSIS_SAFE_ADDRESS), { type: 'safe', address: GNOSIS_SAFE_ADDRESS })
+		assert.equal(getDisplayedSigningAddressSelection(undefined, GNOSIS_SAFE_ADDRESS), undefined)
 	})
 
-	test('keeps an explicitly selected Safe when its address matches the wallet account', () => {
-		const selfOwnedSafe = { ...activeAddresses[1], safeSignerAddresses: [SAFE_ADDRESS] }
-		assert.deepEqual(getActiveAddressSelection(SAFE_ADDRESS, [activeAddresses[0], selfOwnedSafe], false, 1n, [SAFE_ADDRESS]), {
+	test('keeps an explicitly selected Gnosis Safe when its address matches the wallet account', () => {
+		const selfOwnedSafe = { ...activeAddresses[1], safeSignerAddresses: [GNOSIS_SAFE_ADDRESS] }
+		assert.deepEqual(getActiveAddressSelection(GNOSIS_SAFE_ADDRESS, [activeAddresses[0], selfOwnedSafe], false, 1n, [GNOSIS_SAFE_ADDRESS]), {
 			type: 'addressBookEntry',
 			entry: selfOwnedSafe,
 		})
-		assert.deepEqual(resolveActiveAddressForMode([activeAddresses[0], selfOwnedSafe], 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [SAFE_ADDRESS], SAFE_ADDRESS)), {
-			activeAddress: SAFE_ADDRESS,
+		assert.deepEqual(resolveActiveAddressForMode([activeAddresses[0], selfOwnedSafe], 1n, signingAddressInput({ type: 'safe', address: GNOSIS_SAFE_ADDRESS }, [GNOSIS_SAFE_ADDRESS], GNOSIS_SAFE_ADDRESS)), {
+			activeAddress: GNOSIS_SAFE_ADDRESS,
 			activeAddressBookEntry: selfOwnedSafe,
 			safeSigningMode: true,
 		})
 	})
 
-	test('does not present an invalid signing Safe when no wallet fallback is available', () => {
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [], undefined)), {
+	test('does not present an invalid signing Gnosis Safe when no wallet fallback is available', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, 1n, signingAddressInput({ type: 'safe', address: GNOSIS_SAFE_ADDRESS }, [], undefined)), {
 			activeAddress: undefined,
 			activeAddressBookEntry: undefined,
 			safeSigningMode: false,
@@ -173,7 +173,7 @@ describe('active address selection', () => {
 			activeAddressBookEntry: currentChainEntry,
 			safeSigningMode: false,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(duplicatedAddressEntries, 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [OTHER_CHAIN_SAFE_ADDRESS], EOA_ADDRESS)), {
+		assert.deepEqual(resolveActiveAddressForMode(duplicatedAddressEntries, 1n, signingAddressInput({ type: 'safe', address: GNOSIS_SAFE_ADDRESS }, [OTHER_CHAIN_GNOSIS_SAFE_ADDRESS], EOA_ADDRESS)), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: currentChainEntry,
 			safeSigningMode: false,
@@ -195,13 +195,13 @@ describe('active address selection', () => {
 		assert.equal(entry.askForAddressAccess, true)
 	})
 
-	test('treats an owner wallet as connected while a Safe is the displayed signing account', () => {
+	test('treats an owner wallet as connected while a Gnosis Safe is the displayed signing account', () => {
 		assert.equal(isSignerConnectedForMode(false, undefined, { signerAccounts: [EOA_ADDRESS] }), true)
 		assert.equal(isSignerConnectedForMode(false, undefined, { signerAccounts: [] }), false)
 		assert.equal(isSignerConnectedForMode(true, EOA_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), true)
-		assert.equal(isSignerConnectedForMode(true, SAFE_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), false)
+		assert.equal(isSignerConnectedForMode(true, GNOSIS_SAFE_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), false)
 	})
-	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
+	test('does not allow selecting an EOA or Gnosis Safe in signing mode without a wallet account', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, []).map(({ address }) => address),
 			[],
@@ -212,14 +212,14 @@ describe('active address selection', () => {
 	test('shows only current-chain Safes owned by the wallet-selected signer account', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, [EOA_ADDRESS]).map(({ address }) => address),
-			[SAFE_ADDRESS],
+			[GNOSIS_SAFE_ADDRESS],
 		)
 	})
 
 	test('keeps arbitrary EOAs and Safes available in simulation mode', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, true, 1n, [EOA_ADDRESS]).map(({ address }) => address),
-			[EOA_ADDRESS, SAFE_ADDRESS, UNOWNED_SAFE_ADDRESS, UNKNOWN_OWNERS_SAFE_ADDRESS],
+			[EOA_ADDRESS, GNOSIS_SAFE_ADDRESS, UNOWNED_GNOSIS_SAFE_ADDRESS, UNKNOWN_OWNERS_GNOSIS_SAFE_ADDRESS],
 		)
 	})
 
@@ -234,12 +234,12 @@ describe('active address selection', () => {
 	})
 
 	test('replaces stale metadata for a just-persisted entry', () => {
-		const staleEntry = { type: 'safe', name: 'Stale Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', safeSignerAddresses: [] } as const
-		const persistedEntry = { ...staleEntry, name: 'Updated Safe', safeSignerAddresses: [EOA_ADDRESS] }
+		const staleEntry = { type: 'safe', name: 'Stale Gnosis Safe', address: GNOSIS_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', safeSignerAddresses: [] } as const
+		const persistedEntry = { ...staleEntry, name: 'Updated Gnosis Safe', safeSignerAddresses: [EOA_ADDRESS] }
 		const selectableAddresses = includePersistedAddressBookEntry([staleEntry], persistedEntry)
 
 		assert.deepEqual(selectableAddresses, [persistedEntry])
-		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, selectableAddresses, false, 1n, [EOA_ADDRESS]), true)
+		assert.equal(isActiveAddressSelectionAllowed(GNOSIS_SAFE_ADDRESS, selectableAddresses, false, 1n, [EOA_ADDRESS]), true)
 	})
 
 	test('waits for the background to accept an active-address change', async () => {
@@ -277,9 +277,9 @@ describe('active address selection', () => {
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, [EOA_ADDRESS]), true)
 		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
 		assert.equal(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), undefined)
-		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
-		assert.equal(isActiveAddressSelectionAllowed(UNOWNED_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
-		assert.throws(() => assertActiveAddressSelectionAllowed(OTHER_CHAIN_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), /configured for another chain/u)
+		assert.equal(isActiveAddressSelectionAllowed(GNOSIS_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
+		assert.equal(isActiveAddressSelectionAllowed(UNOWNED_GNOSIS_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
+		assert.throws(() => assertActiveAddressSelectionAllowed(OTHER_CHAIN_GNOSIS_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), /configured for another chain/u)
 	})
 
 	test('keeps popup and access-dialog security gates on the shared selection policy', () => {
@@ -299,7 +299,7 @@ describe('active address selection', () => {
 		assert.match(activeSettingsSource, /async function runActiveSettingsChange[\s\S]*?runActiveSettingsTransition[\s\S]*?setUseSignersAddressAsActiveAddress[\s\S]*?changeSimulationMode/u)
 		assert.match(activeSettingsSource, /async function runActiveSettingsTransition[\s\S]*?await commit\(\)[\s\S]*?rememberSigningAddressSelection/u)
 		assert.doesNotMatch(activeSettingsSource, /inferredSafeEntryOnActiveChain/u)
-		assert.match(activeSettingsSource, /Signing address changes must identify whether the selection is the signer or a Safe\./u)
+		assert.match(activeSettingsSource, /Signing address changes must identify whether the selection is the signer or a Gnosis Safe\./u)
 		assert.match(providerMessageHandlersSource, /!settings\.simulationMode \? \{ signingAddressSelection: 'signer'/u)
 		const explicitPopupSelectionHandler = popupMessageHandlersSource.slice(
 			popupMessageHandlersSource.indexOf('export async function changeActiveAddress('),
@@ -316,13 +316,13 @@ describe('active address selection', () => {
 
 	test('keeps background active-address resolution on the shared selection policy', () => {
 		assert.match(backgroundUtilsSource, /resolveActiveAddressForMode\(/u)
-		assert.doesNotMatch(backgroundUtilsSource, /resolveSigningSafe\(/u)
+		assert.doesNotMatch(backgroundUtilsSource, /resolveSigningGnosisSafe\(/u)
 		assert.doesNotMatch(backgroundSource, /resolveActiveAddressForMode\(/u)
-		assert.match(backgroundSource, /isActiveSigningSafe\(/u)
+		assert.match(backgroundSource, /isActiveSigningGnosisSafe\(/u)
 		assert.doesNotMatch(backgroundSource, /getSafeSigningEntry/u)
 		assert.doesNotMatch(backgroundUtilsSource, /getActiveAddressSelection\(/u)
 		assert.doesNotMatch(providerSigningSelectionSource, /resolveConfiguredSigningSafe/u)
-		assert.match(providerSigningSelectionSource, /getConfiguredSigningSafeForChain[\s\S]*?resolveSigningSafe\(/u)
+		assert.match(providerSigningSelectionSource, /getConfiguredSigningGnosisSafeForChain[\s\S]*?resolveSigningGnosisSafe\(/u)
 		assert.doesNotMatch(backgroundUtilsSource, /safeSignerAddresses/u)
 		assert.doesNotMatch(backgroundUtilsSource, /isSafeOnAnotherChain/u)
 		assert.doesNotMatch(backgroundUtilsSource, /chainEntries\.find/u)

@@ -5,12 +5,12 @@ import { getReviewedResultId } from './reviewedResult.js'
 import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimulationRefresh, refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setGnosisSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getGnosisSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
-import type { PendingTransactionSafeFlow, SimulatedPendingTransaction } from '../types/accessRequest.js'
+import { formEthSendTransaction, formSendRawTransaction, prepareUnformedGnosisSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
+import type { PendingTransactionGnosisSafeFlow, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -36,11 +36,11 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
-import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
+import type { VisualizedPersonalSignRequestGnosisSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, prepareGnosisSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
-import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetGnosisSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
@@ -54,18 +54,18 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
+import { createGnosisSafeContractValidationFailure, getGnosisSafeContractSnapshot, validateGnosisSafeOwnerIsEoa } from '../gnosisSafe/gnosisSafeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
-import { getCreatedSafeProposal, getPendingTransactionGasPayment, getPendingTransactionRefresh, getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getCreatedGnosisSafeProposal, getPendingTransactionGasPayment, getPendingTransactionRefresh, getGnosisSafePendingFlow } from '../gnosisSafe/gnosisSafePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
-export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
+export { importGnosisSafeStack, requestGnosisSafeStackExport, validateGnosisSafeTransactionStackForCurrentContract } from './gnosisSafeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, importSettingsAndRefresh, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import { getConfiguredSigningGnosisSafeForChain } from './signingAddressSelection.js'
 import { setMetamaskCompatibilityMode } from './metamaskCompatibilityMode.js'
 
 type TimestampedPopupVisualisation = {
@@ -108,9 +108,9 @@ async function getWalletSelectedAddressBookEntry(tabState: TabState, chainId: bi
 	return (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === walletSelectedAccount)
 }
 
-type SafeSignerAccountRefresh = Awaited<ReturnType<typeof refreshSignerAccountsForTab>>
+type GnosisSafeSignerAccountRefresh = Awaited<ReturnType<typeof refreshSignerAccountsForTab>>
 
-export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSignerAccountRefresh) {
+export function getGnosisSafeSignerSelectionFromAccountRefresh(refreshResult: GnosisSafeSignerAccountRefresh) {
 	return {
 		selectedSigner: refreshResult?.error === undefined ? refreshResult?.accounts[0] : undefined,
 		verificationError: refreshResult?.error?.message ?? (refreshResult === undefined ? 'The connected signer wallet is unavailable.' : undefined),
@@ -125,14 +125,14 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
 		)
 		: undefined
-	const refreshedSafeSignerSelection = pending !== undefined && getSafePendingFlow(pending) !== undefined
+	const refreshedSafeSignerSelection = pending !== undefined && getGnosisSafePendingFlow(pending) !== undefined
 		? await (async () => {
 			const refreshResult = await refreshSignerAccountsForTab(
 				websiteTabConnections,
 				pending.uniqueRequestIdentifier.requestSocket.tabId,
 				false,
 			)
-			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
+			return getGnosisSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
 	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
@@ -324,9 +324,9 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				}
 				const safeSimulationSignerAddress = entry.data.safeSimulationSignerAddress
 				if (safeSimulationSignerAddress === undefined) {
-					throw createSafeContractValidationFailure('Select a current Gnosis Safe owner for simulation.')
+					throw createGnosisSafeContractValidationFailure('Select a current Gnosis Safe owner for simulation.')
 				}
-				const { snapshot: { state: safeState } } = await validateSafeOwnerIsEoa(ethereum, entry.data.address, safeSimulationSignerAddress)
+				const { snapshot: { state: safeState } } = await validateGnosisSafeOwnerIsEoa(ethereum, entry.data.address, safeSimulationSignerAddress)
 				entryToStore = {
 					...entry.data,
 					safeSimulationSignerAddress,
@@ -376,17 +376,17 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 	}
 }
 
-export async function setSafeSimulationSigner(
+export async function setGnosisSafeSimulationSigner(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	request: SetSafeSimulationSigner,
+	request: SetGnosisSafeSimulationSigner,
 ) {
 	const { ethereum } = simulationServicesOwner.getCurrent()
 	if (request.data.chainId !== ethereum.getChainId()) {
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
 			ok: false as const,
-			message: `Switch Interceptor to chain ${ request.data.chainId.toString() } before changing the Safe simulation signer.`,
+			message: `Switch Interceptor to chain ${ request.data.chainId.toString() } before changing the Gnosis Safe simulation signer.`,
 		}
 	}
 	const safeEntry = (await getUserAddressBookEntries()).find((entry) =>
@@ -395,11 +395,11 @@ export async function setSafeSimulationSigner(
 	if (safeEntry?.type !== 'safe') {
 		return { type: 'SetSafeSimulationSignerReply' as const, ok: false as const, message: 'The Gnosis Safe address-book entry no longer exists.' }
 	}
-	let validatedSafeState: Awaited<ReturnType<typeof validateSafeOwnerIsEoa>>['snapshot']['state']
+	let validatedSafeState: Awaited<ReturnType<typeof validateGnosisSafeOwnerIsEoa>>['snapshot']['state']
 	try {
 		const snapshot = request.data.safeSimulationSignerAddress === undefined
-			? await getSafeContractSnapshot(ethereum, safeEntry.address)
-			: (await validateSafeOwnerIsEoa(ethereum, safeEntry.address, request.data.safeSimulationSignerAddress)).snapshot
+			? await getGnosisSafeContractSnapshot(ethereum, safeEntry.address)
+			: (await validateGnosisSafeOwnerIsEoa(ethereum, safeEntry.address, request.data.safeSimulationSignerAddress)).snapshot
 		validatedSafeState = snapshot.state
 	} catch(error) {
 		await reportUnexpectedError(error, {
@@ -407,14 +407,14 @@ export async function setSafeSimulationSigner(
 			code: 'safe_simulation_signer_validation_failed',
 			displayMessage: request.data.safeSimulationSignerAddress === undefined
 				? 'Failed to refresh the Gnosis Safe owners.'
-				: 'Failed to validate the Safe simulation signer.',
+				: 'Failed to validate the Gnosis Safe simulation signer.',
 		})
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
 			ok: false as const,
 			message: getErrorMessage(error) ?? (request.data.safeSimulationSignerAddress === undefined
 				? 'Failed to refresh the Gnosis Safe owners.'
-				: 'The selected address is not a current wallet-signable Safe owner.'),
+				: 'The selected address is not a current wallet-signable Gnosis Safe owner.'),
 		}
 	}
 	let updatedEntry: AddressBookEntry | undefined
@@ -443,7 +443,7 @@ export async function setSafeSimulationSigner(
 	if (accessRefreshError !== undefined) return {
 		type: 'SetSafeSimulationSignerReply' as const,
 		ok: false as const,
-		message: `The Safe simulation signer was saved, but website access could not be refreshed: ${ accessRefreshError }`,
+		message: `The Gnosis Safe simulation signer was saved, but website access could not be refreshed: ${ accessRefreshError }`,
 	}
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
@@ -643,7 +643,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	switch (refresh.kind) {
 		case 'keepFailure': return
 		case 'prepareSafeProposal': return await runWithPendingConfirmationLock(async () => {
-			const prepared = await prepareUnformedSafeProposalAgain(ethereum, firstTxn, refresh.safeRequestContext)
+			const prepared = await prepareUnformedGnosisSafeProposalAgain(ethereum, firstTxn, refresh.safeRequestContext)
 			if (prepared === undefined) return
 			await simulateAndStoreRefreshedTransaction(ethereum, tokenPriceService, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal, simulationRefresh)
 		})
@@ -658,7 +658,7 @@ async function simulateAndStoreRefreshedTransaction(
 	tokenPriceService: TokenPriceService,
 	pending: SimulatedPendingTransaction,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-	preparedSafeProposal: { readonly safeFlow: PendingTransactionSafeFlow, readonly approvalStatus: SimulatedPendingTransaction['approvalStatus'] } | undefined,
+	preparedSafeProposal: { readonly safeFlow: PendingTransactionGnosisSafeFlow, readonly approvalStatus: SimulatedPendingTransaction['approvalStatus'] } | undefined,
 	simulationRefresh: ConfirmTransactionSimulationRefresh,
 ) {
 	// Forming the transaction can yield to a newer refresh, such as one for a later gas edit, which this one must not cancel.
@@ -670,7 +670,7 @@ async function simulateAndStoreRefreshedTransaction(
 		pending.simulationMode,
 		pending.uniqueRequestIdentifier,
 		transactionToSimulate,
-		getCreatedSafeProposal(preparedSafeProposal?.safeFlow ?? pending.safeFlow),
+		getCreatedGnosisSafeProposal(preparedSafeProposal?.safeFlow ?? pending.safeFlow),
 		simulationRefresh,
 	)
 	if (refreshMessage === undefined) return
@@ -740,7 +740,7 @@ export async function enableSimulationMode(
 		if (!params.data) {
 			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
 			const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
-			const configuredSigningSafe = await getConfiguredSigningSafeForChain(
+			const configuredSigningSafe = await getConfiguredSigningGnosisSafeForChain(
 				settings.activeSigningSafeAddress,
 				targetChainId,
 				signerAccount === undefined ? [] : [signerAccount],
@@ -853,7 +853,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
-	const safeTransactionStacksPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks())
+	const safeTransactionStacksPromise = silenceChromeUnCaughtPromise(getGnosisSafeTransactionStacks())
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
 	const settings = await settingsPromise
@@ -919,7 +919,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(websiteTabConnections, parsedRequest.data.metamaskCompatibilityMode)
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
-		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
+		await setGnosisSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
 	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
@@ -937,7 +937,7 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	return reply
 }
 
-export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
+export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestGnosisSafeTx) {
 	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, await getCurrentSimulationInput(), ethereum, tokenPriceService)
 	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
@@ -1174,7 +1174,7 @@ async function buildHomePageUpdate(
 			? requestMakeMeRichList(ethereum, requestAbortController)
 			: settingsPromise.then(async (currentSettings) => await getCachedRichData(currentSettings.activeRpcNetwork.chainId))
 	)
-	const hasSafeTransactionsToExportPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks().then((stacks) => stacks.some((stack) =>
+	const hasSafeTransactionsToExportPromise = silenceChromeUnCaughtPromise(getGnosisSafeTransactionStacks().then((stacks) => stacks.some((stack) =>
 		stack.chainId === ethereum.getChainId() && stack.transactions.length > 0
 	)))
 	const tabId = await getLastKnownCurrentTabId()
@@ -1242,7 +1242,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 		}
 	}
 	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
-	const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereumClientService)
+	const simulationInput = await prepareGnosisSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereumClientService)
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(toSimulationStateInputMinimalData(simulationInput), await currentBlockNumberPromise, undefined)
 

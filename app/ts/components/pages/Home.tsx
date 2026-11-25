@@ -8,11 +8,11 @@ import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIV
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
-import { requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupGnosisSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getGnosisSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -465,7 +465,7 @@ function FirstCard(param: FirstCardParams) {
 	)
 	const safeSimulationSignerAddressBookEntries = useComputed(() => {
 		if (!param.simulationMode.value || activeSafe.value === undefined) return undefined
-		return getSafeSignerAddresses(activeSafe.value).map((safeSimulationSignerAddress) =>
+		return getGnosisSafeSignerAddresses(activeSafe.value).map((safeSimulationSignerAddress) =>
 			getActiveAddressEntry(safeSimulationSignerAddress, [
 				...retrievedSafeOwnerAddressBookEntries.value,
 				...(param.activeAddresses.value ?? []),
@@ -514,7 +514,7 @@ function FirstCard(param: FirstCardParams) {
 		})
 	}
 
-	const selectSafeSigner = (safeSimulationSignerAddress: bigint) => {
+	const selectGnosisSafeSigner = (safeSimulationSignerAddress: bigint) => {
 		if (!param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending') return
 		const safe = activeSafe.peek()
 		if (safe === undefined || !param.simulationMode.value || safe.safeSimulationSignerAddress === safeSimulationSignerAddress) return
@@ -534,8 +534,8 @@ function FirstCard(param: FirstCardParams) {
 						safeSimulationSignerAddress,
 					},
 				})
-				if (reply === undefined) throw new Error('Interceptor did not reply while changing the Safe simulation signer.')
-				if (!reply.ok) throw new Error(reply.message ?? 'Failed to change the Safe simulation signer.')
+				if (reply === undefined) throw new Error('Interceptor did not reply while changing the Gnosis Safe simulation signer.')
+				if (!reply.ok) throw new Error(reply.message ?? 'Failed to change the Gnosis Safe simulation signer.')
 			} catch (error) {
 				if (param.activeAddresses.value !== undefined) {
 					param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
@@ -549,29 +549,29 @@ function FirstCard(param: FirstCardParams) {
 		})
 	}
 
-	const refreshSafeOwners = () => {
+	const refreshGnosisSafeOwners = () => {
 		const safe = activeSafe.peek()
 		if (safe === undefined || !param.simulationMode.value) return
 		void waitForSafeOwnerLookup(async () => {
-			const safeContractStateReply = await requestPopupSafeContractState({ address: safe.address, chainId: safe.chainId })
+			const safeContractStateReply = await requestPopupGnosisSafeContractState({ address: safe.address, chainId: safe.chainId })
 			if (safeContractStateReply === undefined) throw new Error('Interceptor did not return the current Gnosis Safe owners.')
-			const safeContractState = safeContractStateReply.data.result
-			if (!safeContractState.ok) throw new Error(safeContractState.message)
-			if (safeContractState.owners.length === 0) throw new Error('The Gnosis Safe does not have any owners.')
+			const gnosisSafeContractState = safeContractStateReply.data.result
+			if (!gnosisSafeContractState.ok) throw new Error(gnosisSafeContractState.message)
+			if (gnosisSafeContractState.owners.length === 0) throw new Error('The Gnosis Safe does not have any owners.')
 			const currentSafeSimulationSignerAddress = safe.safeSimulationSignerAddress !== undefined
-				&& safeContractState.owners.includes(safe.safeSimulationSignerAddress)
+				&& gnosisSafeContractState.owners.includes(safe.safeSimulationSignerAddress)
 				? safe.safeSimulationSignerAddress
 				: undefined
-			retrievedSafeOwnerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
-			const updateVisibleSafeOwners = (simulationSignerAddress: bigint | undefined) => {
+			retrievedSafeOwnerAddressBookEntries.value = gnosisSafeContractState.ownerAddressBookEntries
+			const updateVisibleGnosisSafeOwners = (simulationSignerAddress: bigint | undefined) => {
 				if (param.activeAddresses.value === undefined) return
 				param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
 					entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId
 						? {
 							...entry,
 							safeSimulationSignerAddress: simulationSignerAddress,
-							safeSignerAddresses: [...safeContractState.owners],
-							safeVersion: safeContractState.version,
+							safeSignerAddresses: [...gnosisSafeContractState.owners],
+							safeVersion: gnosisSafeContractState.version,
 						}
 						: entry
 				)
@@ -584,20 +584,20 @@ function FirstCard(param: FirstCardParams) {
 					safeSimulationSignerAddress: currentSafeSimulationSignerAddress,
 				},
 			})
-			if (reply === undefined) throw new Error('Interceptor did not reply while refreshing the Safe owners.')
-			if (!reply.ok) throw new Error(reply.message ?? 'Failed to refresh the Safe owners.')
-			updateVisibleSafeOwners(currentSafeSimulationSignerAddress)
+			if (reply === undefined) throw new Error('Interceptor did not reply while refreshing the Gnosis Safe owners.')
+			if (!reply.ok) throw new Error(reply.message ?? 'Failed to refresh the Gnosis Safe owners.')
+			updateVisibleGnosisSafeOwners(currentSafeSimulationSignerAddress)
 		})
 	}
 
-	const renderSafeSimulationSigner = (safeSimulationSignerAddress: string) => {
+	const renderGnosisSafeSimulationSigner = (safeSimulationSignerAddress: string) => {
 		const address = stringToAddress(safeSimulationSignerAddress)
 		if (address === undefined) return safeSimulationSignerAddress
 		const addressBookEntry = getActiveAddressEntry(address, [
 				...retrievedSafeOwnerAddressBookEntries.value,
 				...(param.activeAddresses.value ?? []),
 			])
-		return <span class = 'safe-signer-home-option'>
+		return <span class = 'gnosis-safe-signer-home-option'>
 			<StaticBigAddress addressBookEntry = { addressBookEntry }/>
 		</span>
 	}
@@ -662,16 +662,16 @@ function FirstCard(param: FirstCardParams) {
 					</div>
 				}
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
-					<div class = 'safe-signer-address popup-data-reveal'>
-						<div class = 'safe-signer-home-heading'>
-							<p class = 'subtitle is-7'>Safe signer in simulation</p>
+					<div class = 'gnosis-safe-signer-address popup-data-reveal'>
+						<div class = 'gnosis-safe-signer-home-heading'>
+							<p class = 'subtitle is-7'>Gnosis Safe signer in simulation</p>
 							<AsyncActionButton
 								class = 'btn btn--outline is-small'
 								state = { safeOwnerLookupState.value.state }
 								text = { safeSimulationSignerOptions.value.length > 1 ? 'Refresh owners' : 'Retrieve owners' }
 								pendingText = { safeSimulationSignerOptions.value.length > 1 ? 'Refreshing...' : 'Retrieving...' }
 								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' }
-								onClick = { refreshSafeOwners }
+								onClick = { refreshGnosisSafeOwners }
 							/>
 						</div>
 						{ safeSimulationSignerOptions.value.length === 0 ? <></> :
@@ -680,12 +680,12 @@ function FirstCard(param: FirstCardParams) {
 								dropDownOptions = { safeSimulationSignerOptions }
 								onChangedCallBack = { safeSimulationSignerAddress => {
 									const address = stringToAddress(safeSimulationSignerAddress)
-									if (address !== undefined) selectSafeSigner(address)
+									if (address !== undefined) selectGnosisSafeSigner(address)
 								} }
 								buttonClassses = 'btn btn--outline is-small'
-								ariaLabel = 'Safe signer in simulation'
+								ariaLabel = 'Gnosis Safe signer in simulation'
 								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' || safeOwnerLookupState.value.state === 'pending' }
-								renderOption = { renderSafeSimulationSigner }
+								renderOption = { renderGnosisSafeSimulationSigner }
 							/>
 						}
 						{ safeSignerSelectionState.value.state === 'rejected'
@@ -717,7 +717,7 @@ function FirstCard(param: FirstCardParams) {
 								containerStyle = { { margin: '5px 0 0' } }
 								text = { <WalletSelectedAddressStatus signerName = { getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } addressBookEntry = { selectedSignerAddressBookEntry.value } renameAddressCallBack = { param.renameAddressCallBack } cannotSignSafe = { true } /> }
 							/>
-						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
+						: <p class = 'subtitle is-7 gnosis-safe-signer-connection-message'> {
 							!isSignerAvailable(param.tabState.value)
 								? 'Connect a browser wallet to sign with the selected address.'
 								: activeSafe.value === undefined

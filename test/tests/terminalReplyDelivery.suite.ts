@@ -3,7 +3,7 @@ import { spyOn, test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createAcceptConfirmation, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createAcceptConfirmation, createDisconnectedPort, createRecordingPort, createGnosisSafeAddressBookEntry, createGnosisSafeTx, EIP712Message, fakeRpcNetwork, fakeGnosisSafeContract, getGnosisSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, gnosisSafeTestOwnerAccount, gnosisSafeTestOwnerAddress, gnosisSafeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 import * as retrySchedulers from '../../app/ts/utils/retryScheduler.js'
 
 async function withControlledRecoveryRetries(run: (fireNext: () => Promise<number>) => Promise<void>) {
@@ -978,10 +978,10 @@ function failOpeningTheSimulationStackWindow(postedMessages: readonly unknown[])
 }
 
 // A signing-mode Gnosis Safe proposal from the requesting website, reviewed against a Safe whose only owner is the test owner.
-async function storeSafeProposalRequest(approvalStatus: { readonly status: 'WaitingForUser' } | { readonly status: 'WaitingForSigner' }) {
-	fakeSafeContract.owners = [safeTestOwnerAddress]
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
-	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+async function storeGnosisSafeProposalRequest(approvalStatus: { readonly status: 'WaitingForUser' } | { readonly status: 'WaitingForSigner' }) {
+	fakeGnosisSafeContract.owners = [gnosisSafeTestOwnerAddress]
+	const safeTx = createGnosisSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getGnosisSafeTxHash(safeTx))
 	await modules.updateSafeTransactionStacks(() => [])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
@@ -990,10 +990,10 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 		approvalStatus,
 		safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 			safeAddress: activeAddress,
-			safeSignerAddress: safeTestOwnerAddress,
+			safeSignerAddress: gnosisSafeTestOwnerAddress,
 			safeVersion: '1.4.1',
 			threshold: 2n,
-			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [gnosisSafeTestOwnerAddress], threshold: 2n },
 			safeTxHash,
 			safeTx,
 		} },
@@ -1002,14 +1002,14 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 }
 
 // The proposal is stored once in its Gnosis Safe stack and mirrored once on the simulation stack, both with the expected owner signatures, even though opening the stack window failed afterwards.
-async function assertSafeProposalWasStoredAndAnswered(postedMessages: readonly unknown[], safeTxHash: bigint, expectedSignatures: readonly { readonly signer: bigint, readonly signature: string }[]) {
+async function assertGnosisSafeProposalWasStoredAndAnswered(postedMessages: readonly unknown[], safeTxHash: bigint, expectedSignatures: readonly { readonly signer: bigint, readonly signature: string }[]) {
 	const [reply] = getRepliesToWebsite(postedMessages)
 	if (!isRecord(reply)) throw new Error('Missing reply to the website')
 	assert.equal(reply.method, 'eth_sendTransaction')
 	assert.equal(reply.result, modules.EthereumBytes32.serialize(safeTxHash))
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-	const safeStacks = await modules.getSafeTransactionStacks()
+	const safeStacks = await modules.getGnosisSafeTransactionStacks()
 	assert.equal(safeStacks.length, 1)
 	assert.deepEqual(safeStacks[0]?.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures })), [{ safeTxHash, signatures: expectedSignatures }])
 	const mirroredProposals = (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) =>
@@ -1022,7 +1022,7 @@ async function assertSafeProposalWasStoredAndAnswered(postedMessages: readonly u
 
 test('adding a Gnosis Safe proposal to its stack answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-	const { safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForUser' })
+	const { safeTxHash } = await storeGnosisSafeProposalRequest({ status: 'WaitingForUser' })
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
 
 	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
@@ -1032,14 +1032,14 @@ test('adding a Gnosis Safe proposal to its stack answers the website with the pr
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
-	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [])
+	await assertGnosisSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [])
 })
 
 test('a Gnosis Safe owner signature answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
-	const { safeTx, safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
-	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	await modules.updateUserAddressBookEntries(() => [createGnosisSafeAddressBookEntry({ safeSimulationSignerAddress: gnosisSafeTestOwnerAddress })])
+	const { safeTx, safeTxHash } = await storeGnosisSafeProposalRequest({ status: 'WaitingForSigner' })
+	const signature = await gnosisSafeTestOwnerAccount.signTypedData(EIP712Message.parse(gnosisSafeTxToTypedDataJson(safeTx)))
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
 
 	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
@@ -1049,7 +1049,7 @@ test('a Gnosis Safe owner signature answers the website with the proposal hash b
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
-	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [{ signer: safeTestOwnerAddress, signature }])
+	await assertGnosisSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [{ signer: gnosisSafeTestOwnerAddress, signature }])
 })
 
 // Records the website tab focused and the windows closed by the confirmation window cleanup, with the confirmation window of the pending request still open.
@@ -1065,7 +1065,7 @@ function recordConfirmationWindowCleanup() {
 
 test('failing to open the stack window after a Gnosis Safe proposal is stored still focuses the website and closes the confirmation window', async () => {
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-	const { safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForUser' })
+	const { safeTxHash } = await storeGnosisSafeProposalRequest({ status: 'WaitingForUser' })
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
 	const { focusedTabIds, removedWindowIds } = recordConfirmationWindowCleanup()
 
@@ -1078,7 +1078,7 @@ test('failing to open the stack window after a Gnosis Safe proposal is stored st
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
 	assert.deepEqual(focusedTabIds, [uniqueRequestIdentifier.requestSocket.tabId])
 	assert.deepEqual(removedWindowIds, [pendingTransaction.popupOrTabId.id])
-	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [])
+	await assertGnosisSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [])
 })
 
 test('a terminal reply delivery that throws still focuses the website and closes the confirmation window, and the delivery error reaches the caller', async () => {

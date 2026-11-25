@@ -3,7 +3,7 @@ import { describe, spyOn, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { withSilencedConsole } from './consoleSilence.js'
-import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createGnosisSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, gnosisSafeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
 async function captureConsoleWarnings(run: () => Promise<unknown>) {
 	const warnings: unknown[][] = []
@@ -178,7 +178,7 @@ describe('background eth_accounts', () => {
 		})
 	})
 
-	test('answers Sealwort Safe code and storage inspection without forwarding storage to the signer', async () => {
+	test('answers Sealwort Gnosis Safe code and storage inspection without forwarding storage to the signer', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -197,7 +197,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -475,7 +475,7 @@ describe('background eth_accounts', () => {
 		})
 	})
 
-	test('returns method-specific parse errors before the Safe signing-mode fallback and the Safe policy before invalid params errors', async () => {
+	test('returns method-specific parse errors before the Gnosis Safe signing-mode fallback and the Gnosis Safe policy before invalid params errors', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -494,7 +494,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1253,7 +1253,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(tabState.activeSigningAddress, currentAccount)
 	})
 
-	test('falls back from an active Safe to a newly selected wallet account without a saved preference', async () => {
+	test('falls back from an active Gnosis Safe to a newly selected wallet account without a saved preference', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -1277,7 +1277,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1359,7 +1359,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.includes(addressString(otherSignerAddress))), false)
 	})
 
-	test('restores each signer account\'s last Safe-or-EOA choice when MetaMask accounts change', async () => {
+	test('restores each signer account\'s last Gnosis Safe-or-EOA choice when MetaMask accounts change', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -1381,7 +1381,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(true, directEoa)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Remembered Safe',
+			name: 'Remembered Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1446,7 +1446,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
 	})
 
-	test('rejects public message signing while a configured Safe is the dapp-visible account', async () => {
+	test('rejects public message signing while a configured Gnosis Safe is the dapp-visible account', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -1466,7 +1466,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1521,30 +1521,30 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		for (const requestId of [210, 211]) {
 			const reply = messages.find((message) => message.requestId === requestId)
 			assert.equal(reply?.error?.code, 4200)
-			assert.match(reply?.error?.message ?? '', /Safe message signing request is not supported/u)
+			assert.match(reply?.error?.message ?? '', /Gnosis Safe message signing request is not supported/u)
 		}
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 		assert.deepEqual(await getPendingTransactionsAndMessages(), [])
 	})
 
-	test('allows only canonical Safe transaction typed data for the active Safe through the Safe signing gate', async () => {
+	test('allows only canonical Gnosis Safe transaction typed data for the active Gnosis Safe through the Gnosis Safe signing gate', async () => {
 		installBrowserMock()
-		const { isSafeTransactionCoSignRequest } = await import('../../app/ts/safe/safeRequestPolicy.js')
+		const { isGnosisSafeTransactionCoSignRequest } = await import('../../app/ts/gnosisSafe/gnosisSafeRequestPolicy.js')
 		const safeAddress = 0x5555555555555555555555555555555555555555n
-		const safeTx = createSafeTx(1n, safeAddress, {
+		const safeTx = createGnosisSafeTx(1n, safeAddress, {
 			to: 0x5656565656565656565656565656565656565656n,
 			value: 0n,
 			input: new Uint8Array(),
 		}, 0n)
 		const request = EthereumJsonRpcRequest.parse({
 			method: 'eth_signTypedData_v4',
-			params: [addressString(safeAddress), safeTxToTypedDataJson(safeTx)],
+			params: [addressString(safeAddress), gnosisSafeTxToTypedDataJson(safeTx)],
 		})
 
-		assert.equal(isSafeTransactionCoSignRequest(request, safeAddress, 1n), true)
-		assert.equal(isSafeTransactionCoSignRequest(request, safeAddress + 1n, 1n), false)
-		assert.equal(isSafeTransactionCoSignRequest(request, safeAddress, 2n), false)
-		assert.equal(isSafeTransactionCoSignRequest({
+		assert.equal(isGnosisSafeTransactionCoSignRequest(request, safeAddress, 1n), true)
+		assert.equal(isGnosisSafeTransactionCoSignRequest(request, safeAddress + 1n, 1n), false)
+		assert.equal(isGnosisSafeTransactionCoSignRequest(request, safeAddress, 2n), false)
+		assert.equal(isGnosisSafeTransactionCoSignRequest({
 			...request,
 			method: 'eth_signTypedData_v3',
 		}, safeAddress, 1n), false)
@@ -1552,14 +1552,14 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			{ ...safeTx, message: { ...safeTx.message, operation: 1n } },
 			{ ...safeTx, message: { ...safeTx.message, safeTxGas: 1n } },
 		]) {
-			assert.equal(isSafeTransactionCoSignRequest(EthereumJsonRpcRequest.parse({
+			assert.equal(isGnosisSafeTransactionCoSignRequest(EthereumJsonRpcRequest.parse({
 				method: 'eth_signTypedData_v4',
-				params: [addressString(safeAddress), safeTxToTypedDataJson(unsafeSafeTx)],
+				params: [addressString(safeAddress), gnosisSafeTxToTypedDataJson(unsafeSafeTx)],
 			}), safeAddress, 1n), false)
 		}
 	})
 
-	test('never forwards Safe signing requests on a signer-only network', async () => {
+	test('never forwards Gnosis Safe signing requests on a signer-only network', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -1594,7 +1594,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1667,7 +1667,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		for (const requestId of [213, 214, 215]) {
 			const reply = messages.find((message) => message.requestId === requestId)
 			assert.equal(reply?.error?.code, 4200)
-			assert.match(reply?.error?.message ?? '', /Safe message signing request is not supported/u)
+			assert.match(reply?.error?.message ?? '', /Gnosis Safe message signing request is not supported/u)
 		}
 		const transactionReply = messages.find((message) => message.requestId === 216)
 		assert.equal(transactionReply?.error?.code, 4200)
@@ -1744,7 +1744,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(pendingRequests.map((pendingRequest) => pendingRequest.uniqueRequestIdentifier.requestId), [217])
 	})
 
-	test('never exposes a configured Safe selected from another chain while signing', async () => {
+	test('never exposes a configured Gnosis Safe selected from another chain while signing', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -1766,7 +1766,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Other-chain Safe',
+			name: 'Other-chain Gnosis Safe',
 			address: safeAddress,
 			chainId: 2n,
 			entrySource: 'User',
@@ -1806,7 +1806,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(Array.isArray(reply?.result) && reply.result.includes('0x5757575757575757575757575757575757575757'), false)
 	})
 
-	test('does not reinterpret a selected Safe from another chain as a generic simulation address', async () => {
+	test('does not reinterpret a selected Gnosis Safe from another chain as a generic simulation address', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -1823,7 +1823,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Other-chain simulation Safe',
+			name: 'Other-chain simulation Gnosis Safe',
 			address: safeAddress,
 			chainId: 2n,
 			entrySource: 'User',
@@ -1839,7 +1839,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getActiveAddressesForAllTabs(settings)).find(({ tabId }) => tabId === 1)?.activeAddress, undefined)
 	})
 
-	test('falls back to the wallet account when a signing Safe lacks cached owner membership', async () => {
+	test('falls back to the wallet account when a signing Gnosis Safe lacks cached owner membership', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -1861,7 +1861,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Simulation-only Safe',
+			name: 'Simulation-only Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1991,7 +1991,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(settings.activeSimulationAddress, signerAddress)
 	})
 
-	test('follows wallet chain changes when the stored signing Safe is no longer owned', async () => {
+	test('follows wallet chain changes when the stored signing Gnosis Safe is no longer owned', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -2011,7 +2011,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Stale signing Safe',
+			name: 'Stale signing Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -2158,7 +2158,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',

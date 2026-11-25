@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getReviewedResultId, stringifyCanonically } from '../../app/ts/background/reviewedResult.js'
-import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createAcceptConfirmation, createGnosisSafeAddressBookEntry, createGnosisSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeGnosisSafeContract, getPopupReviewedResultId, getPendingGnosisSafeProposal, getGnosisSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, gnosisSafeTestOwnerAddress, gnosisSafeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 describe('reviewed send-anyway consent in signing mode', () => {
 	beforeEach(async () => await modules.changeSimulationMode({ simulationMode: false }))
@@ -45,12 +45,12 @@ const resolveAccept = async (websiteTabConnections: ReturnType<typeof createSign
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept, refreshedSafeSignerSelection)
 }
 
-function prepareSafeWithTwoOwners(reviewedOwner: bigint, selectedOwner: bigint) {
-	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
-	fakeSafeContract.threshold = 2n
-	fakeSafeContract.nonce = 0n
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
-	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+function prepareGnosisSafeWithTwoOwners(reviewedOwner: bigint, selectedOwner: bigint) {
+	fakeGnosisSafeContract.owners = [reviewedOwner, selectedOwner]
+	fakeGnosisSafeContract.threshold = 2n
+	fakeGnosisSafeContract.nonce = 0n
+	const safeTx = createGnosisSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	fakeGnosisSafeContract.transactionHash = BigInt(getGnosisSafeTxHash(safeTx))
 	return safeTx
 }
 
@@ -96,7 +96,7 @@ test('a metadata refresh sends nothing when the signature request is resolved du
 	await assertMetadataRefreshSendsNothingOnceRequestIsResolved()
 })
 
-test('the reviewed-result id ignores approval status, popup window and field order, and changes with the result, request or Safe signer', async () => {
+test('the reviewed-result id ignores approval status, popup window and field order, and changes with the result, request or Gnosis Safe signer', async () => {
 	const reviewed = makeReviewedTransaction(succeeded, false)
 	const reviewedId = getReviewedResultId(reviewed)
 	assert.equal(getReviewedResultId({ ...reviewed, approvalStatus: { status: 'SignerError' as const, code: 4001, message: 'User rejected' } }), reviewedId)
@@ -119,7 +119,7 @@ test('the reviewed-result id binds signing inputs even while the displayed visua
 	const signedMessageTransaction = pending.signedMessageTransaction
 	const reviewedId = getReviewedResultId(pending)
 	assert.notEqual(getReviewedResultId({ ...pending, signedMessageTransaction: { ...signedMessageTransaction, fakeSignedFor: recipientAddress } }), reviewedId)
-	assert.notEqual(getReviewedResultId({ ...pending, signedMessageTransaction: { ...signedMessageTransaction, safeMessageReview: { text: 'Changed Safe review', isTypedData: false } } }), reviewedId)
+	assert.notEqual(getReviewedResultId({ ...pending, signedMessageTransaction: { ...signedMessageTransaction, safeMessageReview: { text: 'Changed Gnosis Safe review', isTypedData: false } } }), reviewedId)
 })
 
 test('the canonical encoding sorts nested keys, keeps array order, encodes bigints and bytes as hex and drops undefined object fields', () => {
@@ -137,7 +137,7 @@ test('the reviewed-result id of a fixed request does not change', () => {
 	assert.equal(getReviewedResultId(pendingTransaction), '0x3b0179fe20c86d4f0044bceb17c6c3db3a5430df3519501c67782880b1b26eb9')
 })
 
-test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Safe co-signing request', async () => {
+test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Gnosis Safe co-signing request', async () => {
 	const assertPopupCopyCarriesStoredId = (stored: Awaited<ReturnType<typeof getStoredRequest>>, kind: string) => {
 		const popupCopy = modules.toPopupPendingTransactionOrSignableMessage(stored)
 		assert.equal(popupCopy.reviewedResultId, getReviewedResultId(stored), `${ kind }: the popup copy carries the stored request's id`)
@@ -154,18 +154,18 @@ test('the background stamps the reviewed-result id of the stored request on the 
 	assert.equal(signatureRequest.type, 'SignableMessage')
 	assertPopupCopyCarriesStoredId(signatureRequest, 'signature request')
 
-	const safeTx = prepareSafeWithTwoOwners(recipientAddress, safeTestOwnerAddress)
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	const safeTx = prepareGnosisSafeWithTwoOwners(recipientAddress, gnosisSafeTestOwnerAddress)
+	await modules.updateUserAddressBookEntries(() => [createGnosisSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
-	const coSign = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
+	const coSign = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(gnosisSafeTxToTypedDataJson(safeTx))] as const }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...coSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: coSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const coSignRequest = await getStoredRequest()
-	assert.notEqual(coSignRequest.type === 'SignableMessage' ? coSignRequest.safeMessageCoSignSnapshot : undefined, undefined, 'the stored request is a Safe co-signing request')
-	assertPopupCopyCarriesStoredId(coSignRequest, 'Safe co-signing request')
+	assert.notEqual(coSignRequest.type === 'SignableMessage' ? coSignRequest.safeMessageCoSignSnapshot : undefined, undefined, 'the stored request is a Gnosis Safe co-signing request')
+	assertPopupCopyCarriesStoredId(coSignRequest, 'Gnosis Safe co-signing request')
 	// The Safe signer is reviewed content even though the popup copy does not carry the snapshot.
-	if (coSignRequest.type !== 'SignableMessage' || coSignRequest.safeMessageCoSignSnapshot === undefined) throw new Error('Expected a Safe co-signing request')
-	assert.notEqual(getReviewedResultId({ ...coSignRequest, safeMessageCoSignSnapshot: { ...coSignRequest.safeMessageCoSignSnapshot, safeSignerAddress: safeTestOwnerAddress } }), getReviewedResultId(coSignRequest))
+	if (coSignRequest.type !== 'SignableMessage' || coSignRequest.safeMessageCoSignSnapshot === undefined) throw new Error('Expected a Gnosis Safe co-signing request')
+	assert.notEqual(getReviewedResultId({ ...coSignRequest, safeMessageCoSignSnapshot: { ...coSignRequest.safeMessageCoSignSnapshot, safeSignerAddress: gnosisSafeTestOwnerAddress } }), getReviewedResultId(coSignRequest))
 })
 
 test('honours an accept across approval-status changes and refuses it after the reviewed result changes', async () => {
@@ -307,11 +307,11 @@ test('requires the send-anyway override for a quarantined signature request', as
 	assert.equal(wasForwardedToSigner(), true)
 })
 
-test('refuses a Safe proposal accept when the signer refresh during resolution changes the reviewed owner', async () => {
+test('refuses a Gnosis Safe proposal accept when the signer refresh during resolution changes the reviewed owner', async () => {
 	const reviewedOwner = recipientAddress
-	const selectedOwner = safeTestOwnerAddress
-	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	const selectedOwner = gnosisSafeTestOwnerAddress
+	const safeTx = prepareGnosisSafeWithTwoOwners(reviewedOwner, selectedOwner)
+	await modules.updateUserAddressBookEntries(() => [createGnosisSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...makeReviewedTransaction(succeeded, false),
@@ -321,7 +321,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 			safeVersion: '1.4.1',
 			threshold: 2n,
 			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 2n },
-			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 			safeTx,
 			executionGasLimit: 21_000n,
 		} },
@@ -332,23 +332,23 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 	assert.equal(await resolveAccept(websiteTabConnections, acceptForReviewedOwner, selectedOwner), false)
 	assert.equal(wasForwardedToSigner(), false)
 	const refreshed = await getStoredRequest()
-	assert.equal(getPendingSafeProposal(refreshed)?.safeSignerAddress, selectedOwner)
+	assert.equal(getPendingGnosisSafeProposal(refreshed)?.safeSignerAddress, selectedOwner)
 	assert.notEqual(getPopupReviewedResultId(refreshed), acceptForReviewedOwner.data.reviewedResultId)
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
 	assert.equal(getForwardedSigner(), addressString(selectedOwner))
 })
 
-test('refuses a Safe co-signing accept when the signer refresh during resolution changes the reviewed owner', async () => {
+test('refuses a Gnosis Safe co-signing accept when the signer refresh during resolution changes the reviewed owner', async () => {
 	const reviewedOwner = recipientAddress
-	const selectedOwner = safeTestOwnerAddress
-	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	const selectedOwner = gnosisSafeTestOwnerAddress
+	const safeTx = prepareGnosisSafeWithTwoOwners(reviewedOwner, selectedOwner)
+	await modules.updateUserAddressBookEntries(() => [createGnosisSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [reviewedOwner], activeSigningAddress: reviewedOwner, signerChain: fakeRpcNetwork.chainId }))
 	const { websiteTabConnections, wasForwardedToSigner, getForwardedSigner } = createSignerConnection()
-	const signRequest = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
+	const signRequest = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(gnosisSafeTxToTypedDataJson(safeTx))] as const }
 	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
 	const reviewed = await getStoredRequest()

@@ -119,8 +119,8 @@ describe('summarizeLogs', () => {
 		])
 	})
 
-	test('does not debit executor gas from an optimistic zero-reimbursement Safe transaction', () => {
-		const safe = createContactEntry(0x13n, 'Safe')
+	test('does not debit executor gas from an optimistic zero-reimbursement Gnosis Safe transaction', () => {
+		const safe = createContactEntry(0x13n, 'Gnosis Safe')
 		const bob = createContactEntry(0x14n, 'Bob')
 		const token = createErc20Entry(0x102n, 'Mock Token', 'MOCK')
 		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')

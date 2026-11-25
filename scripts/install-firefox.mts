@@ -71,7 +71,7 @@ async function main() {
 	console.log(`Firefox is installed at: ${ firefoxPath }`)
 	console.log(`geckodriver is installed at: ${ geckodriverPath }`)
 	console.log('Run the Firefox visual regression suite with:')
-	console.log('  bun run screenshots:safe-ui:firefox')
+	console.log('  bun run screenshots:gnosis-safe-ui:firefox')
 }
 
 await main().catch((error: unknown) => {

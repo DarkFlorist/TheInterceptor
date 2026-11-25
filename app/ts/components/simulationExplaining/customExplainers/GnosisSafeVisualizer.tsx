@@ -1,8 +1,8 @@
 import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGnosisSafeTransaction } from '../../../background/backgroundUtils.js'
 import type { SimulateExecutionReply } from '../../../types/interceptor-messages.js'
-import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
-import type { SafeSignatureRequirement } from '../../../types/safeTypes.js'
+import type { VisualizedPersonalSignRequestGnosisSafeTx } from '../../../types/personal-message-definitions.js'
+import type { GnosisSafeSignatureRequirement } from '../../../types/gnosisSafeTypes.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
@@ -14,12 +14,12 @@ import type { AsyncStates } from '../../../utils/preact-utilities.js'
 import { useExecutionSimulation } from '../../hooks/useExecutionSimulation.js'
 
 // The signer provides at most one signature, and none when it is not an owner.
-export const signaturesTheSignerProvides = (requirement: SafeSignatureRequirement) => requirement.signerIsOwner ? 1n : 0n
+export const signaturesTheSignerProvides = (requirement: GnosisSafeSignatureRequirement) => requirement.signerIsOwner ? 1n : 0n
 
 // The outcome only happens once the Safe has enough owner signatures, so say how many it needs, and when the signer's own signature is not enough, that others must sign too. Without a requirement (the Safe did not answer its owner reads) nothing is shown.
-export function SafeSignatureRequirementLabel({ requirement }: { requirement: SafeSignatureRequirement | undefined }) {
+export function GnosisSafeSignatureRequirementLabel({ requirement }: { requirement: GnosisSafeSignatureRequirement | undefined }) {
 	if (requirement === undefined) return <></>
-	return <div class = 'safe-outcome-panel__signatures'>
+	return <div class = 'gnosis-safe-outcome-panel__signatures'>
 		<p class = 'paragraph'>Needs { requirement.threshold.toString() } of { requirement.ownerCount.toString() } owner signatures</p>
 		{ requirement.threshold > signaturesTheSignerProvides(requirement) ? <ErrorComponent warning = { true } text = 'Other owners must also sign before this can execute' containerStyle = { { margin: '0px' } }/> : <></> }
 	</div>
@@ -68,16 +68,16 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	})
 
 	if (gnosisSimulationState === 'pending' && simulateExecutionReply.value === undefined) {
-		return <div class = 'safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating Gnosis Safe transaction'>
+		return <div class = 'gnosis-safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating Gnosis Safe transaction'>
 			<AsyncStatusIcon state = 'pending' size = '2.5rem'/>
 			<span>Simulating Gnosis Safe transaction…</span>
 		</div>
 	}
 
 	if (simulateExecutionReply.value === undefined) {
-		return <div class = 'safe-outcome-panel__result'>
+		return <div class = 'gnosis-safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-			<div class = 'safe-outcome-panel__empty'>
+			<div class = 'gnosis-safe-outcome-panel__empty'>
 				<button class = 'btn btn--primary' type = 'button' onClick = { requestToSimulate }>
 					Simulate outcome
 				</button>
@@ -86,22 +86,22 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	}
 
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div class = 'safe-outcome-panel__result'>
+		return <div class = 'gnosis-safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { errorText }/>
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div class = 'safe-outcome-panel__result'>
+		return <div class = 'gnosis-safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
 	if (simTx.value === undefined || activeAddress.value === undefined || results.value === undefined) return <></>
 
-	return <div class = 'safe-outcome-panel__result'>
+	return <div class = 'gnosis-safe-outcome-panel__result'>
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-		<SafeSignatureRequirementLabel requirement = { simulateExecutionReply.value.data.result.safeSignatureRequirement }/>
+		<GnosisSafeSignatureRequirementLabel requirement = { simulateExecutionReply.value.data.result.gnosisSafeSignatureRequirement }/>
 		<Transaction
 			simTx = { simTx.value }
 			simulationAndVisualisationResults = { results.value }
@@ -115,7 +115,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 }
 
 type GnosisSafeVisualizerParams = {
-	gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx
+	gnosisSafeMessage: VisualizedPersonalSignRequestGnosisSafeTx
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
@@ -128,7 +128,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		() => requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage }),
 		GNOSIS_SIMULATION_REPLY_MISSING_ERROR,
 	)
-	const outcomeTitleId = `safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
+	const outcomeTitleId = `gnosis-safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
 
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
@@ -147,15 +147,15 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>
 			</span>
 		</div>
-		<section class = 'safe-outcome-panel' aria-labelledby = { outcomeTitleId }>
-			<header class = 'safe-outcome-panel__header'>
-				<h3 class = 'safe-outcome-panel__title' id = { outcomeTitleId }>Outcome if approved</h3>
+		<section class = 'gnosis-safe-outcome-panel' aria-labelledby = { outcomeTitleId }>
+			<header class = 'gnosis-safe-outcome-panel__header'>
+				<h3 class = 'gnosis-safe-outcome-panel__title' id = { outcomeTitleId }>Outcome if approved</h3>
 				{ simulateExecutionReply.value === undefined || simulationPending
 					? <></>
-					: <button class = 'btn btn--outline safe-outcome-panel__refresh' type = 'button' onClick = { requestToSimulate }>Refresh simulation</button>
+					: <button class = 'btn btn--outline gnosis-safe-outcome-panel__refresh' type = 'button' onClick = { requestToSimulate }>Refresh simulation</button>
 				}
 			</header>
-			<div class = 'safe-outcome-panel__content' aria-live = 'polite' aria-busy = { simulationPending }>
+			<div class = 'gnosis-safe-outcome-panel__content' aria-live = 'polite' aria-busy = { simulationPending }>
 				<ShowSuccessOrFailure
 					simulateExecutionReply = { simulateExecutionReply }
 					gnosisSimulationState = { simulationState.value }

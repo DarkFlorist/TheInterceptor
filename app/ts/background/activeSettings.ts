@@ -144,7 +144,7 @@ async function runActiveSettingsChange(simulationServicesOwner: SimulationServic
 				...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 			})
 		} else {
-			if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
+			if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Gnosis Safe.')
 			const selectsSafe = change.signingAddressSelection === 'safe'
 			await changeSimulationMode({
 				simulationMode: change.simulationMode,

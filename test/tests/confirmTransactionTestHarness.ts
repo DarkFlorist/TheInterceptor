@@ -1,20 +1,20 @@
-import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
-import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
-import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
-import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
+import multiSendLibrary from '../fixtures/gnosis-safe-libraries/MultiSendCallOnly.json'
+import signMessageLibrary from '../fixtures/gnosis-safe-libraries/SignMessageLib.json'
+import { GNOSIS_SAFE_MULTI_SEND_CALL_ONLY, GNOSIS_SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/gnosisSafe/gnosisSafeDelegateCalls.js'
+import { GNOSIS_SAFE_MESSAGE_ABI } from '../../app/ts/gnosisSafe/gnosisSafeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
-import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
-import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
-import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { createGnosisSafeTx, GNOSIS_SAFE_ABI, gnosisSafeTxToTypedDataJson } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
+import { GNOSIS_SAFE_EXECUTION_ABI } from '../../app/ts/gnosisSafe/gnosisSafeExecution.js'
+import { getGnosisSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
-import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import type { GnosisSafeEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { GnosisSafeOwnerSignature, GnosisSafeStackTransaction, GnosisSafeTransactionStack } from '../../app/ts/types/gnosisSafeTypes.js'
 import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
-import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
+import { getCreatedGnosisSafeProposal } from '../../app/ts/gnosisSafe/gnosisSafePendingFlow.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
@@ -34,10 +34,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
 
-export function createSafeAddressBookEntry(overrides: Partial<SafeEntry> = {}): SafeEntry {
+export function createGnosisSafeAddressBookEntry(overrides: Partial<GnosisSafeEntry> = {}): GnosisSafeEntry {
 	return {
 		type: 'safe',
-		name: 'Treasury Safe',
+		name: 'Treasury Gnosis Safe',
 		address: activeAddress,
 		chainId: fakeRpcNetwork.chainId,
 		entrySource: 'User',
@@ -215,11 +215,11 @@ export async function loadModules() {
 		pendingTerminalReplies,
 		terminalReplyDelivery,
 		providerMessageHandlers,
-		safeExecutionRouting,
-		safeConfirmationResolver,
-		safeSimulation,
-		safeCore,
-		safeConfirmationPersistence,
+		gnosisSafeExecutionRouting,
+		gnosisSafeConfirmationResolver,
+		gnosisSafeSimulation,
+		gnosisSafeCore,
+		gnosisSafeConfirmationPersistence,
 		errors,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -238,11 +238,11 @@ export async function loadModules() {
 		import('../../app/ts/background/pendingTerminalReplies.js'),
 		import('../../app/ts/background/terminalReplyDelivery.js'),
 		import('../../app/ts/background/providerMessageHandlers.js'),
-		import('../../app/ts/safe/safeExecutionRouting.js'),
-		import('../../app/ts/background/safeConfirmationResolver.js'),
-		import('../../app/ts/safe/safeSimulation.js'),
-		import('../../app/ts/safe/safeCore.js'),
-		import('../../app/ts/background/safeConfirmationPersistence.js'),
+		import('../../app/ts/gnosisSafe/gnosisSafeExecutionRouting.js'),
+		import('../../app/ts/background/gnosisSafeConfirmationResolver.js'),
+		import('../../app/ts/gnosisSafe/gnosisSafeSimulation.js'),
+		import('../../app/ts/gnosisSafe/gnosisSafeCore.js'),
+		import('../../app/ts/background/gnosisSafeConfirmationPersistence.js'),
 		import('../../app/ts/utils/errors.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
@@ -261,29 +261,29 @@ export async function loadModules() {
 		removeTransactionOrSignedMessage: popupMessageHandlers.removeTransactionOrSignedMessage,
 		simulateGovernanceContractExecutionOnPass: popupMessageHandlers.simulateGovernanceContractExecutionOnPass,
 		confirmDialog: popupMessageHandlers.confirmDialog,
-		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
-		importSafeStack: popupMessageHandlers.importSafeStack,
-		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
-		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
+		getGnosisSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getGnosisSafeSignerSelectionFromAccountRefresh,
+		importGnosisSafeStack: popupMessageHandlers.importGnosisSafeStack,
+		requestGnosisSafeStackExport: popupMessageHandlers.requestGnosisSafeStackExport,
+		setGnosisSafeSimulationSigner: popupMessageHandlers.setGnosisSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		toPopupPendingTransactionOrSignableMessage: confirmTransaction.toPopupPendingTransactionOrSignableMessage,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
-		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
-		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,
+		getGnosisSafeExecutionSignerRoute: gnosisSafeExecutionRouting.getGnosisSafeExecutionSignerRoute,
+		prepareGnosisSafeExecutionSignerRoute: gnosisSafeExecutionRouting.prepareGnosisSafeExecutionSignerRoute,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
 		openConfirmTransactionDialogForTransaction: confirmTransaction.openConfirmTransactionDialogForTransaction,
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
-		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
+		refreshPendingGnosisSafeSignerSelectionErrors: confirmTransaction.refreshPendingGnosisSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
-		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
-		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
-		createSafeSigningSimulationInput: safeSimulation.createSafeSigningSimulationInput,
-		createSafeContractValidationFailure: safeCore.createSafeContractValidationFailure,
-		resolveSafeSignerReply: safeConfirmationPersistence.resolveSafeSignerReply,
+		resolveGnosisSafeConfirmation: gnosisSafeConfirmationResolver.resolveGnosisSafeConfirmation,
+		createGnosisSafeExecutionPreSimulationTransaction: gnosisSafeSimulation.createGnosisSafeExecutionPreSimulationTransaction,
+		createGnosisSafeSigningSimulationInput: gnosisSafeSimulation.createGnosisSafeSigningSimulationInput,
+		createGnosisSafeContractValidationFailure: gnosisSafeCore.createGnosisSafeContractValidationFailure,
+		resolveGnosisSafeSignerReply: gnosisSafeConfirmationPersistence.resolveGnosisSafeSignerReply,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
-		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
+		getGnosisSafeTransactionStacks: storageVariables.getGnosisSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
@@ -299,7 +299,7 @@ export async function loadModules() {
 			if (stored === undefined) throw new Error('No stored pending request to update')
 			await storageVariables.updatePendingTransactionOrMessageInstance(stored, update)
 		},
-		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
+		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getGnosisSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getGnosisSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
 				safeTransactionStacks: update(previous.safeTransactionStacks),
@@ -401,17 +401,17 @@ export const fakeBlock = makeFakeBlock()
 const isSafeNonceCall = (call: unknown) => {
 	if (!isRecord(call)) return false
 	const input = call.input instanceof Uint8Array ? call.input : call.data
-	return input instanceof Uint8Array && `0x${ Buffer.from(input).toString('hex').slice(0, 8) }` === encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10)
+	return input instanceof Uint8Array && `0x${ Buffer.from(input).toString('hex').slice(0, 8) }` === encodeFunctionCall(GNOSIS_SAFE_ABI, 'nonce', []).slice(0, 10)
 }
 
-export const safeSelectors = {
-	messageHash: encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', ['0x']).slice(0, 10),
-	messageSignature: encodeFunctionCall(SAFE_MESSAGE_ABI, 'isValidSignature', [`0x${ '00'.repeat(32) }`, '0x']).slice(0, 10),
-	version: encodeFunctionCall(SAFE_ABI, 'VERSION', []).slice(0, 10),
-	nonce: encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10),
-	owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
-	threshold: encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10),
-	transactionHash: encodeFunctionCall(SAFE_ABI, 'getTransactionHash', [
+export const gnosisSafeSelectors = {
+	messageHash: encodeFunctionCall(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', ['0x']).slice(0, 10),
+	messageSignature: encodeFunctionCall(GNOSIS_SAFE_MESSAGE_ABI, 'isValidSignature', [`0x${ '00'.repeat(32) }`, '0x']).slice(0, 10),
+	version: encodeFunctionCall(GNOSIS_SAFE_ABI, 'VERSION', []).slice(0, 10),
+	nonce: encodeFunctionCall(GNOSIS_SAFE_ABI, 'nonce', []).slice(0, 10),
+	owners: encodeFunctionCall(GNOSIS_SAFE_ABI, 'getOwners', []).slice(0, 10),
+	threshold: encodeFunctionCall(GNOSIS_SAFE_ABI, 'getThreshold', []).slice(0, 10),
+	transactionHash: encodeFunctionCall(GNOSIS_SAFE_ABI, 'getTransactionHash', [
 		'0x0000000000000000000000000000000000000001',
 		0n,
 		'0x',
@@ -424,7 +424,7 @@ export const safeSelectors = {
 		0n,
 	]).slice(0, 10),
 }
-export const fakeSafeContract = {
+export const fakeGnosisSafeContract = {
 	version: '1.4.1',
 	nonce: 0n,
 	threshold: 2n,
@@ -440,27 +440,27 @@ export const fakeSafeContract = {
 	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
-export function resetFakeSafeContractState() {
-	fakeSafeContract.version = '1.4.1'
-	fakeSafeContract.nonce = 0n
-	fakeSafeContract.threshold = 2n
-	fakeSafeContract.owners = []
-	fakeSafeContract.transactionHash = 0n
-	fakeSafeContract.messageHash = 0n
-	fakeSafeContract.messageSignatureValid = true
-	fakeSafeContract.ownerCode = '0x'
-	fakeSafeContract.requestedCodeAddresses.length = 0
-	fakeSafeContract.beforeVersionResponse = undefined
-	fakeSafeContract.requestedRpcMethods.length = 0
-	fakeSafeContract.failEthSimulate = false
-	fakeSafeContract.safeOwnerLookupFailure = undefined
+export function resetFakeGnosisSafeContractState() {
+	fakeGnosisSafeContract.version = '1.4.1'
+	fakeGnosisSafeContract.nonce = 0n
+	fakeGnosisSafeContract.threshold = 2n
+	fakeGnosisSafeContract.owners = []
+	fakeGnosisSafeContract.transactionHash = 0n
+	fakeGnosisSafeContract.messageHash = 0n
+	fakeGnosisSafeContract.messageSignatureValid = true
+	fakeGnosisSafeContract.ownerCode = '0x'
+	fakeGnosisSafeContract.requestedCodeAddresses.length = 0
+	fakeGnosisSafeContract.beforeVersionResponse = undefined
+	fakeGnosisSafeContract.requestedRpcMethods.length = 0
+	fakeGnosisSafeContract.failEthSimulate = false
+	fakeGnosisSafeContract.safeOwnerLookupFailure = undefined
 }
 
 export const fakeRequestHandler = {
 	rpcUrl: fakeRpcNetwork.httpsRpc,
 	clearCache() { return undefined },
 	async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
-		fakeSafeContract.requestedRpcMethods.push(rpcRequest.method)
+		fakeGnosisSafeContract.requestedRpcMethods.push(rpcRequest.method)
 		switch (rpcRequest.method) {
 			case 'eth_getBlockByNumber':
 				return modules.serialize(modules.EthereumBlockHeader, fakeBlock)
@@ -474,10 +474,10 @@ export const fakeRequestHandler = {
 			const rawAddress = rpcRequest.params?.[0]
 			if (typeof rawAddress !== 'string' && typeof rawAddress !== 'bigint') throw new Error('Malformed eth_getCode test request')
 			const requestedAddress = BigInt(rawAddress)
-			fakeSafeContract.requestedCodeAddresses.push(requestedAddress)
-			if (requestedAddress === SAFE_MULTI_SEND_CALL_ONLY) return multiSendLibrary.deployedBytecode
-			if (requestedAddress === SAFE_SIGN_MESSAGE_LIB) return signMessageLibrary.deployedBytecode
-			return requestedAddress === activeAddress ? '0x01' : fakeSafeContract.ownerCode
+			fakeGnosisSafeContract.requestedCodeAddresses.push(requestedAddress)
+			if (requestedAddress === GNOSIS_SAFE_MULTI_SEND_CALL_ONLY) return multiSendLibrary.deployedBytecode
+			if (requestedAddress === GNOSIS_SAFE_SIGN_MESSAGE_LIB) return signMessageLibrary.deployedBytecode
+			return requestedAddress === activeAddress ? '0x01' : fakeGnosisSafeContract.ownerCode
 		}
 			case 'eth_gasPrice':
 				return modules.serialize(modules.EthereumQuantity, 1n)
@@ -486,30 +486,30 @@ export const fakeRequestHandler = {
 				if (!isRecord(call) || !(call.data instanceof Uint8Array)) throw new Error('Malformed test eth_call')
 				const selector = `0x${ Buffer.from(call.data).toString('hex').slice(0, 8) }`
 				switch (selector) {
-					case safeSelectors.version:
-						await fakeSafeContract.beforeVersionResponse?.()
-						return encodeFunctionReturn(SAFE_ABI, 'VERSION', [fakeSafeContract.version])
-					case safeSelectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])
-					case safeSelectors.owners:
-						if (fakeSafeContract.safeOwnerLookupFailure === 'expected') throw modules.createSafeContractValidationFailure('Safe owner lookup unavailable')
-						if (fakeSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Safe owner decoder failure')
-						return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
-					case safeSelectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [fakeSafeContract.threshold])
-					case safeSelectors.messageHash: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeSafeContract.messageHash)])
-					case safeSelectors.messageSignature: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'isValidSignature', [fakeSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])
-					case safeSelectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', [bytes32String(fakeSafeContract.transactionHash)])
+					case gnosisSafeSelectors.version:
+						await fakeGnosisSafeContract.beforeVersionResponse?.()
+						return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'VERSION', [fakeGnosisSafeContract.version])
+					case gnosisSafeSelectors.nonce: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'nonce', [fakeGnosisSafeContract.nonce])
+					case gnosisSafeSelectors.owners:
+						if (fakeGnosisSafeContract.safeOwnerLookupFailure === 'expected') throw modules.createGnosisSafeContractValidationFailure('Gnosis Safe owner lookup unavailable')
+						if (fakeGnosisSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Gnosis Safe owner decoder failure')
+						return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getOwners', [fakeGnosisSafeContract.owners.map(addressString)])
+					case gnosisSafeSelectors.threshold: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getThreshold', [fakeGnosisSafeContract.threshold])
+					case gnosisSafeSelectors.messageHash: return encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeGnosisSafeContract.messageHash)])
+					case gnosisSafeSelectors.messageSignature: return encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'isValidSignature', [fakeGnosisSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])
+					case gnosisSafeSelectors.transactionHash: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getTransactionHash', [bytes32String(fakeGnosisSafeContract.transactionHash)])
 					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
 				}
 			}
 			case 'eth_simulateV1':
-				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
+				if (fakeGnosisSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
 				return modules.serialize(
 					modules.EthSimulateV1Result,
 					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => {
 						const calls: readonly unknown[] = Array.isArray(blockStateCall.calls) ? blockStateCall.calls : []
 						const result = makeFakeEthSimulateResult(0n, modules.Multicall3ABI, calls)
 						// The simulation reads a Gnosis Safe's nonce with a nonce() call after the input before an execution; the fake Safe executes nothing, so its nonce stays fakeSafeContract.nonce.
-						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])) } : callResult) }
+						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(GNOSIS_SAFE_ABI, 'nonce', [fakeGnosisSafeContract.nonce])) } : callResult) }
 					}),
 				)
 			default:
@@ -585,23 +585,23 @@ export const signedTransaction = modules.mockSignTransaction(unsignedTransaction
 export const created = new Date('2024-01-01T00:00:00.000Z')
 export const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
 export const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
-export const safeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
-export const safeTestOwnerAddress = BigInt(safeTestOwnerAccount.address)
+export const gnosisSafeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+export const gnosisSafeTestOwnerAddress = BigInt(gnosisSafeTestOwnerAccount.address)
 
-export function createSafeStackTransactionFixture(options: {
+export function createGnosisSafeStackTransactionFixture(options: {
 	readonly nonce?: bigint
 	readonly value?: bigint
 	readonly transactionIdentifier?: bigint
-	readonly signatures?: readonly SafeOwnerSignature[]
-} = {}): SafeStackTransaction {
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+	readonly signatures?: readonly GnosisSafeOwnerSignature[]
+} = {}): GnosisSafeStackTransaction {
+	const safeTx = createGnosisSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
 		value: options.value ?? 0n,
 		input: new Uint8Array(),
 	}, options.nonce ?? 0n)
 	return {
 		safeTx,
-		safeTxHash: BigInt(getSafeTxHash(safeTx)),
+		safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 		created,
 		websiteOrigin: 'https://example.com',
 		transactionIdentifier: options.transactionIdentifier ?? 70n,
@@ -609,9 +609,9 @@ export function createSafeStackTransactionFixture(options: {
 	}
 }
 
-export function createSafeStackFixture(
-	transactions: readonly SafeStackTransaction[],
-): SafeTransactionStack {
+export function createGnosisSafeStackFixture(
+	transactions: readonly GnosisSafeStackTransaction[],
+): GnosisSafeTransactionStack {
 	return {
 		chainId: fakeRpcNetwork.chainId,
 		safeAddress: activeAddress,
@@ -742,11 +742,11 @@ export async function createAcceptConfirmation(requestIdentifier: UniqueRequestI
 	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: getPopupReviewedResultId(pending), forceSend } }
 }
 // The Gnosis Safe transaction of a pending transaction that is a created Safe proposal.
-export const getPendingSafeProposal = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' ? getCreatedSafeProposal(pending.safeFlow) : undefined
+export const getPendingGnosisSafeProposal = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' ? getCreatedGnosisSafeProposal(pending.safeFlow) : undefined
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
-	resetFakeSafeContractState()
+	resetFakeGnosisSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
@@ -805,7 +805,7 @@ export async function waitForPendingTransactionsToClear() {
 	}
 }
 
-export { addressString, bytes32String, createSafeTx, EIP712Message, getSafeTxHash, privateKeyToAccount, SAFE_ABI, SAFE_EXECUTION_ABI, safeTxToTypedDataJson, withSilencedConsole }
+export { addressString, bytes32String, createGnosisSafeTx, EIP712Message, getGnosisSafeTxHash, privateKeyToAccount, GNOSIS_SAFE_ABI, GNOSIS_SAFE_EXECUTION_ABI, gnosisSafeTxToTypedDataJson, withSilencedConsole }
 
 // Replayed accepts may arrive after cleanup; the resolver must finish or ignore them before inspecting consent.
 export async function createReplayableAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier) {

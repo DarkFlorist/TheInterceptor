@@ -13,7 +13,7 @@ type CommunicationPageState = {
 	eventOrder: readonly string[]
 }
 
-type SafeAppsInfoResult = {
+type GnosisSafeAppsInfoResult = {
 	status: 'fulfilled' | 'pending' | 'rejected'
 	data?: { readonly safeAddress?: string, readonly chainId?: number }
 	error?: string
@@ -127,7 +127,7 @@ async function main() {
 		try {
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
 			const preApprovalSafeProbeStatus = await pageConnection.evaluate<string | undefined>('globalThis.__earlySafeAppsInfoResult?.status')
-			if (preApprovalSafeProbeStatus !== 'pending') throw new Error(`Safe Apps advertised before website approval with status ${ preApprovalSafeProbeStatus ?? 'missing' }`)
+			if (preApprovalSafeProbeStatus !== 'pending') throw new Error(`Gnosis Safe Apps advertised before website approval with status ${ preApprovalSafeProbeStatus ?? 'missing' }`)
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 			accessTargetId = accessTarget.id
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
@@ -159,10 +159,10 @@ async function main() {
 				globalThis.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, globalThis.location.origin)
 			})()`)
 			await sleep(250)
-			const safeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__safeAppsInfoResult')
-			if (safeAppsInfoResult.status !== 'pending') throw new Error(`Safe Apps advertised the approved EOA with status ${ safeAppsInfoResult.status }`)
-			const earlySafeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__earlySafeAppsInfoResult')
-			if (earlySafeAppsInfoResult.status !== 'pending') throw new Error(`Queued Safe Apps discovery advertised the approved EOA with status ${ earlySafeAppsInfoResult.status }`)
+			const safeAppsInfoResult = await pageConnection.evaluate<GnosisSafeAppsInfoResult>('globalThis.__safeAppsInfoResult')
+			if (safeAppsInfoResult.status !== 'pending') throw new Error(`Gnosis Safe Apps advertised the approved EOA with status ${ safeAppsInfoResult.status }`)
+			const earlySafeAppsInfoResult = await pageConnection.evaluate<GnosisSafeAppsInfoResult>('globalThis.__earlySafeAppsInfoResult')
+			if (earlySafeAppsInfoResult.status !== 'pending') throw new Error(`Queued Gnosis Safe Apps discovery advertised the approved EOA with status ${ earlySafeAppsInfoResult.status }`)
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__raw7702Result = { status: 'pending' }

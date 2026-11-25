@@ -1,0 +1,117 @@
+import type { StateOverrides } from '../types/ethSimulate-types.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { encodeFunctionCall } from '../utils/abiRuntime.js'
+import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
+import { createGnosisSafeValidationError } from './gnosisSafeErrors.js'
+import { validateGnosisSafeDelegateCode } from './gnosisSafeDelegateCalls.js'
+
+import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
+import type { InterceptorTransactionStack, PreSimulationTransaction, SimulationStateInput, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
+import type { EthereumSendableSignedTransaction } from '../types/wire-types.js'
+import type { GnosisSafeTransactionSigningRequest } from '../types/gnosisSafeTypes.js'
+import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
+import { getOperationsForActiveStackContext, getGnosisSafeStackContext } from '../utils/activeStackContext.js'
+
+export const ORIGINAL_GNOSIS_SAFE = 0x0000000000000000000000000000000000920515n
+export const GNOSIS_SAFE_DELEGATE_EXECUTE_ABI = [{ type: 'function', name: 'delegateCallExecute', stateMutability: 'payable', inputs: [{ name: 'target', type: 'address' }, { name: 'callData', type: 'bytes' }], outputs: [{ name: 'returnData', type: 'bytes' }] }] as const
+
+export function createGnosisSafeSigningSimulationInput(
+	transactionStack: InterceptorTransactionStack,
+	safeSigningRequest: GnosisSafeTransactionSigningRequest,
+): SimulationStateInput {
+	const requiredChainId = safeSigningRequest.safeTx.domain.chainId
+	if (requiredChainId === undefined) throw new Error('Gnosis Safe optimistic simulation requires an EIP-712 chain ID.')
+	const transactions = getOperationsForActiveStackContext(transactionStack, getGnosisSafeStackContext(safeSigningRequest.safeAddress, requiredChainId)).flatMap((operation) => {
+		if (operation.type !== 'Transaction') return []
+		const transaction = operation.preSimulationTransaction
+		const storedSafeTransaction = transaction.safeTransaction
+		if (storedSafeTransaction === undefined) return []
+		if (storedSafeTransaction.safeTx.message.nonce >= safeSigningRequest.safeTx.message.nonce) return []
+		return [transaction]
+	})
+	if (transactions.length === 0) return []
+	return [{
+		stateOverrides: {},
+		transactions,
+		signedMessages: [],
+		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+		simulateWithZeroBaseFee: false,
+	}]
+}
+
+function createGnosisSafeExecutionSimulationTransaction(
+	transactionToSimulate: WebsiteCreatedEthereumTransaction,
+	safeSigningRequest: GnosisSafeTransactionSigningRequest,
+): EthereumSendableSignedTransaction {
+	const transaction = getSignedTransactionForSimulation(transactionToSimulate)
+	if (transaction.type !== '1559') {
+		throw new Error('Gnosis Safe optimistic simulation requires an EIP-1559 transaction.')
+	}
+	return {
+		type: '1559',
+		from: safeSigningRequest.safeAddress,
+		chainId: transaction.chainId,
+		nonce: transaction.nonce,
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: safeSigningRequest.executionGasLimit ?? transaction.gas,
+		to: safeSigningRequest.safeTx.message.operation === 1n ? safeSigningRequest.safeAddress : safeSigningRequest.safeTx.message.to,
+		value: safeSigningRequest.safeTx.message.value,
+		input: safeSigningRequest.safeTx.message.operation === 1n
+			? stringToUint8Array(encodeFunctionCall(GNOSIS_SAFE_DELEGATE_EXECUTE_ABI, 'delegateCallExecute', [addressString(safeSigningRequest.safeTx.message.to), dataStringWith0xStart(safeSigningRequest.safeTx.message.data)]))
+			: safeSigningRequest.safeTx.message.data,
+		accessList: [],
+		r: 0n,
+		s: 0n,
+		yParity: 'even',
+		hash: safeSigningRequest.safeTxHash,
+	}
+}
+
+export function createGnosisSafeExecutionPreSimulationTransaction(
+	transactionToSimulate: WebsiteCreatedEthereumTransaction,
+	safeSigningRequest: GnosisSafeTransactionSigningRequest,
+): PreSimulationTransaction {
+	const requiredChainId = safeSigningRequest.safeTx.domain.chainId
+	if (requiredChainId === undefined) throw new Error('Gnosis Safe optimistic simulation requires an EIP-712 chain ID.')
+	const signedTransaction = createGnosisSafeExecutionSimulationTransaction(transactionToSimulate, safeSigningRequest)
+	return {
+		signedTransaction,
+		website: transactionToSimulate.website,
+		created: transactionToSimulate.created,
+		originalRequestParameters: transactionToSimulate.originalRequestParameters,
+		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		simulationOptions: { requiredChainId },
+		safeTransaction: {
+			safeTx: safeSigningRequest.safeTx,
+			safeTxHash: safeSigningRequest.safeTxHash,
+			created: transactionToSimulate.created,
+			websiteOrigin: transactionToSimulate.website.websiteOrigin,
+			transactionIdentifier: transactionToSimulate.transactionIdentifier,
+			signatures: [],
+		},
+	}
+}
+
+// Shared proxy redirection; callers supply code from their own state view (pinned chain state or the simulated stack).
+export function prepareGnosisSafeDelegateStateOverrides(safeAddress: bigint, code: Uint8Array, overrides: StateOverrides = {}): StateOverrides {
+	return {
+		...overrides,
+		[addressString(safeAddress)]: { ...overrides[addressString(safeAddress)], code: getGnosisSafeProxyProxy() },
+		[addressString(ORIGINAL_GNOSIS_SAFE)]: { ...overrides[addressString(ORIGINAL_GNOSIS_SAFE)], code },
+	}
+}
+
+// A delegate-call proposal runs through the Safe's execTransaction like every proposal (safe/safeExecutionSimulation.ts), so the Safe makes the delegate call itself. It may only delegate-call a library Interceptor allows, and the call the dialog shows must match its SafeTx.
+export async function validateGnosisSafeDelegateSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, blockNumber: bigint) {
+	for (const block of input) for (const transaction of block.transactions) {
+		const safeTx = transaction.safeTransaction?.safeTx
+		if (safeTx?.message.operation !== 1n) continue
+		await validateGnosisSafeDelegateCode(ethereum, safeTx, blockNumber)
+		const safeAddress = safeTx.domain.verifyingContract
+		const shown = transaction.signedTransaction
+		const expectedInput = encodeFunctionCall(GNOSIS_SAFE_DELEGATE_EXECUTE_ABI, 'delegateCallExecute', [addressString(safeTx.message.to), dataStringWith0xStart(safeTx.message.data)])
+		if (shown.from !== safeAddress || shown.to !== safeAddress || shown.value !== 0n || dataStringWith0xStart(shown.input) !== expectedInput) throw createGnosisSafeValidationError('The Gnosis Safe delegate simulation does not match its proposal.', 'safe_contract_validation')
+	}
+}

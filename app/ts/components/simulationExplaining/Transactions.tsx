@@ -212,12 +212,12 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 }
 
 // Shown for every Gnosis Safe execution, which the simulation runs as its executor's execTransaction call (authorizesExecutedCall, safe/safeExecutionSimulation.ts). The simulation stack adds a Safe proposal's nonce and collected signatures as children.
-export function SafeExecutionSimulationNotice({ transaction, children }: { transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>, children?: ComponentChildren }) {
+export function GnosisSafeExecutionSimulationNotice({ transaction, children }: { transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>, children?: ComponentChildren }) {
 	if (!authorizesExecutedCall(transaction)) return <></>
 	return <div class = 'notification is-info' style = 'margin-bottom: 10px;'>
 		<p class = 'paragraph'><strong>Gnosis Safe execution</strong></p>
 		{ children }
-		<p class = 'paragraph'>Simulated the way the Gnosis Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays the network fees. The simulation assumes the Safe's owners approved the transaction.</p>
+		<p class = 'paragraph'>Simulated the way the Gnosis Safe runs it on-chain: an executor account calls the Gnosis Safe's execTransaction and pays the network fees. The simulation assumes the Gnosis Safe's owners approved the transaction.</p>
 	</div>
 }
 
@@ -283,11 +283,11 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				ariaExpanded = { param.collapsed === undefined ? undefined : !param.collapsed }
 			/>
 			{ param.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
-				<SafeExecutionSimulationNotice transaction = { param.simTx }>
+				<GnosisSafeExecutionSimulationNotice transaction = { param.simTx }>
 					{ param.simTx.safeTransaction === undefined ? <></> :
 						<p class = 'paragraph'>Optimistic Gnosis Safe transaction: nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. Nothing has necessarily been executed onchain.</p>
 					}
-				</SafeExecutionSimulationNotice>
+				</GnosisSafeExecutionSimulationNotice>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>

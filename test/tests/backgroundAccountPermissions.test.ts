@@ -7,7 +7,7 @@ import { addressString, confirmedSignerOwnership, createDeferredValue, createEth
 
 const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
 
-async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
+async function refreshGnosisSafeAppsPorts(connections: WebsiteTabConnections) {
 	notifyWebsiteLifecycle(lifecycle(connections)?.accessReconciled)
 	await new Promise((resolve) => setTimeout(resolve, 0))
 }
@@ -63,15 +63,15 @@ describe('background eth_accounts', () => {
 		}
 	})
 
-	test('disabled Safe Apps has no lifecycle work, reads, or port traffic', async () => {
+	test('disabled Gnosis Safe Apps has no lifecycle work, reads, or port traffic', async () => {
 		installBrowserMock()
-		const { initializeSafeAppsCompatibility, websiteSocketToString } = await loadModules()
+		const { initializeGnosisSafeAppsCompatibility, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
 		} }]])
-		const dispose = await initializeSafeAppsCompatibility(connections)
+		const dispose = await initializeGnosisSafeAppsCompatibility(connections)
 		const read = spyOn(browser.storage.local, 'get')
 		try {
 			notifyWebsiteLifecycle(lifecycle(connections)?.approvalChanged, socket, true)
@@ -86,20 +86,20 @@ describe('background eth_accounts', () => {
 		} finally { read.mockRestore(); dispose() }
 	})
 
-	test('Safe Apps settings activate and dispose the coordinator for existing ports', async () => {
+	test('Gnosis Safe Apps settings activate and dispose the coordinator for existing ports', async () => {
 		installBrowserMock()
-		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
+		const { initializeGnosisSafeAppsCompatibility, setGnosisSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'app.example', approved: false, wantsToConnect: false },
 		} }]])
-		const dispose = await initializeSafeAppsCompatibility(connections)
+		const dispose = await initializeGnosisSafeAppsCompatibility(connections)
 		try {
 			assert.deepEqual(messages, [])
-			await setSafeAppsCompatibilityMode(true)
+			await setGnosisSafeAppsCompatibilityMode(true)
 			await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
-			await setSafeAppsCompatibilityMode(false)
+			await setGnosisSafeAppsCompatibilityMode(false)
 			assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').length, 2)
 			const read = spyOn(browser.storage.local, 'get')
 			try {
@@ -109,7 +109,7 @@ describe('background eth_accounts', () => {
 				assert.equal(read.mock.calls.length, 0)
 				assert.equal(messages.length, 2)
 			} finally { read.mockRestore() }
-			await setSafeAppsCompatibilityMode(true)
+			await setGnosisSafeAppsCompatibilityMode(true)
 			await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
 		} finally { dispose() }
 	})
@@ -152,7 +152,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(calls, ['first', 'second'])
 	})
 
-	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
+	test('refreshes the cached signing visualization when selecting another Gnosis Safe on the same chain', async () => {
 		installBrowserMock()
 		const messages: unknown[] = []
 		Object.defineProperty(browser.runtime, 'sendMessage', {
@@ -184,7 +184,7 @@ describe('background eth_accounts', () => {
 		), true)
 	})
 
-	test('refreshes the cached signing visualization when the active Safe context changes chain', async () => {
+	test('refreshes the cached signing visualization when the active Gnosis Safe context changes chain', async () => {
 		installBrowserMock()
 		const messages: unknown[] = []
 		Object.defineProperty(browser.runtime, 'sendMessage', {
@@ -251,7 +251,7 @@ describe('background eth_accounts', () => {
 			},
 			{
 				type: 'safe',
-				name: 'Unowned Safe',
+				name: 'Unowned Gnosis Safe',
 				address: unownedSafe,
 				chainId: 1n,
 				entrySource: 'User',
@@ -260,7 +260,7 @@ describe('background eth_accounts', () => {
 			},
 			{
 				type: 'safe',
-				name: 'Unverified Safe',
+				name: 'Unverified Gnosis Safe',
 				address: unverifiedSafe,
 				chainId: 1n,
 				entrySource: 'User',
@@ -289,7 +289,7 @@ describe('background eth_accounts', () => {
 		assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	})
 
-	test('rejects a wrong-chain Safe selected through a simulation-mode popup bypass', async () => {
+	test('rejects a wrong-chain Gnosis Safe selected through a simulation-mode popup bypass', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -302,7 +302,7 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress })
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Wrong-chain Safe',
+			name: 'Wrong-chain Gnosis Safe',
 			address: wrongChainSafe,
 			chainId: 10n,
 			entrySource: 'User',
@@ -325,7 +325,7 @@ describe('background eth_accounts', () => {
 		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
 	})
 
-	test('does not classify a signer EOA as a Safe from another chain', async () => {
+	test('does not classify a signer EOA as a Gnosis Safe from another chain', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -339,7 +339,7 @@ describe('background eth_accounts', () => {
 		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Other-chain Safe with signer address',
+			name: 'Other-chain Gnosis Safe with signer address',
 			address: signerAddress,
 			chainId: activeChainId + 1n,
 			entrySource: 'User',
@@ -361,7 +361,7 @@ describe('background eth_accounts', () => {
 
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Current-chain Safe with signer address',
+			name: 'Current-chain Gnosis Safe with signer address',
 			address: signerAddress,
 			chainId: activeChainId,
 			entrySource: 'User',
@@ -377,7 +377,7 @@ describe('background eth_accounts', () => {
 		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
 	})
 
-	test('keeps a newly selected self-owned Safe distinct from its signer EOA in the access dialog', async () => {
+	test('keeps a newly selected self-owned Gnosis Safe distinct from its signer EOA in the access dialog', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -390,7 +390,7 @@ describe('background eth_accounts', () => {
 		const safeAndSignerAddress = 0x5151515151515151515151515151515151515151n
 		const originalAddress = 0x5252525252525252525252525252525252525252n
 		const originalEntry = { type: 'contact' as const, name: 'Original', address: originalAddress, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
-		const selfOwnedSafe = { type: 'safe' as const, name: 'Self-owned Safe', address: safeAndSignerAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [safeAndSignerAddress] }
+		const selfOwnedSafe = { type: 'safe' as const, name: 'Self-owned Gnosis Safe', address: safeAndSignerAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [safeAndSignerAddress] }
 		const tabId = 196
 		const socket = { tabId, connectionName: 0n }
 		const website = { websiteOrigin: 'https://self-owned-safe.example', icon: undefined, title: undefined }
@@ -426,7 +426,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await getPendingAccessRequests())[0]?.requestAccessToAddress, selfOwnedSafe)
 	})
 
-	test('activates a self-owned Safe selected over its same-address signer EOA when access is approved', async () => {
+	test('activates a self-owned Gnosis Safe selected over its same-address signer EOA when access is approved', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -440,7 +440,7 @@ describe('background eth_accounts', () => {
 		} = await loadModules()
 		const address = 0x5353535353535353535353535353535353535353n
 		const signerEntry = { type: 'contact' as const, name: 'Signer', address, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
-		const selfOwnedSafe = { type: 'safe' as const, name: 'Self-owned Safe', address, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [address] }
+		const selfOwnedSafe = { type: 'safe' as const, name: 'Self-owned Gnosis Safe', address, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [address] }
 		const tabId = 195
 		const socket = { tabId, connectionName: 0n }
 		const website = { websiteOrigin: 'https://same-address-safe.example', icon: undefined, title: undefined }
@@ -556,7 +556,7 @@ describe('background eth_accounts', () => {
 		assert.equal((await getPendingAccessRequests())[0]?.requestAccessToAddress?.name, 'Current-chain address')
 	})
 
-	test('clears a stale signing-mode Safe when the popup selects a disconnected signer', async () => {
+	test('clears a stale signing-mode Gnosis Safe when the popup selects a disconnected signer', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -575,7 +575,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Disconnected Safe',
+			name: 'Disconnected Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -596,7 +596,7 @@ describe('background eth_accounts', () => {
 		assert.equal(await getActiveAddress(settings, tabId), undefined)
 	})
 
-	test('falls back to the wallet account when a stored signing Safe is no longer owned', async () => {
+	test('falls back to the wallet account when a stored signing Gnosis Safe is no longer owned', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -617,7 +617,7 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'No longer owned Safe',
+			name: 'No longer owned Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -652,7 +652,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 12).at(-1)?.result, [addressString(signerAddress)])
 	})
 
-	test('remembers whether a signer account last selected its Safe or the external EOA', async () => {
+	test('remembers whether a signer account last selected its Gnosis Safe or the external EOA', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -668,7 +668,7 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Signer Safe',
+			name: 'Signer Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -692,7 +692,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress, selection: 'signer' }])
 	})
 
-	test('rechecks Safe ownership against the live signer when website access is approved', async () => {
+	test('rechecks Gnosis Safe ownership against the live signer when website access is approved', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -713,7 +713,7 @@ describe('background eth_accounts', () => {
 		const website = { websiteOrigin: 'https://safe-owner-change.example', icon: undefined, title: undefined }
 		const safeEntry = {
 			type: 'safe' as const,
-			name: 'Owned Safe',
+			name: 'Owned Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User' as const,
@@ -859,15 +859,15 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
 	})
 
-	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
+	test('does not enable Gnosis Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
-			setSafeAppsCompatibilityMode,
-			initializeSafeAppsCompatibility,
+			setGnosisSafeAppsCompatibilityMode,
+			initializeGnosisSafeAppsCompatibility,
 			updateWebsiteAccess,
 			updateTabState,
 		} = await loadModules()
@@ -876,7 +876,7 @@ describe('background eth_accounts', () => {
 		const account = 0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4bn
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 		await updateWebsiteAccess(() => [])
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -886,7 +886,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
-		await initializeSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
@@ -935,15 +935,15 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
 	})
 
-	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {
+	test('does not advertise an approved EOA as a Gnosis Safe on top-frame reload or child-frame approval', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
-			setSafeAppsCompatibilityMode,
-			initializeSafeAppsCompatibility,
+			setGnosisSafeAppsCompatibilityMode,
+			initializeGnosisSafeAppsCompatibility,
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
@@ -954,7 +954,7 @@ describe('background eth_accounts', () => {
 		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -963,7 +963,7 @@ describe('background eth_accounts', () => {
 		const connectionKey = websiteSocketToString(socket)
 		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [connectionKey]: connection } }]])
-		await initializeSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
@@ -988,7 +988,7 @@ describe('background eth_accounts', () => {
 		const { port: childPort, messages: childMessages } = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
 		const childConnection = { port: childPort, socket: childSocket, websiteOrigin, approved: false, wantsToConnect: false }
 		const childConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(childSocket), connections: { [websiteSocketToString(childSocket)]: childConnection } }]])
-		await initializeSafeAppsCompatibility(childConnections)
+		await initializeGnosisSafeAppsCompatibility(childConnections)
 		await updateTabState(childSocket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 		await handleInterceptedRequest(childPort, websiteOrigin, website, simulationServicesOwner, childSocket, {
 			...request,
@@ -1002,19 +1002,19 @@ describe('background eth_accounts', () => {
 		await waitForPortMessageCount(childMessages, 'safe_apps_compatibility', 1)
 		assert.equal(childConnection.approved, true)
 		assert.equal(childMessages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
-		await refreshSafeAppsPorts(childConnections)
+		await refreshGnosisSafeAppsPorts(childConnections)
 		assert.equal(childMessages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
 	})
 
-	test('keeps Safe compatibility disabled when address consent is granted only to an EOA', async () => {
+	test('keeps Gnosis Safe compatibility disabled when address consent is granted only to an EOA', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
-			setSafeAppsCompatibilityMode,
-			initializeSafeAppsCompatibility,
+			setGnosisSafeAppsCompatibilityMode,
+			initializeGnosisSafeAppsCompatibility,
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
@@ -1025,7 +1025,7 @@ describe('background eth_accounts', () => {
 		const account = 0x6666666666666666666666666666666666666666n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -1034,7 +1034,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		await initializeSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const connectedRequest = {
 			interceptorRequest: true,
@@ -1063,12 +1063,12 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
 	})
 
-	test('enables Safe compatibility only while an owned configured Safe is active', async () => {
+	test('enables Gnosis Safe compatibility only while an owned configured Gnosis Safe is active', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			setSafeAppsCompatibilityMode,
-			initializeSafeAppsCompatibility,
+			setGnosisSafeAppsCompatibilityMode,
+			initializeGnosisSafeAppsCompatibility,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1086,10 +1086,10 @@ describe('background eth_accounts', () => {
 			activeSigningSafeAddress: configuredSafeAddress,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Configured Safe',
+			name: 'Configured Gnosis Safe',
 			address: configuredSafeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1117,9 +1117,9 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		await initializeSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
 
-		await refreshSafeAppsPorts(websiteTabConnections)
+		await refreshGnosisSafeAppsPorts(websiteTabConnections)
 
 		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [true])
 	})
@@ -1129,18 +1129,18 @@ describe('background eth_accounts', () => {
 		{ accountKind: 'non-owner', discoveredAccount: 0x7272727272727272727272727272727272727272n, expectedCompatibility: false, coldStart: false, safeConsent: true, featureEnabled: true },
 		{ accountKind: 'owner on a direct fresh page', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: true, coldStart: true, safeConsent: true, featureEnabled: true },
 		{ accountKind: 'non-owner on a direct fresh page', discoveredAccount: 0x7272727272727272727272727272727272727272n, expectedCompatibility: false, coldStart: true, safeConsent: true, featureEnabled: true },
-		{ accountKind: 'owner without Safe consent', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: false, featureEnabled: true },
+		{ accountKind: 'owner without Gnosis Safe consent', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: false, featureEnabled: true },
 		{ accountKind: 'owner with compatibility disabled', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: true, featureEnabled: false },
 	] as const) {
-		test(`waits for fresh ${ accountKind } account discovery before publishing Safe compatibility`, async () => {
+		test(`waits for fresh ${ accountKind } account discovery before publishing Gnosis Safe compatibility`, async () => {
 			installBrowserMock()
 			const {
 				changeSimulationMode,
 				getTabState,
 				rememberSigningAddressPreference,
 				handleInterceptedRequest,
-				setSafeAppsCompatibilityMode,
-				initializeSafeAppsCompatibility,
+				setGnosisSafeAppsCompatibilityMode,
+				initializeGnosisSafeAppsCompatibility,
 				setUseSignersAddressAsActiveAddress,
 				updateTabState,
 				updateUserAddressBookEntries,
@@ -1153,10 +1153,10 @@ describe('background eth_accounts', () => {
 			const configuredSafeAddress = 0x7373737373737373737373737373737373737373n
 			await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: safeOwner, activeSigningSafeAddress: configuredSafeAddress })
 			await setUseSignersAddressAsActiveAddress(false)
-			await setSafeAppsCompatibilityMode(featureEnabled)
+			await setGnosisSafeAppsCompatibilityMode(featureEnabled)
 			await updateUserAddressBookEntries(() => [{
 				type: 'safe',
-				name: 'Configured Safe',
+				name: 'Configured Gnosis Safe',
 				address: configuredSafeAddress,
 				chainId: 1n,
 				entrySource: 'User',
@@ -1184,7 +1184,7 @@ describe('background eth_accounts', () => {
 			const websiteTabConnections = new Map([[socket.tabId, { signerStateOwner: { ...confirmedSignerOwnership(socket).signerStateOwner, confirmed: !coldStart }, connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: !coldStart, wantsToConnect: !coldStart },
 			} }]])
-			await initializeSafeAppsCompatibility(websiteTabConnections)
+			await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
 			const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			await updateTabState(socket.tabId, (previousState) => ({
 				...previousState,
@@ -1208,24 +1208,24 @@ describe('background eth_accounts', () => {
 			assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), false)
 			if (coldStart) assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
-			if (replyToDiscovery === undefined) throw new Error('Safe Apps signer-account discovery was not requested')
+			if (replyToDiscovery === undefined) throw new Error('Gnosis Safe Apps signer-account discovery was not requested')
 			await replyToDiscovery()
-			await refreshSafeAppsPorts(websiteTabConnections)
+			await refreshGnosisSafeAppsPorts(websiteTabConnections)
 			const refreshedTabState = await getTabState(socket.tabId)
 			assert.deepEqual(refreshedTabState.signerAccounts, [discoveredAccount])
 			assert.equal(refreshedTabState.activeSigningAddress, discoveredAccount)
 			if (coldStart) assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, expectedCompatibility)
-			await refreshSafeAppsPorts(websiteTabConnections)
+			await refreshGnosisSafeAppsPorts(websiteTabConnections)
 			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), expectedCompatibility)
 		})
 	}
 
-	test('does not let an older async Safe compatibility enable overwrite a newer disable', async () => {
+	test('does not let an older async Gnosis Safe compatibility enable overwrite a newer disable', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			setSafeAppsCompatibilityMode,
-			initializeSafeAppsCompatibility,
+			setGnosisSafeAppsCompatibilityMode,
+			initializeGnosisSafeAppsCompatibility,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1238,10 +1238,10 @@ describe('background eth_accounts', () => {
 		const configuredSafeAddress = 0x7070707070707070707070707070707070707070n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: signerAddress, activeSigningSafeAddress: configuredSafeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Configured Safe',
+			name: 'Configured Gnosis Safe',
 			address: configuredSafeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -1262,7 +1262,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		await initializeSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
 		const delayedReadStarted = createDeferredValue<undefined>()
 		const releaseDelayedRead = createDeferredValue<undefined>()
 		const originalStorageGet = browser.storage.local.get
@@ -1280,10 +1280,10 @@ describe('background eth_accounts', () => {
 			},
 		})
 
-		const olderEnablePublication = refreshSafeAppsPorts(websiteTabConnections)
+		const olderEnablePublication = refreshGnosisSafeAppsPorts(websiteTabConnections)
 		await delayedReadStarted.promise
-		await setSafeAppsCompatibilityMode(false)
-		await refreshSafeAppsPorts(websiteTabConnections)
+		await setGnosisSafeAppsCompatibilityMode(false)
+		await refreshGnosisSafeAppsPorts(websiteTabConnections)
 		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false])
 
 		releaseDelayedRead.resolve(undefined)
@@ -1515,7 +1515,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: false }])
 	})
 
-	test('uses wallet metadata for cached signer address consent when a same-address Safe exists', async () => {
+	test('uses wallet metadata for cached signer address consent when a same-address Gnosis Safe exists', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -1537,7 +1537,7 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Same-address Safe',
+			name: 'Same-address Gnosis Safe',
 			address: account,
 			chainId: 1n,
 			entrySource: 'User',
@@ -2514,7 +2514,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.find((message) => message.method === 'accountsChanged')?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
-	test('advertises the signer account when switching from a Safe to the MetaMask address', async () => {
+	test('advertises the signer account when switching from a Gnosis Safe to the MetaMask address', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -2538,7 +2538,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -2913,7 +2913,7 @@ describe('background eth_accounts', () => {
 		assert.equal(settings.useSignersAddressAsActiveAddress, false)
 	})
 
-	test('restores the simulation signer after selecting a Safe in signing mode', async () => {
+	test('restores the simulation signer after selecting a Gnosis Safe in signing mode', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -2932,7 +2932,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(true, signerAddress)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Signer-owned Safe',
+			name: 'Signer-owned Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -2969,7 +2969,7 @@ describe('background eth_accounts', () => {
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 	})
 
-	test('keeps simulation and Safe signing addresses independent across mode switches', async () => {
+	test('keeps simulation and Gnosis Safe signing addresses independent across mode switches', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -2994,7 +2994,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',
@@ -3117,7 +3117,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [signerAddress])
 	})
 
-	test('switching a Safe to signing mode refreshes only the current signer tab', async () => {
+	test('switching a Gnosis Safe to signing mode refreshes only the current signer tab', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -3143,7 +3143,7 @@ describe('background eth_accounts', () => {
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Treasury Safe',
+			name: 'Treasury Gnosis Safe',
 			address: safeAddress,
 			chainId: 1n,
 			entrySource: 'User',

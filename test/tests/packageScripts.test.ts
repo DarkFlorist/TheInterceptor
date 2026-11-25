@@ -114,10 +114,10 @@ describe('package scripts', () => {
 		assert.equal(fs.existsSync(path.join(repositoryRoot, 'scripts', 'install-firefox.sh')), false)
 	})
 
-	test('provides the browser-level Safe co-signer handoff check', () => {
+	test('provides the browser-level Gnosis Safe co-signer handoff check', () => {
 		const scripts = getPackageScripts()
 
-		assert.equal(getScript(scripts, 'test:chrome-safe-cosigning-communication'), 'bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts')
+		assert.equal(getScript(scripts, 'test:chrome-gnosis-safe-cosigning-communication'), 'bun ./test/benchmarks/chromeGnosisSafeCoSigningCommunication.ts')
 	})
 
 	test('provides the browser-level Firefox provider injection check', () => {

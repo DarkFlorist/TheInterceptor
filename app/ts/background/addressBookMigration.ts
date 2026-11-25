@@ -1,4 +1,4 @@
-import { type AddressBookEntries, type AddressBookEntry, SafeEntry } from '../types/addressBookTypes.js'
+import { type AddressBookEntries, type AddressBookEntry, GnosisSafeEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { type OldActiveAddressEntry, OldActiveAddressEntry as OldActiveAddressEntryRuntype, browserStorageLocalRemove, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
@@ -25,7 +25,7 @@ async function getLegacyAddressBookEntriesV2ForMigration(): Promise<AddressBookE
 	const storageEntries: Partial<Record<'userAddressBookEntriesV2', unknown>> = await browser.storage.local.get('userAddressBookEntriesV2')
 	const rawEntries = storageEntries.userAddressBookEntriesV2
 	if (rawEntries === undefined) return undefined
-	const entriesWithMigratedSafeSigners = migrateLegacySafeAddressBookEntries(rawEntries)
+	const entriesWithMigratedSafeSigners = migrateLegacyGnosisSafeAddressBookEntries(rawEntries)
 	if (entriesWithMigratedSafeSigners !== undefined) return entriesWithMigratedSafeSigners
 	const parsedEntries = repairLegacyAddressBookEntries(rawEntries)
 	if (parsedEntries !== undefined) return parsedEntries
@@ -64,7 +64,7 @@ async function migrateAddressInfoAndContactsFromV2ToV3() {
 	}
 }
 
-export function migrateLegacySafeAddressBookEntries(rawEntries: unknown): AddressBookEntries | undefined {
+export function migrateLegacyGnosisSafeAddressBookEntries(rawEntries: unknown): AddressBookEntries | undefined {
 	if (!Array.isArray(rawEntries)) return undefined
 	let migrationNeeded = false
 	const migratedEntries: AddressBookEntry[] = []
@@ -81,7 +81,7 @@ export function migrateLegacySafeAddressBookEntries(rawEntries: unknown): Addres
 			continue
 		}
 		migrationNeeded = true
-		const parsedSafe = SafeEntry.safeParse(rawEntry)
+		const parsedSafe = GnosisSafeEntry.safeParse(rawEntry)
 		const parsedLegacySigner = EthereumAddress.safeParse(rawEntry.safeSignerAddress)
 		if (!parsedSafe.success || !parsedLegacySigner.success) return undefined
 		const legacySigner = parsedLegacySigner.value
@@ -94,15 +94,15 @@ export function migrateLegacySafeAddressBookEntries(rawEntries: unknown): Addres
 	return migrationNeeded ? migratedEntries : undefined
 }
 
-async function migrateLegacySafeSignerFieldInV3() {
+async function migrateLegacyGnosisSafeSignerFieldInV3() {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
-	const migratedEntries = migrateLegacySafeAddressBookEntries(rawEntries)
+	const migratedEntries = migrateLegacyGnosisSafeAddressBookEntries(rawEntries)
 	if (migratedEntries === undefined) return
 	await browserStorageLocalSet({ userAddressBookEntriesV3: migratedEntries })
 }
 
 export async function migrateAddressBook() {
 	await migrateAddressInfoAndContactsFromV1ToV2()
-	await migrateLegacySafeSignerFieldInV3()
+	await migrateLegacyGnosisSafeSignerFieldInV3()
 	await migrateAddressInfoAndContactsFromV2ToV3()
 }

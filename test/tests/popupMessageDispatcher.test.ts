@@ -360,7 +360,7 @@ describe('popup message dispatcher seams', () => {
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: {
 				type: 'contact',
-				name: 'Updated Safe participant',
+				name: 'Updated Gnosis Safe participant',
 				address: 1n,
 				entrySource: 'User',
 			},
@@ -431,7 +431,7 @@ describe('popup message dispatcher seams', () => {
 		})
 	})
 
-	test('routes Safe contract state through its dedicated protocol', async () => {
+	test('routes Gnosis Safe contract state through its dedicated protocol', async () => {
 		const context = createDispatcherContext(async () => undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_requestSafeContractState',

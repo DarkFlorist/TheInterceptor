@@ -6,7 +6,7 @@ import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { createGnosisSafeTx } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { afterEach, describe, test } from 'bun:test'
@@ -199,7 +199,7 @@ async function loadModules() {
 		...walletSwitch,
 		...popupMessageRouting,
 		updateTransactionState: storageVariables.updateTransactionState,
-		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
+		getGnosisSafeTransactionStacks: storageVariables.getGnosisSafeTransactionStacks,
 		...simulationUpdating,
 		...simulationMode,
 		...defaults,
@@ -331,7 +331,7 @@ const {
 	defaultRpcs,
 	resetSimulationStateFromConfig,
 	updateTransactionState,
-	getSafeTransactionStacks,
+	getGnosisSafeTransactionStacks,
 	DEFAULT_BLOCK_MANIPULATION,
 } = await modulesPromise
 
@@ -360,7 +360,7 @@ function createResetTestTransaction(transactionIdentifier: bigint, requiredChain
 		value: 0n,
 		input: new Uint8Array(),
 	}
-	const safeTx = safeAddress === undefined ? undefined : createSafeTx(requiredChainId, safeAddress, transaction, transactionIdentifier)
+	const safeTx = safeAddress === undefined ? undefined : createGnosisSafeTx(requiredChainId, safeAddress, transaction, transactionIdentifier)
 	return {
 		signedTransaction: mockSignTransaction({
 			type: '1559',
@@ -694,7 +694,7 @@ describe('popup clear reset', () => {
 		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 	})
 
-	test('clears simulation-mode operations while preserving Safe stacks', async () => {
+	test('clears simulation-mode operations while preserving Gnosis Safe stacks', async () => {
 		browserMock.reset()
 		await updateTransactionState(() => ({
 			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
@@ -718,7 +718,7 @@ describe('popup clear reset', () => {
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(interceptorTransactionStack, { operations: [] })
-		assert.equal((await getSafeTransactionStacks()).length, 1)
+		assert.equal((await getGnosisSafeTransactionStacks()).length, 1)
 		assert.ok(popupVisualisation)
 		assertDefinedEmptyPopupVisualisation(popupVisualisation, DEFAULT_BLOCK_MANIPULATION)
 
@@ -730,7 +730,7 @@ describe('popup clear reset', () => {
 		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 	})
 
-	test('clears only the active Safe stack in signing mode', async () => {
+	test('clears only the active Gnosis Safe stack in signing mode', async () => {
 		browserMock.reset()
 		const activeSafeAddress = 0x3000000000000000000000000000000000000003n
 		const otherSafeAddress = 0x4000000000000000000000000000000000000004n
@@ -765,7 +765,7 @@ describe('popup clear reset', () => {
 
 		const storedStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		assert.deepEqual(storedStack.operations.map((operation) => operation.preSimulationTransaction.transactionIdentifier), [1n, 3n, 4n])
-		assert.deepEqual((await getSafeTransactionStacks()).map((stack) => [stack.chainId, stack.safeAddress]), [
+		assert.deepEqual((await getGnosisSafeTransactionStacks()).map((stack) => [stack.chainId, stack.safeAddress]), [
 			[activeChainId, otherSafeAddress],
 			[anotherChainId, activeSafeAddress],
 		])

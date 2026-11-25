@@ -1,5 +1,5 @@
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
-import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
+import { prepareGnosisSafeAppsRequest } from './gnosisSafeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -25,13 +25,13 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, isActiveSigningGnosisSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest } from './windows/watchAsset.js'
-import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
+import { getGnosisSafeModeRpcPolicyReply } from '../gnosisSafe/gnosisSafeRequestPolicy.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
@@ -105,7 +105,7 @@ async function handleRPCRequest(
 	if (maybeParsedRequest.success === false) {
 		// Preserve the existing pre-policy rejection of these non-signing wallet methods; all other malformed requests pass through Safe policy first.
 		if (request.method === 'wallet_watchAsset' || request.method === 'wallet_getCapabilities') return replyWithoutFollowUp(getInvalidRpcParamsReply(request))
-		const safePolicyReply = getSafeModeRpcPolicyReply({
+		const safePolicyReply = getGnosisSafeModeRpcPolicyReply({
 			rawRequest: request,
 			confirmation,
 			parsedRequest: undefined,
@@ -132,7 +132,7 @@ async function handleRPCRequest(
 		})
 	}
 	const parsedRequest = maybeParsedRequest.value
-	const safePolicyReply = getSafeModeRpcPolicyReply({
+	const safePolicyReply = getGnosisSafeModeRpcPolicyReply({
 		rawRequest: request,
 		confirmation,
 		parsedRequest,
@@ -533,10 +533,10 @@ type RequestRouting =
 async function routeRequest(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<RequestRouting> {
 	const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-	const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+	const safeSigningMode = isActiveSigningGnosisSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 	let rpcContext: RpcRequestContext = { request }
 	if (request.method === 'safe_apps_request') {
-		const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+		const admission = await prepareGnosisSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 		if (admission.kind === 'reply') return { kind: 'answeredAtAdmission', reply: admission.reply }
 		rpcContext = admission.context
 	}

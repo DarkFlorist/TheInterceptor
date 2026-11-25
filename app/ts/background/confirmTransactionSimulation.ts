@@ -2,10 +2,10 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
+import { createGnosisSafeExecutionPreSimulationTransaction, createGnosisSafeSigningSimulationInput } from '../gnosisSafe/gnosisSafeSimulation.js'
 import { getFailureReasonForDisplay, getInterceptorErrorExplanation } from '../simulation/failureReasons.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
-import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { GnosisSafeTransactionSigningRequest } from '../types/gnosisSafeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
@@ -79,7 +79,7 @@ export async function refreshConfirmTransactionSimulation(
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-	safeSigningRequest?: SafeTransactionSigningRequest,
+	safeSigningRequest?: GnosisSafeTransactionSigningRequest,
 	refresh = reserveConfirmTransactionSimulationRefresh(),
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
 	if (!refresh.claim()) return undefined
@@ -124,7 +124,7 @@ export async function refreshConfirmTransactionSimulation(
 	const getCreationFailureReasonWithAbis = (errorAbis: readonly string[]) => transactionCreationError === undefined ? undefined : getFailureReasonForDisplay(errorAbis, transactionCreationError)
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
-		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+		: createGnosisSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
@@ -137,7 +137,7 @@ export async function refreshConfirmTransactionSimulation(
 						transactionIdentifier: transactionToSimulate.transactionIdentifier,
 						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
 					}
-					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
+					: createGnosisSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput

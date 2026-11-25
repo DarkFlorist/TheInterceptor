@@ -1,7 +1,7 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
-import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
+import { createGnosisSafeAppsCompatibilityFeature, initializeGnosisSafeAppsCompatibility } from './gnosisSafeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
@@ -44,7 +44,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
 const connections = new Map<number, TabConnection>()
-const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
+const safeAppsCompatibility = createGnosisSafeAppsCompatibilityFeature(connections)
 const websiteTabConnections: WebsiteTabConnections = Object.assign(connections, { lifecycle: safeAppsCompatibility.lifecycle })
 let simulationServicesOwner: SimulationServicesOwner | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
@@ -284,7 +284,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
-	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+	await initializeGnosisSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()

@@ -1,5 +1,0 @@
-import './safeAppsMessages.suite.js'
-import './safeProposalSimulation.suite.js'
-import './safeSignerConfirmation.suite.js'
-import './safeSignerRouting.suite.js'
-import './safeExecutionSimulation.suite.js'

@@ -92,7 +92,7 @@ describe('UI audit fixes', () => {
 		assert.match(source, /aria-label = 'Name'/)
 		assert.match(source, /aria-label = \{ ariaLabel \}/)
 		assert.match(source, /aria-label = 'ABI'/)
-		assert.match(source, /class = 'safe-signer-owner-list' role = 'radiogroup' aria-label = 'Safe signer in simulation'/)
+		assert.match(source, /class = 'gnosis-safe-signer-owner-list' role = 'radiogroup' aria-label = 'Gnosis Safe signer in simulation'/)
 
 		const css = await readInterceptorAppCss()
 		assert.match(css, /\.address-editor-identity-controls\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
@@ -142,7 +142,7 @@ describe('UI audit fixes', () => {
 		}
 	})
 
-	test('humanizes failed simulation state and provides compact expandable Safe details', async () => {
+	test('humanizes failed simulation state and provides compact expandable Gnosis Safe details', async () => {
 		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
 		assert.match(confirmSource, /if \(status === 'FailedToSimulate'\) return 'Simulation failed'/)
 		assert.match(confirmSource, /narrowSummary = \{ `Gnosis Safe transaction nonce/)

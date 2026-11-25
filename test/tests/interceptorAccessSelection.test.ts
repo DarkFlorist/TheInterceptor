@@ -66,14 +66,14 @@ describe('InterceptorAccess modal request selection', () => {
 		const contactAddress = 0x5000000000000000000000000000000000000005n
 		const entries: AddressBookEntries = [{
 			type: 'safe',
-			name: 'Current-chain Safe',
+			name: 'Current-chain Gnosis Safe',
 			address: currentChainSafeAddress,
 			chainId: 1n,
 			entrySource: 'User',
 			useAsActiveAddress: true,
 		}, {
 			type: 'safe',
-			name: 'Wrong-chain Safe',
+			name: 'Wrong-chain Gnosis Safe',
 			address: wrongChainSafeAddress,
 			chainId: 2n,
 			entrySource: 'User',

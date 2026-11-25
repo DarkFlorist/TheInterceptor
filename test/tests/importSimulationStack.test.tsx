@@ -10,8 +10,8 @@ import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
-import { createSafeTx } from '../../app/ts/safe/safeCore.js'
-import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { createGnosisSafeTx } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
+import { getGnosisSafeTxHash } from '../../app/ts/utils/eip712.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -182,11 +182,11 @@ const create7702ExportPayload = () => ({
 	},
 })
 
-function createSafeSimulationExportPayload() {
+function createGnosisSafeSimulationExportPayload() {
 	const payload = create7702ExportPayload()
 	const operation = payload.interceptorSimulateStack.operations[0]
 	if (operation === undefined) throw new Error('Expected transaction fixture')
-	const safeTx = createSafeTx(1n, 0x5555555555555555555555555555555555555555n, {
+	const safeTx = createGnosisSafeTx(1n, 0x5555555555555555555555555555555555555555n, {
 		to: 0x2222222222222222222222222222222222222222n,
 		value: 0n,
 		input: new Uint8Array(),
@@ -200,7 +200,7 @@ function createSafeSimulationExportPayload() {
 					...operation.preSimulationTransaction,
 					safeTransaction: {
 						safeTx,
-						safeTxHash: BigInt(getSafeTxHash(safeTx)),
+						safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 						created: new Date('2024-01-01T00:00:00.000Z'),
 						websiteOrigin: 'https://example.com',
 						transactionIdentifier: 78n,
@@ -320,11 +320,11 @@ describe('import simulation stack', () => {
 		assert.match(reply.message, /simulation stack/i)
 	})
 
-	test('rejects Safe operations that must use synchronized Safe stack import', async () => {
+	test('rejects Gnosis Safe operations that must use synchronized Gnosis Safe stack import', async () => {
 		const modules = await modulesPromise
 		resetEnvironment()
 		const parsedExport = InterceptorSimulationExport.parse(
-			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
+			InterceptorSimulationExport.serialize(createGnosisSafeSimulationExportPayload())
 		)
 
 		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
@@ -336,10 +336,10 @@ describe('import simulation stack', () => {
 		assert.equal('safeTransactionStacks' in storageState, false)
 	})
 
-	test('excludes synchronized Safe proposals from simulation-mode export', async () => {
+	test('excludes synchronized Gnosis Safe proposals from simulation-mode export', async () => {
 		const modules = await modulesPromise
 		resetEnvironment()
-		const safeExport = createSafeSimulationExportPayload()
+		const safeExport = createGnosisSafeSimulationExportPayload()
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
 		storageState.simulationMode = true
 		let exportedSimulationInput: unknown

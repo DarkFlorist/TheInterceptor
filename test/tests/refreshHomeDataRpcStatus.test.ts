@@ -1,7 +1,7 @@
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { createGnosisSafeTx } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -435,7 +435,7 @@ describe('refreshHomeData', () => {
 				baseNonce: 0n,
 				threshold: 1n,
 				transactions: [{
-					safeTx: createSafeTx(rpcNetwork.chainId, defaultAddress.address, {
+					safeTx: createGnosisSafeTx(rpcNetwork.chainId, defaultAddress.address, {
 						to: defaultAddress.address,
 						value: 0n,
 						input: new Uint8Array(),
@@ -626,7 +626,7 @@ describe('refreshHomeData', () => {
 		const signingSafe = 0x5656565656565656565656565656565656565656n
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Remembered Safe',
+			name: 'Remembered Gnosis Safe',
 			address: signingSafe,
 			chainId: rpcNetwork.chainId,
 			entrySource: 'User',

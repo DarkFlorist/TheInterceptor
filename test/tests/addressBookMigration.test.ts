@@ -38,7 +38,7 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 }
 
 describe('address book migration', () => {
-	test('migrates a legacy Safe signer into simulation and owner metadata before schema parsing drops it', async () => {
+	test('migrates a legacy Gnosis Safe signer into simulation and owner metadata before schema parsing drops it', async () => {
 		let storageSetCount = 0
 		const storageState = installBrowserMock(() => { storageSetCount++ })
 		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
@@ -47,7 +47,7 @@ describe('address book migration', () => {
 		storageState.userAddressBookEntriesV3 = [
 			{
 				type: 'safe',
-				name: 'Legacy Safe',
+				name: 'Legacy Gnosis Safe',
 				address: '0x0000000000000000000000000000000000001234',
 				chainId: '0x1',
 				entrySource: 'User',
@@ -69,13 +69,13 @@ describe('address book migration', () => {
 		const entries = await getUserAddressBookEntries()
 
 		assert.equal(entries[0]?.type, 'safe')
-		if (entries[0]?.type !== 'safe') throw new Error('Expected migrated Safe entry')
+		if (entries[0]?.type !== 'safe') throw new Error('Expected migrated Gnosis Safe entry')
 		assert.equal(entries[0].safeSimulationSignerAddress, BigInt(legacySigner))
 		assert.deepEqual(entries[0].safeSignerAddresses, [BigInt(legacySigner)])
 		assert.equal(entries[1]?.type, 'contract')
 		const storedEntries = storageState.userAddressBookEntriesV3
 		assert.ok(Array.isArray(storedEntries))
-		if (!Array.isArray(storedEntries) || typeof storedEntries[0] !== 'object' || storedEntries[0] === null) throw new Error('Expected serialized migrated Safe entry')
+		if (!Array.isArray(storedEntries) || typeof storedEntries[0] !== 'object' || storedEntries[0] === null) throw new Error('Expected serialized migrated Gnosis Safe entry')
 		assert.equal('safeSignerAddress' in storedEntries[0], false)
 		assert.equal('safeSimulationSignerAddress' in storedEntries[0] && storedEntries[0].safeSimulationSignerAddress, legacySigner)
 		assert.deepEqual('safeSignerAddresses' in storedEntries[0] && storedEntries[0].safeSignerAddresses, [legacySigner])
@@ -121,13 +121,13 @@ describe('address book migration', () => {
 		)
 	})
 
-	test('preserves legacy Safe signer metadata while migrating V2 entries to V3', async () => {
+	test('preserves legacy Gnosis Safe signer metadata while migrating V2 entries to V3', async () => {
 		const storageState = installBrowserMock()
 		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
 		const legacySigner = '0x0000000000000000000000000000000000005678'
 		storageState.userAddressBookEntriesV2 = [{
 			type: 'safe',
-			name: 'Legacy V2 Safe',
+			name: 'Legacy V2 Gnosis Safe',
 			address: '0x0000000000000000000000000000000000001234',
 			chainId: '0x1',
 			entrySource: 'User',
@@ -140,7 +140,7 @@ describe('address book migration', () => {
 		assert.equal(storageState.userAddressBookEntriesV2, undefined)
 		const migratedEntries = storageState.userAddressBookEntriesV3
 		assert.ok(Array.isArray(migratedEntries))
-		if (!Array.isArray(migratedEntries) || typeof migratedEntries[0] !== 'object' || migratedEntries[0] === null) throw new Error('Expected migrated V2 Safe entry')
+		if (!Array.isArray(migratedEntries) || typeof migratedEntries[0] !== 'object' || migratedEntries[0] === null) throw new Error('Expected migrated V2 Gnosis Safe entry')
 		assert.equal('safeSignerAddress' in migratedEntries[0], false)
 		assert.equal('safeSimulationSignerAddress' in migratedEntries[0] && migratedEntries[0].safeSimulationSignerAddress, legacySigner)
 		assert.deepEqual('safeSignerAddresses' in migratedEntries[0] && migratedEntries[0].safeSignerAddresses, [legacySigner])

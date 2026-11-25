@@ -143,24 +143,24 @@ svg[role="img"] {
 	overflow-wrap: anywhere;
 }
 
-.safe-signer-option {
+.gnosis-safe-signer-option {
 	align-items: center;
 	gap: 0.5em;
 	padding-block: 0.2em;
 	width: 100%;
 }
 
-.safe-signer-option:has([type=radio]:not(:disabled)) {
+.gnosis-safe-signer-option:has([type=radio]:not(:disabled)) {
 	cursor: pointer;
 }
 
-.safe-signer-option .inline-card,
-.safe-signer-option .inline-card data,
-.safe-signer-option [type=radio]:not(:disabled) {
+.gnosis-safe-signer-option .inline-card,
+.gnosis-safe-signer-option .inline-card data,
+.gnosis-safe-signer-option [type=radio]:not(:disabled) {
 	cursor: pointer;
 }
 
-.safe-signer-option:before {
+.gnosis-safe-signer-option:before {
 	content: '';
 	background: transparent;
 	width: 0.3125rem;
@@ -171,11 +171,11 @@ svg[role="img"] {
 	margin: 0.1875rem;
 }
 
-.safe-signer-option:has([type=radio]:checked):before {
+.gnosis-safe-signer-option:has([type=radio]:checked):before {
 	background: var(--white-color);
 }
 
-.safe-signer-option-address {
+.gnosis-safe-signer-option-address {
 	grid-column: 2;
 	display: flex;
 	flex-wrap: wrap;
@@ -185,14 +185,14 @@ svg[role="img"] {
 	overflow: hidden;
 }
 
-.safe-signer-option-address > .inline-card {
+.gnosis-safe-signer-option-address > .inline-card {
 	flex: 1 1 100%;
 	max-width: 100%;
 	min-width: 0;
 	width: 100%;
 }
 
-.safe-signer-option-address > code {
+.gnosis-safe-signer-option-address > code {
 	flex: 1 1 auto;
 	color: var(--text-color);
 	overflow: hidden;
@@ -201,7 +201,7 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.safe-signer-address {
+.gnosis-safe-signer-address {
 	border-top: 1px solid var(--unimportant-text-color);
 	display: grid;
 	gap: 8px;
@@ -210,31 +210,31 @@ svg[role="img"] {
 	padding-top: 8px;
 }
 
-.safe-signer-home-heading {
+.gnosis-safe-signer-home-heading {
 	align-items: center;
 	display: flex;
 	gap: 8px;
 }
 
-.safe-signer-home-heading > :first-child {
+.gnosis-safe-signer-home-heading > :first-child {
 	color: var(--subtitle-text-color);
 	flex: 1 1 auto;
 	margin: 0;
 	min-width: 0;
 }
 
-.safe-signer-home-heading > .btn {
+.gnosis-safe-signer-home-heading > .btn {
 	flex: 0 0 auto;
 	white-space: nowrap;
 }
 
-.safe-signer-address > .dropdown,
-.safe-signer-address > .dropdown > .dropdown-trigger {
+.gnosis-safe-signer-address > .dropdown,
+.gnosis-safe-signer-address > .dropdown > .dropdown-trigger {
 	min-width: 0;
 	width: 100%;
 }
 
-.safe-signer-address .dropdown-trigger > button {
+.gnosis-safe-signer-address .dropdown-trigger > button {
 	height: auto;
 	min-height: 0;
 	padding: 7px 9px;
@@ -242,7 +242,7 @@ svg[role="img"] {
 	white-space: normal;
 }
 
-.safe-signer-address .dropdown button > .truncate {
+.gnosis-safe-signer-address .dropdown button > .truncate {
 	display: block;
 	max-width: 100%;
 	min-width: 0;
@@ -251,22 +251,22 @@ svg[role="img"] {
 	width: 100%;
 }
 
-.safe-signer-address .dropdown-menu,
-.safe-signer-address .dropdown-content {
+.gnosis-safe-signer-address .dropdown-menu,
+.gnosis-safe-signer-address .dropdown-content {
 	box-sizing: border-box;
 	max-width: 100%;
 	width: 100%;
 }
 
-.safe-signer-address .dropdown-menu {
+.gnosis-safe-signer-address .dropdown-menu {
 	min-width: 0;
 }
 
-.safe-signer-address .dropdown-content {
+.gnosis-safe-signer-address .dropdown-content {
 	padding: 6px;
 }
 
-.safe-signer-address .dropdown-item {
+.gnosis-safe-signer-address .dropdown-item {
 	box-sizing: border-box;
 	padding: 7px;
 	text-align: left;
@@ -274,13 +274,13 @@ svg[role="img"] {
 	width: 100%;
 }
 
-.safe-signer-home-option {
+.gnosis-safe-signer-home-option {
 	display: block;
 	min-width: 0;
 	width: 100%;
 }
 
-.safe-signer-home-option > .multiline-card {
+.gnosis-safe-signer-home-option > .multiline-card {
 	max-width: 100%;
 	min-width: 0;
 	width: 100%;
@@ -615,7 +615,7 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.safe-signer-owner-picker {
+.gnosis-safe-signer-owner-picker {
 	display: grid;
 	gap: 6px;
 	color: var(--subtitle-text-color);
@@ -624,12 +624,12 @@ svg[role="img"] {
 	min-width: 0;
 }
 
-.safe-signer-owner-list {
+.gnosis-safe-signer-owner-list {
 	display: grid;
 	gap: 4px;
 }
 
-.safe-signer-owner-option {
+.gnosis-safe-signer-owner-option {
 	align-items: center;
 	background: color-mix(in srgb, var(--text-color) 4%, transparent);
 	border: 1px solid var(--layout-line-color);
@@ -642,17 +642,17 @@ svg[role="img"] {
 	padding: 5px 8px;
 }
 
-.safe-signer-owner-option:has(input:checked) {
+.gnosis-safe-signer-owner-option:has(input:checked) {
 	background: color-mix(in srgb, var(--accent-color) 12%, transparent);
 	border-color: var(--accent-color);
 }
 
-.safe-signer-owner-option > input {
+.gnosis-safe-signer-owner-option > input {
 	accent-color: var(--accent-color);
 	margin: 0;
 }
 
-.safe-signer-owner-option > .inline-card {
+.gnosis-safe-signer-owner-option > .inline-card {
 	max-width: 100%;
 	min-width: 0;
 }
@@ -797,7 +797,7 @@ svg[role="img"] {
 	width: 14px;
 }
 
-.safe-signer-error-details {
+.gnosis-safe-signer-error-details {
 	align-items: center;
 	background: color-mix(in srgb, var(--text-color) 5%, transparent);
 	border: 1px solid var(--layout-line-color);
@@ -809,13 +809,13 @@ svg[role="img"] {
 	padding: 8px;
 }
 
-.safe-signer-error-details > dt {
+.gnosis-safe-signer-error-details > dt {
 	color: var(--subtitle-text-color);
 	font-size: 12px;
 }
 
-.safe-signer-error-details > dd,
-.safe-signer-error-owner-list {
+.gnosis-safe-signer-error-details > dd,
+.gnosis-safe-signer-error-owner-list {
 	display: grid;
 	gap: 5px;
 	justify-items: end;
@@ -823,7 +823,7 @@ svg[role="img"] {
 	min-width: 0;
 }
 
-.safe-signer-error-details .inline-card {
+.gnosis-safe-signer-error-details .inline-card {
 	max-width: 100%;
 	min-width: 0;
 }
@@ -1809,7 +1809,7 @@ svg.spinner > circle {
 	min-width: 0;
 }
 
-.safe-signer-connection-message {
+.gnosis-safe-signer-connection-message {
 	display: block;
 	color: var(--subtitle-text-color);
 	max-width: 100%;

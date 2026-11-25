@@ -2,7 +2,7 @@ import type { ActiveAddress, ExportedSettings } from '../types/exportedSettingsT
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
+import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, gnosisSafeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './storageVariables.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
@@ -40,7 +40,7 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 			useSignersAddressAsActiveAddressStorageWrite(exportedSettings.settings.useSignersAddressAsActiveAddress),
 			websiteAccessStorageWrite(exportedSettings.settings.websiteAccess),
 			useTabsInsteadOfPopupStorageWrite(exportedSettings.settings.useTabsInsteadOfPopup),
-			safeAppsCompatibilityModeStorageWrite(version === '1.6' ? exportedSettings.settings.safeAppsCompatibilityMode : false),
+			gnosisSafeAppsCompatibilityModeStorageWrite(version === '1.6' ? exportedSettings.settings.safeAppsCompatibilityMode : false),
 			...version !== '1.0' && version !== '1.1' ? [metamaskCompatibilityModeStorageWrite(exportedSettings.settings.metamaskCompatibilityMode)] : [],
 		],
 	}))

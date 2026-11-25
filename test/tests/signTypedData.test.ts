@@ -1,4 +1,4 @@
-import { Permit2, PersonalSignRequestIdentifiedEIP712Message, SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import { Permit2, PersonalSignRequestIdentifiedEIP712Message, GnosisSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { describe, test } from 'bun:test'
 import { extractEIP712Message, validateEIP712Types } from '../../app/ts/utils/eip712Parsing.js'
 import { identifyAddress } from '../../app/ts/background/metadataUtils.js'
@@ -84,7 +84,7 @@ describe('EIP712', () => {
 		assert.equal(PersonalSignRequestIdentifiedEIP712Message.safeParse(EIP712Message.parse(JSON.stringify(singleDetailsInBatch))).success, false)
 	})
 	test('can parse safeTx message', () => {
-		SafeTx.parse(JSON.parse(safeTx))
+		GnosisSafeTx.parse(JSON.parse(safeTx))
 	})
 	test('can verify a permit 2 message EIP712 message', () => {
 		const verification = verifyEip712Message(JSON.parse(permit2Message))

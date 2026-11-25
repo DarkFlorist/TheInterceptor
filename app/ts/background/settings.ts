@@ -227,9 +227,9 @@ export const getMetamaskCompatibilityMode = async() => (await browserStorageLoca
 export const metamaskCompatibilityModeStorageWrite = (metamaskCompatibilityMode: boolean): StorageWrite => ({ metamaskCompatibilityMode })
 export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet(metamaskCompatibilityModeStorageWrite(metamaskCompatibilityMode))
 
-export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
-export const safeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
-export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(safeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
+export const getGnosisSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
+export const gnosisSafeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
+export const setGnosisSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(gnosisSafeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
@@ -251,7 +251,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
+			safeAppsCompatibilityMode: await getGnosisSafeAppsCompatibilityMode(),
 		}
 	}
 }

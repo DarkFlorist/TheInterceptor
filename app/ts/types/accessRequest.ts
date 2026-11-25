@@ -10,7 +10,7 @@ import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
-import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionRequestContext, SafeTransactionSigningRequest } from './safeTypes.js'
+import { GnosisSafeContractStateSnapshot, GnosisSafeMessageCoSignSnapshot, GnosisSafeSignerErrorDetails, GnosisSafeTransactionRequestContext, GnosisSafeTransactionSigningRequest } from './gnosisSafeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -103,7 +103,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 		status: funtypes.Union(funtypes.Literal('SignerError')),
 		code: funtypes.Number,
 		message: funtypes.String,
-	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
+	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: GnosisSafeSignerErrorDetails })),
 )
 
 // How a pending transaction's confirmation forms it, the one record of that decision: prepareSafeTransactionConfirmation makes it once when the confirmation opens, with the data the flow needs, and every refresh reads it back (getPendingTransactionFlowKind) to form the transaction the same way.
@@ -112,8 +112,8 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 // - directExecution: a signer's execTransaction call executing a SafeTx of the configured Safe.
 // - proposal: a transaction of the configured Safe, proposed as a SafeTx. It is 'created' with its Gnosis Safe transaction. If the transaction did not form ('formationFailed': a gas estimate that reverted, a node error), the proposal was never attempted, so every refresh prepares the confirmation again, with the page's safeRequestContext, until it forms. If the transaction formed but the Gnosis Safe transaction could not be made from it ('creationFailed'), the confirmation keeps that failure.
 // - unsupportedSafeRequest: a request the configured Safe can't make through execTransaction (a contract creation), which the confirmation keeps as its request-shape failure.
-export type PendingTransactionSafeFlow = funtypes.Static<typeof PendingTransactionSafeFlow>
-export const PendingTransactionSafeFlow = funtypes.Union(
+export type PendingTransactionGnosisSafeFlow = funtypes.Static<typeof PendingTransactionGnosisSafeFlow>
+export const PendingTransactionGnosisSafeFlow = funtypes.Union(
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('ordinary') }),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('simulationModeSafeExecution') }),
 	funtypes.ReadonlyObject({
@@ -121,10 +121,10 @@ export const PendingTransactionSafeFlow = funtypes.Union(
 		safeExecutionOriginalRequestParameters: SendTransactionParams,
 	}).And(funtypes.ReadonlyPartial({
 		safeExecutionSignerAddress: EthereumAddress,
-		safeExecutionReviewedSafeState: SafeContractStateSnapshot,
+		safeExecutionReviewedSafeState: GnosisSafeContractStateSnapshot,
 	})),
-	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('created'), safeTransaction: SafeTransactionSigningRequest }),
-	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('formationFailed') }).And(funtypes.ReadonlyPartial({ safeRequestContext: SafeTransactionRequestContext })),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('created'), safeTransaction: GnosisSafeTransactionSigningRequest }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('formationFailed') }).And(funtypes.ReadonlyPartial({ safeRequestContext: GnosisSafeTransactionRequestContext })),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('creationFailed') }),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('unsupportedSafeRequest') }),
 )
@@ -153,7 +153,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
 	// Required, so a pending transaction stored by a version without it does not parse, and the corrupt-storage recovery of pendingTransactionsAndMessages (readPendingTransactionsAndMessagesWithRecovery) clears it instead of a refresh forming it as another kind of transaction.
-	safeFlow: PendingTransactionSafeFlow,
+	safeFlow: PendingTransactionGnosisSafeFlow,
 })
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -204,7 +204,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
+	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: GnosisSafeMessageCoSignSnapshot })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })

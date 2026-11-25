@@ -1,7 +1,7 @@
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import * as assert from 'node:assert'
 import { afterEach, describe, expect, test } from 'bun:test'
-import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { ContactEntry, GnosisSafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
@@ -31,11 +31,11 @@ function pauseAfterFirstStorageWrite(key: string) {
 afterEach(waitForBackgroundTasks)
 
 describe('active settings concurrency', () => {
-	test('grants access to a new Safe while its background simulation refresh is pending', async () => {
+	test('grants access to a new Gnosis Safe while its background simulation refresh is pending', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, updateUserAddressBookEntries, updatePendingAccessRequests, resolveInterceptorAccess, getPendingAccessRequests, getSettings, updateTabState, websiteSocketToString } = await loadModules()
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: firstAddress.address })
-		const selectedAddress: SafeEntry = { type: 'safe', name: 'Owned Safe', address: secondAddress.address, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		const selectedAddress: GnosisSafeEntry = { type: 'safe', name: 'Owned Gnosis Safe', address: secondAddress.address, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [firstAddress.address], signerName: 'MetaMask' }))
 		await updateUserAddressBookEntries(() => [firstAddress, selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
@@ -166,7 +166,7 @@ describe('active settings concurrency', () => {
 			return await originalSend(message)
 		}
 		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://installed.example' }
-		const safe: SafeEntry = { type: 'safe', name: 'Queued Safe', address: 3n, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		const safe: GnosisSafeEntry = { type: 'safe', name: 'Queued Gnosis Safe', address: 3n, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		const first = changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork })
 		try {
 			await entered.promise
@@ -201,11 +201,11 @@ describe('active settings concurrency', () => {
 		assert.equal(settings.useSignersAddressAsActiveAddress, !signerFirst)
 	})
 
-	test.each([true, false])('remembers the final concurrent signing selection when selecting Safe first: %j', async (safeFirst) => {
+	test.each([true, false])('remembers the final concurrent signing selection when selecting Gnosis Safe first: %j', async (safeFirst) => {
 		installBrowserMock()
 		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		const safe: GnosisSafeEntry = { type: 'safe', name: 'Owned Gnosis Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		await updateUserAddressBookEntries(() => [firstAddress, safe])
 		const signerSelection = { type: 'signer', address: firstAddress.address } as const
 		const safeSelection = { type: 'addressBookEntry', entry: safe } as const
@@ -270,11 +270,11 @@ describe('active settings concurrency', () => {
 		}
 	})
 
-	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
+	test('retains committed Gnosis Safe preferences and invalidates the popup after provider reset failure', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
 		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
-		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		const safe: GnosisSafeEntry = { type: 'safe', name: 'Owned Gnosis Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		await updateUserAddressBookEntries(() => [firstAddress, safe])
 		const counter = { count: 0 }
 		const services = createEthereumWithGetBlockCounter(counter)

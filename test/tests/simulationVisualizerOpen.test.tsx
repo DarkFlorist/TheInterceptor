@@ -412,7 +412,7 @@ function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number
 			...update.data,
 			tabState: { ...update.data.tabState, signerConnected: true, signerAccounts: [safeOwnerAddress], activeSigningAddress: safeOwnerAddress },
 			activeSigningAddressInThisTab: safeAddress,
-			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: safeOwnerAddress, safeSignerAddresses: [safeOwnerAddress] }],
+			activeAddresses: [{ type: 'safe', name: 'Test Gnosis Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: safeOwnerAddress, safeSignerAddresses: [safeOwnerAddress] }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
 			rpcEntries: [serializableSettings.activeRpcNetwork],
@@ -421,14 +421,14 @@ function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number
 	}
 }
 
-function createNonSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
+function createNonGnosisSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
 	const update = createStackHomePageUpdate(tabId, popupRefreshGeneration, iconReason)
 	const nonSafeAddress = 0x4000000000000000000000000000000000000004n
 	return {
 		...update,
 		data: {
 			...update.data,
-			activeAddresses: [{ type: 'contact', name: 'Not a Safe', address: nonSafeAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
+			activeAddresses: [{ type: 'contact', name: 'Not a Gnosis Safe', address: nonSafeAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
 			activeSigningAddressInThisTab: nonSafeAddress,
 			settings: { ...update.data.settings, activeSigningSafeAddress: undefined },
 		},
@@ -623,7 +623,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('main popup hook keeps Safe simulation results without a simulation-mode address', async () => {
+	test('main popup hook keeps Gnosis Safe simulation results without a simulation-mode address', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()
 		try {
@@ -632,7 +632,7 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(12, 1, 'Safe stack')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(12, 1, 'Gnosis Safe stack')) }, {}, () => undefined)
 			})
 
 			assert.equal(dom.document.body.textContent, 'simulated')
@@ -747,10 +747,10 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer uses the signing Safe as the visualized address in signing mode', async () => {
+	test('stack visualizer uses the signing Gnosis Safe as the visualized address in signing mode', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()
-		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 1)
+		const update = createStackHomePageUpdate(13, 1, 'Gnosis Safe signing stack', [1n], 1)
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -766,16 +766,16 @@ describe('simulation visualizer open replies', () => {
 				}, {}, () => undefined)
 			})
 
-			assert.equal(collectElements(dom.document.body, 'p').some((paragraph) => paragraph.getAttribute?.('aria-label') === 'Address being made rich is Test Safe.'), true)
+			assert.equal(collectElements(dom.document.body, 'p').some((paragraph) => paragraph.getAttribute?.('aria-label') === 'Address being made rich is Test Gnosis Safe.'), true)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('stack visualizer remains a Gnosis Safe stack when the current tab cannot resolve the Safe owner', async () => {
+	test('stack visualizer remains a Gnosis Safe stack when the current tab cannot resolve the Gnosis Safe owner', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()
-		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 0)
+		const update = createStackHomePageUpdate(13, 1, 'Gnosis Safe signing stack', [1n], 0)
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -966,7 +966,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer hides a simulation export error after switching to Safe mode', async () => {
+	test('stack visualizer hides a simulation export error after switching to Gnosis Safe mode', async () => {
 		const dom = installDomMock()
 		const exportError = 'Simulation stack export failed.'
 		const { dispatchMessage: listener } = installBrowserMock((message) => {
@@ -1004,10 +1004,10 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer Safe export copies with feedback and a cooldown', async () => {
+	test('stack visualizer Gnosis Safe export copies with feedback and a cooldown', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
-		const safeExportPayload = '{ "name": "Interceptor Safe Stack" }'
+		const safeExportPayload = '{ "name": "Interceptor Gnosis Safe Stack" }'
 		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSafeStackExport') {
 				return { method: 'popup_requestSafeStackExport', ok: true, safeStackJson: safeExportPayload }
@@ -1036,7 +1036,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer hides simulation import and export in Safe signing mode', async () => {
+	test('stack visualizer hides simulation import and export in Gnosis Safe signing mode', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()
 		try {
@@ -1056,9 +1056,9 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer shows the reason when copying Safe transactions is refused', async () => {
+	test('stack visualizer shows the reason when copying Gnosis Safe transactions is refused', async () => {
 		const dom = installDomMock()
-		const exportError = 'The simulation stack has no Safe proposals to export.'
+		const exportError = 'The simulation stack has no Gnosis Safe proposals to export.'
 		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSafeStackExport') {
 				return { method: 'popup_requestSafeStackExport', ok: false, message: exportError }
@@ -1085,7 +1085,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer shows Safe actions only when signing with an active Safe', async () => {
+	test('stack visualizer shows Gnosis Safe actions only when signing with an active Gnosis Safe', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock(() => undefined)
 		try {
@@ -1094,11 +1094,11 @@ describe('simulation visualizer open replies', () => {
 			})
 			const update = createStackHomePageUpdate(23, 1, 'Stack tab')
 			const activeSafe = update.data.activeAddresses[0]
-			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
-			const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: activeSafe.address, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
+			if (activeSafe?.type !== 'safe') throw new Error('Expected a Gnosis Safe fixture')
+			const contactWithSafeAddress = { type: 'contact', name: 'Gnosis Safe address contact', address: activeSafe.address, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createNonGnosisSafeStackHomePageUpdate(23, 2, 'Non-Gnosis Safe stack tab')) }, {}, () => undefined)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), false)
@@ -1129,7 +1129,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer switches between mutually exclusive Safe and simulation controls', async () => {
+	test('stack visualizer switches between mutually exclusive Gnosis Safe and simulation controls', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()
 		try {
@@ -1328,7 +1328,7 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const safeUpdate = createStackHomePageUpdate(25, 1, 'Safe stack tab')
+			const safeUpdate = createStackHomePageUpdate(25, 1, 'Gnosis Safe stack tab')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, safeUpdate) }, {}, () => undefined)
@@ -1402,7 +1402,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer releases its refresh barrier when the active Safe changes independently', async () => {
+	test('stack visualizer releases its refresh barrier when the active Gnosis Safe changes independently', async () => {
 		const dom = installDomMock()
 		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
 		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
@@ -1416,7 +1416,7 @@ describe('simulation visualizer open replies', () => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
 			const simulationUpdate = createSimulationStackHomePageUpdate(27, 1, 'Simulation stack tab')
-			const safeSettings = createStackHomePageUpdate(27, 2, 'Safe stack tab').data.settings
+			const safeSettings = createStackHomePageUpdate(27, 2, 'Gnosis Safe stack tab').data.settings
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, simulationUpdate) }, {}, () => undefined)

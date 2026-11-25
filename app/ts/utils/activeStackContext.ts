@@ -11,14 +11,14 @@ export type ActiveStackContext =
 
 export const SIMULATION_STACK_CONTEXT = { simulationMode: true } as const satisfies ActiveStackContext
 
-export function getSafeStackContext(activeSafeAddress: bigint | undefined, chainId: bigint): ActiveStackContext {
+export function getGnosisSafeStackContext(activeSafeAddress: bigint | undefined, chainId: bigint): ActiveStackContext {
 	return { simulationMode: false, activeSafeAddress, chainId }
 }
 
 export function getActiveStackContext(settings: Pick<Settings, 'simulationMode' | 'activeSigningSafeAddress' | 'activeRpcNetwork'>): ActiveStackContext {
 	return settings.simulationMode
 		? SIMULATION_STACK_CONTEXT
-		: getSafeStackContext(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId)
+		: getGnosisSafeStackContext(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId)
 }
 
 export function activeStackContextsEqual(first: ActiveStackContext, second: ActiveStackContext) {

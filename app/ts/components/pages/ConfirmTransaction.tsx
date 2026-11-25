@@ -1,5 +1,5 @@
 import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
-import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
+import { GnosisSafeProposalDetails, GnosisSafeProposalSigningRequestCard } from './GnosisSafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
@@ -12,7 +12,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWitho
 import { addMissingTransactionCreationFailureReason } from './pendingTransactionFailureReason.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
-import { QuarantineReasons, SafeExecutionSimulationNotice, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons, GnosisSafeExecutionSimulationNotice, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -49,7 +49,7 @@ import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
-import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getGnosisSafeTransactionPendingFlow } from '../../gnosisSafe/gnosisSafePendingFlow.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<ShownPendingTransactionOrSignableMessage[]>
@@ -417,7 +417,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
 		const failedTransactionPreview = popupVisualisation.data.failedTransactionPreview
 		const addressMetaData = failedTransactionPreview?.addressBookEntries ?? []
-		const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
+		const safeFlow = getGnosisSafeTransactionPendingFlow(currentPendingTransaction)
 		return <>
 			<FailedTransactionPreviewDetails
 				website = { currentPendingTransaction.transactionToSimulate.website }
@@ -434,7 +434,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
-			{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
+			{ safeFlow?.kind !== 'proposal' ? <></> : <GnosisSafeProposalSigningRequestCard
 				safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 				addressMetaData = { addressMetaData }
 				rpcNetwork = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.simulationState.rpcNetwork : undefined }
@@ -469,7 +469,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 	}
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
-	const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
+	const safeFlow = getGnosisSafeTransactionPendingFlow(currentPendingTransaction)
 	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -508,9 +508,9 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
 
-				<SafeExecutionSimulationNotice transaction = { simTx }/>
+				<GnosisSafeExecutionSimulationNotice transaction = { simTx }/>
 
-				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
+				{ safeFlow?.kind !== 'proposal' ? <></> : <GnosisSafeProposalSigningRequestCard
 					safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 					addressMetaData = { addressMetaData.value }
 					rpcNetwork = { rpcNetwork.value }
@@ -554,26 +554,26 @@ type CheckBoxesParams = {
 	addressBookEntries?: readonly AddressBookEntry[],
 }
 
-function SafeSignerErrorAddress({ label, address, addressBookEntries }: { label: string, address: bigint, addressBookEntries: readonly AddressBookEntry[] }) {
+function GnosisSafeSignerErrorAddress({ label, address, addressBookEntries }: { label: string, address: bigint, addressBookEntries: readonly AddressBookEntry[] }) {
 	return <>
 		<dt>{ label }</dt>
 		<dd><SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, address) } renameAddressCallBack = { () => undefined } noEditAddress = { true } /></dd>
 	</>
 }
 
-function SafeSignerErrorDetails({ details, addressBookEntries }: {
+function GnosisSafeSignerErrorDetails({ details, addressBookEntries }: {
 	details: NonNullable<Extract<ShownPendingTransactionOrSignableMessage['approvalStatus'], { status: 'SignerError' }>['safeSignerErrorDetails']>,
 	addressBookEntries: readonly AddressBookEntry[],
 }) {
 	switch (details.kind) {
 		case 'safeSigningAccountMismatch':
 			addressBookEntries = [...details.safeOwnerAddressBookEntries, ...addressBookEntries]
-			return <dl class = 'safe-signer-error-details'>
-				<SafeSignerErrorAddress label = 'Signing account' address = { details.requestedSigningAccount } addressBookEntries = { addressBookEntries } />
-				<SafeSignerErrorAddress label = 'Active Safe' address = { details.activeSafe } addressBookEntries = { addressBookEntries } />
-				{ details.requestedSafe === details.activeSafe ? <></> : <SafeSignerErrorAddress label = 'Transaction Safe' address = { details.requestedSafe } addressBookEntries = { addressBookEntries } /> }
-				<dt>Safe owners</dt>
-				<dd class = 'safe-signer-error-owner-list'>
+			return <dl class = 'gnosis-safe-signer-error-details'>
+				<GnosisSafeSignerErrorAddress label = 'Signing account' address = { details.requestedSigningAccount } addressBookEntries = { addressBookEntries } />
+				<GnosisSafeSignerErrorAddress label = 'Active Gnosis Safe' address = { details.activeSafe } addressBookEntries = { addressBookEntries } />
+				{ details.requestedSafe === details.activeSafe ? <></> : <GnosisSafeSignerErrorAddress label = 'Transaction Gnosis Safe' address = { details.requestedSafe } addressBookEntries = { addressBookEntries } /> }
+				<dt>Gnosis Safe owners</dt>
+				<dd class = 'gnosis-safe-signer-error-owner-list'>
 					{ details.safeOwnersUnavailableReason !== undefined
 						? <span>Owners unavailable: { details.safeOwnersUnavailableReason }</span>
 						: details.safeOwners.length === 0
@@ -583,8 +583,8 @@ function SafeSignerErrorDetails({ details, addressBookEntries }: {
 				</dd>
 			</dl>
 		case 'safeOwnerMismatch':
-			return <dl class = 'safe-signer-error-details'>
-				<SafeSignerErrorAddress label = 'Expected owner' address = { details.expectedOwner } addressBookEntries = { addressBookEntries } />
+			return <dl class = 'gnosis-safe-signer-error-details'>
+				<GnosisSafeSignerErrorAddress label = 'Expected owner' address = { details.expectedOwner } addressBookEntries = { addressBookEntries } />
 				<dt>Wallet account</dt>
 				<dd>{ details.walletAccount === undefined
 					? <span>No account selected</span>
@@ -626,7 +626,7 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 			<ErrorComponent text = { current.approvalStatus.message } />
 			{ current.approvalStatus.safeSignerErrorDetails === undefined
 				? <></>
-				: <SafeSignerErrorDetails details = { current.approvalStatus.safeSignerErrorDetails } addressBookEntries = { addressBookEntries } />
+				: <GnosisSafeSignerErrorDetails details = { current.approvalStatus.safeSignerErrorDetails } addressBookEntries = { addressBookEntries } />
 			}
 		</div>
 		{ overrideCheckBox }
@@ -724,7 +724,7 @@ type ButtonsParams = {
 	approve: () => void
 	approveButtonState: AsyncStates
 	confirmDisabled: boolean
-	addToSafeStack?: () => void
+	addToGnosisSafeStack?: () => void
 	addToSafeStackButtonState?: AsyncStates
 	addToSafeStackDisabled?: boolean
 }
@@ -740,8 +740,8 @@ type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransa
 	waitingForSigner: boolean
 }
 
-export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
-	const addsSafeProposal = addToSafeStack !== undefined && !simulationMode
+export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToGnosisSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
+	const addsSafeProposal = addToGnosisSafeStack !== undefined && !simulationMode
 	return <div class = 'confirmation-action-buttons-container'>
 		<div class = { `confirmation-action-buttons${ addsSafeProposal ? ' confirmation-action-buttons--safe' : '' }` }>
 			<AsyncActionButton
@@ -752,23 +752,23 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 				pendingText = 'Rejecting...'
 				onClick = { reject }
 			/>
-			{ addToSafeStack === undefined ? <></> : <AsyncActionButton
+			{ addToGnosisSafeStack === undefined ? <></> : <AsyncActionButton
 				class = 'button button--secondary button-overflow dialog-action-button'
 				state = { addToSafeStackButtonState }
 				disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
-				ariaLabel = 'Add unsigned to Safe stack'
-				pendingAriaLabel = 'Adding unsigned proposal to Safe stack...'
-				title = 'Add this proposal to the Safe stack without a signature'
+				ariaLabel = 'Add unsigned to Gnosis Safe stack'
+				pendingAriaLabel = 'Adding unsigned proposal to Gnosis Safe stack...'
+				title = 'Add this proposal to the Gnosis Safe stack without a signature'
 				text = 'Add unsigned'
 				pendingText = 'Adding unsigned...'
-				onClick = { addToSafeStack }
+				onClick = { addToGnosisSafeStack }
 			/> }
 			<AsyncActionButton
 				class = 'button is-primary button-overflow dialog-action-button'
 				state = { approveButtonState }
-				ariaLabel = { addsSafeProposal ? 'Sign and add to Safe stack' : undefined }
-				pendingAriaLabel = { addsSafeProposal ? 'Signing and adding proposal to Safe stack...' : undefined }
-				title = { addsSafeProposal ? 'Sign this proposal and add it to the Safe stack' : undefined }
+				ariaLabel = { addsSafeProposal ? 'Sign and add to Gnosis Safe stack' : undefined }
+				pendingAriaLabel = { addsSafeProposal ? 'Signing and adding proposal to Gnosis Safe stack...' : undefined }
+				title = { addsSafeProposal ? 'Sign this proposal and add it to the Gnosis Safe stack' : undefined }
 				text = { waitingForSigner
 					? <span class = 'confirmation-waiting-for-signer'>
 						<AsyncStatusIcon state = 'pending'/>
@@ -794,7 +794,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 
 export const shouldDisableConfirmForApprovalStatus = (approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
 
-function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
+function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToGnosisSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
@@ -818,7 +818,7 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 		approve = { approve }
 		approveButtonState = { approveButtonState }
 		confirmDisabled = { confirmDisabled }
-		addToSafeStack = { addToSafeStack }
+		addToGnosisSafeStack = { addToGnosisSafeStack }
 		addToSafeStackButtonState = { addToSafeStackButtonState }
 		addToSafeStackDisabled = { addToSafeStackDisabled }
 	/>
@@ -828,7 +828,7 @@ export function ConfirmTransaction() {
 	const currentPendingTransactionOrSignableMessage = useSignal<ShownPendingTransactionOrSignableMessage | undefined>(undefined)
 	const currentSafeTransactionFlow = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
-		return pending?.type === 'Transaction' ? getSafeTransactionPendingFlow(pending) : undefined
+		return pending?.type === 'Transaction' ? getGnosisSafeTransactionPendingFlow(pending) : undefined
 	})
 	const pendingTransactionsAndSignableMessages = useSignal<readonly ShownPendingTransactionOrSignableMessage[]>([])
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
@@ -1019,7 +1019,7 @@ export function ConfirmTransaction() {
 		resetApproveButton()
 		waitForApproveTransaction(async () => await approveTransaction(accept))
 	}
-	const addToSafeStack = () => {
+	const addToGnosisSafeStack = () => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending === undefined) return
 		resetAddToSafeStackButton()
@@ -1045,7 +1045,7 @@ export function ConfirmTransaction() {
 	const isConfirmDisabled = useComputed(() => shouldDisableConfirm(currentPendingTransactionOrSignableMessage.value, forceSend.value))
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
-		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
+		if (pending?.type !== 'Transaction' || getGnosisSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
 		if (!isPendingTransactionGasLimitCurrent(pending)) return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
@@ -1120,7 +1120,7 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.messageReview } /> : <></> }
+							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <GnosisSafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.messageReview } /> : <></> }
 							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
 									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
@@ -1170,7 +1170,7 @@ export function ConfirmTransaction() {
 						approve = { approve }
 						approveButtonState = { approveButtonState.value.state }
 						confirmDisabled = { isConfirmDisabled.value }
-						addToSafeStack = { currentSafeTransactionFlow.value?.kind === 'proposal' ? addToSafeStack : undefined }
+						addToGnosisSafeStack = { currentSafeTransactionFlow.value?.kind === 'proposal' ? addToGnosisSafeStack : undefined }
 						addToSafeStackButtonState = { addToSafeStackButtonState.value.state }
 						addToSafeStackDisabled = { isAddToSafeStackDisabled.value }
 					/>

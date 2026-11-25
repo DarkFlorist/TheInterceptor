@@ -1,4 +1,4 @@
-import { SafeMessageReview } from './safeReview.js'
+import { GnosisSafeMessageReview } from './gnosisSafeReview.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'
@@ -565,7 +565,7 @@ const VisualizedPersonalSignRequestSafeMessage = funtypes.Intersect(
 		message: EnrichedEIP712,
 		messageHash: funtypes.String,
 		domainHash: funtypes.String,
-		review: SafeMessageReview,
+		review: GnosisSafeMessageReview,
 	}),
 )
 
@@ -667,8 +667,8 @@ const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	})
 )
 
-export type SafeTx = funtypes.Static<typeof SafeTx>
-export const SafeTx = funtypes.ReadonlyObject({
+export type GnosisSafeTx = funtypes.Static<typeof GnosisSafeTx>
+export const GnosisSafeTx = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		SafeTx: funtypes.ReadonlyTuple(
 			funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),
@@ -710,13 +710,13 @@ export const SafeTx = funtypes.ReadonlyObject({
 	})
 })
 
-export type VisualizedPersonalSignRequestSafeTx = funtypes.Static<typeof VisualizedPersonalSignRequestSafeTx>
-export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
+export type VisualizedPersonalSignRequestGnosisSafeTx = funtypes.Static<typeof VisualizedPersonalSignRequestGnosisSafeTx>
+export const VisualizedPersonalSignRequestGnosisSafeTx = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('SafeTx'),
-		message: SafeTx,
+		message: GnosisSafeTx,
 		parsedMessageDataAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 		parsedMessageData: EnrichedEthereumInputData,
 		gasToken: AddressBookEntry,
@@ -739,9 +739,9 @@ export const VisualizedPersonalSignRequest = funtypes.Union(
 	VisualizedPersonalSignRequestPermit2,
 	VisualizedPersonalSignRequestPermit2Batch,
 	VisualizedPersonalSignRequestPermit2SignatureTransfer,
-	VisualizedPersonalSignRequestSafeTx,
+	VisualizedPersonalSignRequestGnosisSafeTx,
 	VisualizedPersonalSignRequestOrderComponents,
 )
 
 export type PersonalSignRequestIdentifiedEIP712Message = funtypes.Static<typeof PersonalSignRequestIdentifiedEIP712Message>
-export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(EIP2612Message, Permit2, Permit2Batch, Permit2SignatureTransfer, OpenSeaOrder, SafeTx)
+export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(EIP2612Message, Permit2, Permit2Batch, Permit2SignatureTransfer, OpenSeaOrder, GnosisSafeTx)
