@@ -39,14 +39,14 @@ export type ReadyRpcSettings = Settings & { readonly [readyRpcConfigurationMarke
 
 // Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
 export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): ReadyRpcSettings | undefined {
-	if (snapshot.rpcConfiguration.status !== 'ready' || snapshot.status !== 'available') return undefined
+	if (snapshot.rpcConfiguration.status !== 'ready' || snapshot.status !== 'active-network-readable') return undefined
 	return { ...snapshot.settings, [readyRpcConfigurationMarker]: true }
 }
 
 // For a best-effort display, unreadable approvals supply no entries. Decisions that must abort on a failed read use requireReadableApprovals.
 export function approvalsOrNoneIfUnreadable(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
-	if (snapshot.status === 'available') return snapshot.settings.websiteAccess
-	const websiteApprovals = snapshot.status === 'unavailable' ? snapshot.websiteApprovals : snapshot
+	if (snapshot.status === 'active-network-readable') return snapshot.settings.websiteAccess
+	const websiteApprovals = snapshot.status === 'active-network-unreadable' ? snapshot.websiteApprovals : snapshot
 	return websiteApprovals.status === 'readable' ? websiteApprovals.websiteAccess : []
 }
 

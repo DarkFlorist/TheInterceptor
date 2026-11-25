@@ -423,7 +423,7 @@ describe('popup clear reset', () => {
 
 	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
 		browserMock.reset()
-		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, rpcEntries: [rpcNetwork], independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
 		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const originalGet = browser.storage.local.get
 		let changed = false

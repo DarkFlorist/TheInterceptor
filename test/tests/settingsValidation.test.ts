@@ -72,14 +72,13 @@ test('corrupt address repairs use the canonical storage encoding and survive sta
 	assert.equal(writes.length, 2)
 })
 
-test('required and snapshot reads select the same stored primary when the active network is missing', async () => {
+test('concurrent required and snapshot reads repair a missing active network once', async () => {
 	delete storedItems.activeRpcNetwork
 	const primary = { name: 'Stored primary', chainId: 10n, httpsRpc: 'https://primary.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	storedItems.rpcEntries = RpcEntries.serialize([primary])
-	const required = await requireSettingsWithReadableNetwork()
-	const snapshot = await getSettingsSnapshot()
-	assert.equal(snapshot.status, 'available')
-	if (snapshot.status !== 'available') throw new Error('Expected the repaired configuration')
+	const [required, snapshot] = await Promise.all([requireSettingsWithReadableNetwork(), getSettingsSnapshot()])
+	assert.equal(snapshot.status, 'active-network-readable')
+	if (snapshot.status !== 'active-network-readable') throw new Error('Expected the repaired configuration')
 	assert.equal(required.activeRpcNetwork.chainId, 10n)
 	assert.deepEqual(required.activeRpcNetwork, snapshot.settings.activeRpcNetwork)
 	assert.equal(writes.length, 1)
@@ -89,7 +88,7 @@ test('an unavailable active selection never becomes an invented default network'
 	delete storedItems.activeRpcNetwork
 	storedItems.rpcEntries = []
 	await assert.rejects(requireSettingsWithReadableNetwork(), /RPC configuration is unavailable/u)
-	assert.equal((await getSettingsSnapshot()).status, 'unavailable')
+	assert.equal((await getSettingsSnapshot()).status, 'active-network-unreadable')
 	assert.equal(storedItems.activeRpcNetwork, undefined)
 	assert.equal(writes.length, 0)
 })

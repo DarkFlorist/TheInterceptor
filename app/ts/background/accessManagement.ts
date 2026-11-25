@@ -222,7 +222,7 @@ type AccessReconciliationSettingsRead =
 async function readSettingsForAccessReconciliation(): Promise<AccessReconciliationSettingsRead> {
 	try {
 		const snapshot = await getSettingsSnapshot()
-		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings }
+		if (snapshot.status === 'active-network-readable') return { status: 'available', settings: snapshot.settings }
 		if (snapshot.websiteApprovals.status === 'unreadable') return { status: 'rejected', failure: snapshot.websiteApprovals.error }
 	} catch (error: unknown) {
 		return { status: 'rejected', failure: error }
@@ -301,7 +301,7 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
-// One lock per connections map serializes every access reconciliation (see reconcileWebsiteApprovalAccessesCollectingFailures). It is innermost apart from storage, request-block and RPC configuration reads, which never wait for it: its holder never prompts, reports errors, publishes popup state or takes the active-settings, access-request or RPC status publication locks, and callers may hold those while waiting for it.
+// Reconciliation may update request blocks and read storage, including one-time RPC configuration repair. Those operations never call reconciliation. Publish, report and prompt after releasing this lock so those paths can safely enter reconciliation.
 const accessReconciliationLocks = new WeakMap<WebsiteTabConnections, Semaphore>()
 
 async function withAccessReconciliationLock<Result>(websiteTabConnections: WebsiteTabConnections, run: () => Promise<Result>): Promise<Result> {

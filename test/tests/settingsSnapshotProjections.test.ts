@@ -43,9 +43,9 @@ const settings: Settings = {
 	simulationMode: true,
 }
 const storageError = new Error('Storage unavailable')
-const available = { status: 'available', settings, rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork } } as const
-const unavailableWithApprovals = { status: 'unavailable', rpcConfiguration: { status: 'unavailable', reason: 'corrupt' }, websiteApprovals: { status: 'readable', websiteAccess: approvals } } as const
-const unavailableUnreadable = { status: 'unavailable', rpcConfiguration: { status: 'unavailable', reason: 'read-failed', error: storageError }, websiteApprovals: { status: 'unreadable', error: storageError } } as const
+const available = { status: 'active-network-readable', settings, rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork } } as const
+const unavailableWithApprovals = { status: 'active-network-unreadable', rpcConfiguration: { status: 'unavailable', reason: 'corrupt' }, websiteApprovals: { status: 'readable', websiteAccess: approvals } } as const
+const unavailableUnreadable = { status: 'active-network-unreadable', rpcConfiguration: { status: 'unavailable', reason: 'read-failed', error: storageError }, websiteApprovals: { status: 'unreadable', error: storageError } } as const
 
 describe('settings snapshot projections', () => {
 	test('requireReadableSettings returns available settings and otherwise throws the unavailable error', () => {
@@ -109,7 +109,7 @@ describe('RPC configuration comparison', () => {
 			assert.equal(comparison.settings.activeRpcNetwork.chainId, 10n)
 			assert.equal(comparison.settings.simulationMode, false)
 			assert.equal('websiteAccess' in comparison.settings, false)
-			assert.equal((await withSilencedWarnings(getSettingsSnapshot)).status, 'unavailable')
+			assert.equal((await withSilencedWarnings(getSettingsSnapshot)).status, 'active-network-unreadable')
 		} finally {
 			for (const key of ['activeRpcNetwork', 'rpcEntries', 'simulationMode', 'websiteAccess']) delete storageState[key]
 		}

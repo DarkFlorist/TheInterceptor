@@ -1044,13 +1044,16 @@ export async function forceSetGasLimitForTransaction(ethereum: EthereumClientSer
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
 	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 	// Published after the local invalidation above with the cached block, so the dialog shows the edited gas limit with the invalidated visualisation instead of waiting for RPC work. Stack-only edits have no pending request to show.
-	const pending = await getPendingTransactionsAndMessages()
-	if (pending.length > 0) {
-		const dialog = await buildConfirmTransactionDialogState(ethereum, { simulationMode: 'activeSettings', blockNumberSource: { kind: 'cached' } })
-		// Requests can resolve or be replaced during the builder's storage reads.
-		await publishConfirmTransactionDialogPendingTransactions(await getPendingTransactionsAndMessages(), dialog)
+	try {
+		const pending = await getPendingTransactionsAndMessages()
+		if (pending.length > 0) {
+			const dialog = await buildConfirmTransactionDialogState(ethereum, { simulationMode: 'activeSettings', blockNumberSource: { kind: 'cached' } })
+			// Requests can resolve or be replaced during the builder's storage reads.
+			await publishConfirmTransactionDialogPendingTransactions(await getPendingTransactionsAndMessages(), dialog)
+		}
+	} finally {
+		backgroundTaskSupervisor.start({ source: 'popup_forceSetGasLimitForTransaction', details: parsedRequest.data }, async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
 	}
-	backgroundTaskSupervisor.start({ source: 'popup_forceSetGasLimitForTransaction', details: parsedRequest.data }, async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {

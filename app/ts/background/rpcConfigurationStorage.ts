@@ -9,7 +9,7 @@ export type RpcConfigurationState =
 	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly activeRpcNetwork?: RpcNetwork, readonly error?: unknown }
 
-const rpcConfigurationSemaphore = new Semaphore(1)
+const rpcConfigurationRepairSemaphore = new Semaphore(1)
 
 type RpcConfigurationStorageItems = Readonly<Record<string, unknown>> & {
 	readonly rpcEntries?: unknown
@@ -28,17 +28,22 @@ const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationSta
 	...(error === undefined ? {} : { error }),
 })
 
-async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcConfigurationStorageItems): Promise<RpcConfigurationState> {
+type RpcConfigurationRepair = {
+	readonly write: Parameters<typeof browserStorageLocalSet>[0]
+	readonly readyConfiguration: Extract<RpcConfigurationState, { status: 'ready' }>
+	readonly networkOnWriteFailure: RpcNetwork | undefined
+}
+
+function inspectRpcConfiguration(storedConfiguration: RpcConfigurationStorageItems): RpcConfigurationState | RpcConfigurationRepair {
 	const hasRpcEntries = hasOwnKey(storedConfiguration, 'rpcEntries') && storedConfiguration.rpcEntries !== undefined
 	const hasActiveRpcNetwork = hasOwnKey(storedConfiguration, 'activeRpcNetwork') && storedConfiguration.activeRpcNetwork !== undefined
 	if (!hasRpcEntries && !hasActiveRpcNetwork) {
 		const initialRpc = DEFAULT_RPCS[0]
 		if (initialRpc === undefined) return unavailableRpcConfiguration('incomplete')
-		try {
-			await browserStorageLocalSet({ rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc })
-			return { status: 'ready', rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc }
-		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', undefined, error)
+		return {
+			write: { rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc },
+			readyConfiguration: { status: 'ready', rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc },
+			networkOnWriteFailure: undefined,
 		}
 	}
 
@@ -70,10 +75,10 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 	if (rpcEntries === undefined) {
 		if (activeRpcNetwork === undefined) return unavailableRpcConfiguration('incomplete')
 		rpcEntries = activeRpcNetwork.httpsRpc === undefined ? [] : [activeRpcNetwork]
-		try {
-			await browserStorageLocalSet({ rpcEntries })
-		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', activeRpcNetwork, error)
+		return {
+			write: { rpcEntries },
+			readyConfiguration: { status: 'ready', rpcEntries, activeRpcNetwork },
+			networkOnWriteFailure: activeRpcNetwork,
 		}
 	}
 	if (rpcEntries.length === 0) {
@@ -84,25 +89,38 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 	if (activeRpcNetwork === undefined) {
 		const selectedRpc = selectPrimaryRpc(rpcEntries)
 		if (selectedRpc === undefined) return unavailableRpcConfiguration('incomplete')
-		activeRpcNetwork = selectedRpc
-		try {
-			await browserStorageLocalSet({ activeRpcNetwork })
-		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', activeRpcNetwork, error)
+		return {
+			write: { activeRpcNetwork: selectedRpc },
+			readyConfiguration: { status: 'ready', rpcEntries, activeRpcNetwork: selectedRpc },
+			networkOnWriteFailure: selectedRpc,
 		}
 	}
 	return { status: 'ready', rpcEntries, activeRpcNetwork }
 }
 
+async function inspectStoredRpcConfiguration(keys: readonly string[]) {
+	let storedItems: Readonly<Record<string, unknown>>
+	try {
+		storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
+	} catch (error: unknown) {
+		return { storedItems: {}, configuration: unavailableRpcConfiguration('read-failed', undefined, error) }
+	}
+	return { storedItems, configuration: inspectRpcConfiguration(storedItems) }
+}
+
 export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly string[]): Promise<{ readonly storedItems: Readonly<Record<string, unknown>>, readonly rpcConfiguration: RpcConfigurationState }> {
-	return await rpcConfigurationSemaphore.execute(async () => {
-		let storedItems: Readonly<Record<string, unknown>>
+	const { storedItems, configuration } = await inspectStoredRpcConfiguration(keys)
+	if (!('write' in configuration)) return { storedItems, rpcConfiguration: configuration }
+	// Only initialization and migration serialize. Reread inside the lock so a queued repair never uses the snapshot that prompted it.
+	return await rpcConfigurationRepairSemaphore.execute(async () => {
+		const { storedItems, configuration } = await inspectStoredRpcConfiguration(keys)
+		if (!('write' in configuration)) return { storedItems, rpcConfiguration: configuration }
 		try {
-			storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
+			await browserStorageLocalSet(configuration.write)
+			return { storedItems, rpcConfiguration: configuration.readyConfiguration }
 		} catch (error: unknown) {
-			return { storedItems: {}, rpcConfiguration: unavailableRpcConfiguration('read-failed', undefined, error) }
+			return { storedItems, rpcConfiguration: unavailableRpcConfiguration('write-failed', configuration.networkOnWriteFailure, error) }
 		}
-		return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
 	})
 }
 

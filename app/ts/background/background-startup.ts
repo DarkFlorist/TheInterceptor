@@ -289,7 +289,7 @@ async function startup() {
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const startupSnapshot = await getSettingsSnapshot()
-	const startupSettings = startupSnapshot.status === 'available' ? startupSnapshot.settings : undefined
+	const startupSettings = startupSnapshot.status === 'active-network-readable' ? startupSnapshot.settings : undefined
 	// A dormant bootstrap client keeps configuration commands reachable; it is not persisted as the active selection and is never authority for provider admission. Constructors perform no RPC.
 	const bootstrapNetwork = startupSettings?.activeRpcNetwork ?? DEFAULT_RPCS[0]
 	const userSpecifiedSimulatorNetwork = bootstrapNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : bootstrapNetwork

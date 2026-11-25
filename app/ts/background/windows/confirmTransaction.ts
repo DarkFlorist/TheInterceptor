@@ -31,7 +31,7 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettingsSnapshot, requireSettingsWithReadableNetwork } from '../settings.js'
+import { getSettingsSnapshot, getStoredSimulationMode, requireSettingsWithReadableNetwork } from '../settings.js'
 import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -242,7 +242,7 @@ export type ConfirmTransactionDialogStateOptions = {
 // The only builder of the confirmation dialog state: it owns the simulation-mode/passthrough rule, the block number source and the RPC status read.
 export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationState, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
 	const getVisualizedSimulatorState = async () => {
-		const isSimulationMode = simulationMode === 'activeSettings' ? (await requireSettingsWithReadableNetwork()).simulationMode : simulationMode
+		const isSimulationMode = simulationMode === 'activeSettings' ? await getStoredSimulationMode() : simulationMode
 		return isSimulationMode ? await getVisualisation() : createPassthroughCompleteVisualizedSimulation()
 	}
 	const [visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus] = await Promise.all([

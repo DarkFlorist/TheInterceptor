@@ -110,10 +110,10 @@ export type WebsiteApprovalsSnapshot =
 	| { readonly status: 'readable', readonly websiteAccess: WebsiteAccessArray }
 	| { readonly status: 'unreadable', readonly error: unknown }
 
-// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. Settings need an active RPC network, so `unavailable` carries only the approvals' own availability. `available` means the settings fields are readable (the active network could be read), not that the RPC configuration is usable: `rpcConfiguration` says that separately (see settingsIfRpcConfigurationReady).
+// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. The snapshot status describes whether the active network could be decoded. Use settingsIfRpcConfigurationReady for decisions that require a usable RPC configuration.
 export type SettingsSnapshot =
-	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
-	| { readonly status: 'unavailable', readonly rpcConfiguration: RpcConfigurationState, readonly websiteApprovals: WebsiteApprovalsSnapshot }
+	| { readonly status: 'active-network-readable', readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
+	| { readonly status: 'active-network-unreadable', readonly rpcConfiguration: RpcConfigurationState, readonly websiteApprovals: WebsiteApprovalsSnapshot }
 
 const getStorageReadError = (rpcConfiguration: RpcConfigurationState) => rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed' ? { error: 'error' in rpcConfiguration ? rpcConfiguration.error : undefined } : undefined
 
@@ -127,14 +127,14 @@ async function readSettingsStorage() {
 export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
 	const { storedItems, rpcConfiguration, storageReadError } = await readSettingsStorage()
 	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
-	if (activeRpcNetwork !== undefined) return { status: 'available', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
+	if (activeRpcNetwork !== undefined) return { status: 'active-network-readable', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
 	const websiteApprovals: WebsiteApprovalsSnapshot = storageReadError === undefined
 		? { status: 'readable', websiteAccess: await getWebsiteAccessFromStorageItems(storedItems) }
 		: { status: 'unreadable', error: storageReadError.error }
-	return { status: 'unavailable', rpcConfiguration, websiteApprovals }
+	return { status: 'active-network-unreadable', rpcConfiguration, websiteApprovals }
 }
 
-// The approvals-only read, for paths that must not wait on the RPC configuration lock. `repairCorrupt` writes no approvals over a corrupt value (a failed write is unreadable); without it a corrupt value reads as no approvals and nothing is written.
+// Callers that only apply stored approvals can read them without initializing RPC configuration. Callers granting authority use getSettingsSnapshot so approvals and RPC readiness come from one read. `repairCorrupt` writes no approvals over a corrupt value (a failed write is unreadable); without it a corrupt value reads as no approvals and nothing is written.
 export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorrupt: boolean }): Promise<WebsiteApprovalsSnapshot> {
 	try {
 		if (options.repairCorrupt) return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(await getParsedStorageValueOrDefault('websiteAccess', [])) }
@@ -148,7 +148,7 @@ export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorr
 
 // The settings fields, required to be readable: throws the RPC-configuration-unavailable error when the active network itself cannot be read. Readable is all it proves; the RPC entries may still be corrupt, emptied or unwritable. A decision that needs a usable RPC configuration (granting, tab blocking, anything trusting the active chain) uses settingsIfRpcConfigurationReady instead.
 export function requireReadableSettings(snapshot: SettingsSnapshot): Settings {
-	if (snapshot.status === 'unavailable') throw createRpcConfigurationUnavailableError()
+	if (snapshot.status === 'active-network-unreadable') throw createRpcConfigurationUnavailableError()
 	return snapshot.settings
 }
 
@@ -157,7 +157,7 @@ export async function getActiveRpcNetworkForConfigurationEditing(): Promise<RpcN
 	const snapshot = await getSettingsSnapshot()
 	const configuration = snapshot.rpcConfiguration
 	if (configuration.status === 'unavailable' && (configuration.reason === 'read-failed' || configuration.reason === 'write-failed')) throw configuration.error ?? createRpcConfigurationUnavailableError()
-	return snapshot.status === 'available' ? snapshot.settings.activeRpcNetwork : undefined
+	return snapshot.status === 'active-network-readable' ? snapshot.settings.activeRpcNetwork : undefined
 }
 
 export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
@@ -178,6 +178,8 @@ export async function rememberSigningAddressPreference(preference: SigningAddres
 }
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
+export const getStoredSimulationMode = async () => await getParsedStorageValueOrDefault('simulationMode', defaultSimulationMode)
+
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
 
 const makeMeRichSettingsSemaphore = new Semaphore(1)
