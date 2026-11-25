@@ -1,5 +1,5 @@
+import { getGnosisSafeUiScreenshotSettings } from '../test/benchmarks/gnosisSafeUiScreenshotSettings.js'
 import { mkdir, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
 import * as path from 'path'
 import { createGnosisSafeTx } from '../app/ts/gnosisSafe/gnosisSafeCore.js'
 import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessRequest.js'
@@ -9,7 +9,7 @@ import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
 import { launchGnosisSafeUiScreenshotBrowser, GnosisSafeUiScreenshotPage } from '../test/benchmarks/gnosisSafeUiScreenshotHarness.js'
 
-const outputDirectory = path.resolve(process.env.GNOSIS_GNOSIS_SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
+const { outputDirectory } = getGnosisSafeUiScreenshotSettings()
 
 const viewports = [
 	{ name: 'ultra-narrow', width: 220, height: 700 },

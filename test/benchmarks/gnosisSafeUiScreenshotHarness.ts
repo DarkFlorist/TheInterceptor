@@ -1,3 +1,4 @@
+import { getGnosisSafeUiScreenshotSettings } from './gnosisSafeUiScreenshotSettings.js'
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -113,9 +114,7 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 }
 
 export async function launchGnosisSafeUiScreenshotBrowser() {
-	const extensionDirectory = process.env.SAFE_UI_EXTENSION_DIRECTORY
-	const requestedBrowser = process.env.GNOSIS_GNOSIS_SAFE_UI_SCREENSHOT_BROWSER ?? 'chromium'
-	if (requestedBrowser === 'chromium') return await launchChromiumScreenshotBrowser(extensionDirectory)
-	if (requestedBrowser === 'firefox') return await launchFirefoxScreenshotBrowser(extensionDirectory)
-	throw new Error(`Unsupported GNOSIS_GNOSIS_GNOSIS_SAFE_UI_SCREENSHOT_BROWSER value: ${ requestedBrowser }. Expected chromium or firefox.`)
+	const { browser, extensionDirectory } = getGnosisSafeUiScreenshotSettings()
+	if (browser === 'chromium') return await launchChromiumScreenshotBrowser(extensionDirectory)
+	return await launchFirefoxScreenshotBrowser(extensionDirectory)
 }
