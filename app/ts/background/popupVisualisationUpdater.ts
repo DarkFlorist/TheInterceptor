@@ -15,7 +15,7 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
-import { relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
+import { relabelStoredSimulation, type StackRunToRelabel } from './simulationRelabel.js'
 import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
 let abortController = new AbortController()
@@ -201,13 +201,13 @@ async function executeVisualisationUpdate(capturedAbortController: AbortControll
 }
 
 // A stored simulation result that is still valid, with operations on the services' chain, can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and an invalidated result is about to be replaced by a simulation that resolves the current metadata itself. That includes a previous result a refresh kept ('updating' while the node cannot be reached, or 'failed'): it stays shown until a refresh succeeds, so it must show the current names too. Re-labels run under the simulation semaphore, so no refresh is in progress when one reads the stored state.
-function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation, chainId: bigint): SimulationRunToRelabel<StoredCompleteVisualizedSimulation> | undefined {
+function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation, chainId: bigint): StackRunToRelabel | undefined {
 	if (visualisation.simulationResultState !== 'done') return undefined
 	if (visualisation.simulationState.kind !== 'simulated') return undefined
 	const simulationState = visualisation.simulationState.value
 	if (simulationState.rpcNetwork.chainId !== chainId || !hasSimulationInputOperations(simulationState)) return undefined
 	// The re-labelled state keeps the simulation id and raises the metadata revision, so a view orders it after the result it replaces (predatesVisualisation).
-	return { runId: visualisation.simulationId, simulationState, storedMetadata: visualisation, withMetadata: (metadata) => ({ ...visualisation, ...metadata, metadataRevision: (visualisation.metadataRevision ?? 0) + 1 }) }
+	return { simulationId: visualisation.simulationId, simulationState, storedMetadata: visualisation, withMetadata: (metadata) => ({ ...visualisation, ...metadata, metadataRevision: (visualisation.metadataRevision ?? 0) + 1 }) }
 }
 
 // Re-labels the stored stack simulation without simulating, and publishes the re-labelled state; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
