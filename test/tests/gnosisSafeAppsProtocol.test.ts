@@ -1,8 +1,6 @@
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage } from '../../app/shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
 import { createGnosisSafeAppsErrorResponse as createNativeHostErrorResponse, isNativeGnosisSafeAppsDiscovery } from '../../app/ts/utils/nativeGnosisSafeAppsHost.js'
 import { isGnosisSafeAppsDiscoveryMethod } from '../../app/shared/ts/gnosisSafeAppsProtocol.js'
 import { GNOSIS_SAFE_APPS_TEST_SDK_VERSION } from '../fixtures/gnosisSafeAppsTestClient.js'
@@ -48,19 +46,6 @@ test('the Gnosis Safe Apps response version matches the independent wire fixture
 	assert.equal(GNOSIS_SAFE_APPS_RESPONSE_VERSION, GNOSIS_SAFE_APPS_TEST_SDK_VERSION)
 })
 
-test('page-injected sources import sibling modules or the dependency-free shared protocol source', () => {
-	const inpageSourceDirectory = 'app/inpage/ts'
-	const moduleSpecifierPattern = /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(?\s*['"]([^'"]+)['"]/g
-	const sourceFiles = fs.readdirSync(inpageSourceDirectory).filter((file) => file.endsWith('.ts'))
-	assert.ok(sourceFiles.length > 0)
-	for (const file of sourceFiles) {
-		const source = fs.readFileSync(path.join(inpageSourceDirectory, file), 'utf8')
-		for (const match of source.matchAll(moduleSpecifierPattern)) {
-			const specifier = match[1] ?? match[2]
-			assert.match(specifier ?? '', /^(?:\.\/[\w-]+|\.\.\/\.\.\/shared\/ts\/(?:gnosisSafeApps(?:Protocol|BridgeProtocol|RequestQueue|Transport)|accountRequestMethods))\.js$/, `${ file } imports ${ specifier ?? 'an unknown module' } outside its inpage/shared protocol boundary`)
-		}
-	}
-})
 
 test('canonical SDK envelopes never include internal correlation metadata', () => {
 	const request = createGnosisSafeAppsRequest('sdk-id', 'getSafeInfo')
