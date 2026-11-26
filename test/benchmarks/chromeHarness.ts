@@ -1,3 +1,11 @@
+import { chromeEvaluationFailure } from './chromeEvaluationFailure.js'
+import type { ViewportDriverPage, ViewportDriverSession } from './browserViewport.js'
+import { browserEvaluationExpression, parseBrowserEvaluationValue } from './browserEvaluation.js'
+import { prepareDocumentResponse } from './documentRoutes.js'
+import { withBrowserCommandTimeout as bounded } from './browserCommandTimeout.js'
+import { withBrowserFixtureSetup } from './browserFixtureSetup.js'
+import { waitForBrowserCondition } from './browserHarnessUtils.js'
+import type { BrowserSession, DocumentRoute } from './browserTypes.js'
 import { spawn } from 'child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'fs/promises'
 import * as fsConstants from 'fs'
@@ -101,7 +109,7 @@ export class CdpConnection {
 					const pending = this.pending
 					this.pending = new Map()
 					for (const { reject: rejectPending } of pending.values()) {
-						rejectPending(new Error(`CDP websocket closed for ${ this.url }`))
+						rejectPending(chromeEvaluationFailure(new Error(`CDP websocket closed for ${ this.url }`)))
 					}
 					this.socket = undefined
 				}
@@ -121,7 +129,7 @@ export class CdpConnection {
 			if (pending === undefined) return
 			this.pending.delete(message.id)
 			if (message.error !== undefined) {
-				pending.reject(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`))
+				pending.reject(chromeEvaluationFailure(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`)))
 				return
 			}
 			pending.resolve(message.result)
@@ -387,6 +395,9 @@ export async function waitForPerformanceMarks(connection: CdpConnection, markNam
 
 export async function waitForRegisteredContentScripts(connection: CdpConnection, expectedIds: readonly string[], timeoutMs = 30_000) {
 	type RegisteredContentScript = { readonly id?: string }
+	await connection.send('Runtime.enable')
+	// The target is discoverable before Chrome creates its extension API realm. Awaiting an API call in that transient realm can otherwise hang until the worker stops.
+	await waitForCondition(async () => await connection.evaluate<boolean>(`typeof browser !== 'undefined' && typeof browser.scripting !== 'undefined'`, { awaitPromise: false }) === true, timeoutMs, 'extension worker APIs')
 	await waitForCondition(async () => {
 		const scripts = await connection.evaluate<readonly RegisteredContentScript[] | undefined>('(async () => await browser.scripting.getRegisteredContentScripts())()').catch(() => undefined)
 		if (scripts === undefined) return false
@@ -505,4 +516,106 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR, options:
 			if (cleanupProfile) await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
 		},
 	}
+}
+
+// A popup can disappear after Chrome enumerates it but before its debugger socket opens. Skip only that proven lifecycle race; transport errors for a still-open page remain failures.
+export async function connectStillOpenChromePages<Target extends { readonly id: string }, Page extends object>(targets: readonly Target[], connect: (target: Target) => Promise<Page>, isStillOpen: (targetId: string) => Promise<boolean>) {
+	const pages = await Promise.all(targets.map(async (target) => {
+		try {
+			return await connect(target)
+		} catch (error: unknown) {
+			if (!(error instanceof Error) || !(/^Failed to (?:open|connect to) CDP websocket /.test(error.message) || error.message === `Target not found: target ${ target.id }` || error.message.startsWith(`Timed out waiting for target ${ target.id } after `))) throw error
+			if (await isStillOpen(target.id)) throw error
+			return undefined
+		}
+	}))
+	return pages.flatMap((page) => page === undefined ? [] : [page])
+}
+
+export async function launchChromeBrowserSession(extensionDirectory?: string): Promise<BrowserSession> {
+	const chrome = await launchChromeSession(extensionDirectory)
+	try {
+		const worker = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const extensionUrl = new URL(worker.url)
+		const extensionOrigin = `${ extensionUrl.protocol }//${ extensionUrl.host }`
+		const workerPage = await connectTarget(chrome.browserDebugPort, worker.id)
+		try { await bounded(waitForRegisteredContentScripts(workerPage, ['inpage', 'inpage2']), 'Chrome content script registration') } finally { workerPage.close() }
+		const version = await chrome.browserConnection.send<{ product: string }>('Browser.getVersion')
+		const preloads: string[] = []
+		let routes: readonly DocumentRoute[] = []
+		let routeFailure: unknown
+		const connections = new Map<string, CdpConnection>()
+		const appliedPreloads = new Map<CdpConnection, number>()
+		const interceptedConnections = new Set<CdpConnection>()
+		const activeInterceptions = new Set<CdpConnection>()
+		const disableInterception = async (connection: CdpConnection) => {
+			if (!activeInterceptions.has(connection)) return
+			await connection.send('Fetch.disable')
+			activeInterceptions.delete(connection)
+		}
+		const prepareFixtures = async (connection: CdpConnection) => {
+			await connection.send('Page.enable')
+			for (const source of preloads.slice(appliedPreloads.get(connection) ?? 0)) await connection.send('Page.addScriptToEvaluateOnNewDocument', { source })
+			appliedPreloads.set(connection, preloads.length)
+			if (routes.length === 0) { await disableInterception(connection); return }
+			if (!interceptedConnections.has(connection)) {
+				connection.on('Fetch.requestPaused', (value: unknown) => {
+					if (typeof value !== 'object' || value === null || !('requestId' in value) || typeof value.requestId !== 'string') { routeFailure = new Error('Invalid Chrome intercepted request'); return }
+					const request = 'request' in value ? value.request : undefined
+					const requestUrl = typeof request === 'object' && request !== null && 'url' in request ? request.url : undefined
+					const prepared = prepareDocumentResponse(routes, requestUrl)
+					const response = prepared === undefined ? connection.send('Fetch.continueRequest', { requestId: value.requestId }) : connection.send('Fetch.fulfillRequest', { requestId: value.requestId, responseCode: prepared.statusCode, responseHeaders: prepared.headers, body: prepared.bodyBase64 })
+					void response.catch((error: unknown) => { routeFailure = error })
+				})
+				interceptedConnections.add(connection)
+			}
+			await connection.send('Fetch.enable', { patterns: routes.map(({ url }) => ({ urlPattern: url, requestStage: 'Request' })) })
+			activeInterceptions.add(connection)
+		}
+		const checkRoutes = () => { if (routeFailure !== undefined) throw new Error('Chrome document interception failed', { cause: routeFailure }) }
+		const wrapPage = async (id: string, url: string): Promise<ViewportDriverPage> => {
+			let connection = connections.get(id)
+			if (connection === undefined) { connection = await connectTarget(chrome.browserDebugPort, id); connections.set(id, connection) }
+			const active = connection
+			return {
+				id, url,
+				evaluate: async <T = unknown>(expression: string, timeoutMs?: number) => { checkRoutes(); return parseBrowserEvaluationValue<T>(await bounded(active.evaluate<unknown>(browserEvaluationExpression(expression)), 'Chrome evaluation', timeoutMs)) },
+				navigate: async (nextUrl, wait = 'complete') => {
+					checkRoutes()
+					await prepareFixtures(active)
+					const token = crypto.randomUUID()
+					await bounded(active.evaluate(`globalThis.__interceptorTestNavigationToken = ${ JSON.stringify(token) }`), 'Chrome navigation sentinel')
+					await bounded(active.send('Page.navigate', { url: nextUrl }), 'Chrome navigation')
+					await waitForBrowserCondition(async () => await bounded(active.evaluate(`globalThis.__interceptorTestNavigationToken !== ${ JSON.stringify(token) } && ${ wait === 'complete' ? `document.readyState === 'complete'` : `document.readyState !== 'loading'` }`), 'Chrome document readiness'), 'Chrome document load')
+				},
+				reload: async () => {
+					checkRoutes()
+					await prepareFixtures(active)
+					const token = crypto.randomUUID()
+					await bounded(active.evaluate(`globalThis.__interceptorTestNavigationToken = ${ JSON.stringify(token) }`), 'Chrome navigation sentinel')
+					await bounded(active.send('Page.reload'), 'Chrome reload')
+					await waitForBrowserCondition(async () => await bounded(active.evaluate(`globalThis.__interceptorTestNavigationToken !== ${ JSON.stringify(token) } && document.readyState === 'complete'`), 'Chrome reload readiness'), 'Chrome reload')
+				},
+				setViewport: async (width, height) => { await active.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }) },
+				captureScreenshot: async () => (await active.send<{ data: string }>('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, fromSurface: true })).data,
+				close: async () => {
+					if ((await waitForBrowserTargets(chrome.browserDebugPort)).some((target) => target.id === id)) await closeTarget(chrome.browserConnection, id)
+					active.close(); connections.delete(id); appliedPreloads.delete(active); interceptedConnections.delete(active); activeInterceptions.delete(active)
+				},
+			}
+		}
+		const openPage: ViewportDriverSession['openPage'] = async (url, wait, prepare) => {
+			const id = await createTargetPage(chrome.browserConnection, 'about:blank')
+			const page = await wrapPage(id, 'about:blank')
+			await prepare(page)
+			await page.navigate(url, wait)
+			return await wrapPage(id, url)
+		}
+		return withBrowserFixtureSetup({ browser: 'chrome', browserVersion: version.product, openPage, openExtensionPage: (path, prepare) => openPage(`${ extensionOrigin }/${ path }`, 'complete', prepare), pages: async () => await connectStillOpenChromePages((await waitForBrowserTargets(chrome.browserDebugPort)).filter((target) => target.type === 'page'), async (target) => await wrapPage(target.id, target.url), async (id) => (await waitForBrowserTargets(chrome.browserDebugPort)).some((target) => target.id === id)), addPreloadScript: async (source) => { preloads.push(source) }, routeResponses: async (value) => {
+			// setPermission takes Permissions API descriptor names, unlike grantPermissions and its camelCase PermissionType enum. HTTPS fixtures need these grants for loopback RPC.
+			for (const origin of new Set(value.map(({ url }) => new URL(url).origin))) for (const name of ['local-network-access', 'loopback-network']) await chrome.browserConnection.send('Browser.setPermission', { permission: { name }, setting: 'granted', origin })
+			routes = value
+			if (routes.length === 0) for (const connection of activeInterceptions) await disableInterception(connection)
+		}, close: async () => { for (const connection of connections.values()) connection.close(); await chrome.close() } })
+	} catch (error: unknown) { await chrome.close(); throw error }
 }

@@ -7,7 +7,7 @@ import { serialize } from '../app/ts/types/wire-types.js'
 import { getGnosisSafeTxHash } from '../app/ts/utils/eip712.js'
 import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { launchGnosisSafeUiScreenshotBrowser, GnosisSafeUiScreenshotPage } from '../test/benchmarks/gnosisSafeUiScreenshotHarness.js'
+import { launchGnosisSafeUiScreenshotBrowser, type GnosisSafeUiScreenshotBrowser, type GnosisSafeUiScreenshotPage } from '../test/benchmarks/gnosisSafeUiScreenshotHarness.js'
 
 const { outputDirectory } = getGnosisSafeUiScreenshotSettings()
 
@@ -55,8 +55,8 @@ async function prepareForDeterministicCapture(connection: GnosisSafeUiScreenshot
 }
 
 // Capturing beyond the viewport resets inner scroll positions, so scrolling must be re-applied for every viewport right before the capture.
-async function capture(connection: GnosisSafeUiScreenshotPage, filename: string, width: number, height: number, scrollExpression: string | undefined) {
-	await connection.setViewport(width, height)
+async function capture(session: GnosisSafeUiScreenshotBrowser, connection: GnosisSafeUiScreenshotPage, filename: string, width: number, height: number, scrollExpression: string | undefined) {
+	await session.setViewport(width, height)
 	await prepareForDeterministicCapture(connection)
 	if (scrollExpression !== undefined) await connection.evaluate(scrollExpression)
 	await Bun.sleep(250)
@@ -76,11 +76,12 @@ async function capture(connection: GnosisSafeUiScreenshotPage, filename: string,
 	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot, 'base64'))
 }
 
-async function captureScenario(connection: GnosisSafeUiScreenshotPage, scenarioName: string, scrollExpression?: string) {
+// Each scenario controls the whole session viewport; callers must capture scenarios sequentially.
+async function captureScenario(session: GnosisSafeUiScreenshotBrowser, connection: GnosisSafeUiScreenshotPage, scenarioName: string, scrollExpression?: string) {
 	capturedScenarioCount += 1
 	const scenarioNumber = capturedScenarioCount.toString().padStart(2, '0')
 	for (const viewport of viewports) {
-		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height, scrollExpression)
+		await capture(session, connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height, scrollExpression)
 	}
 }
 
@@ -98,14 +99,14 @@ try {
 		safeLink.click()
 	})()`)
 	await Bun.sleep(400)
-	await captureScenario(addressBook, 'safe-address-book')
+	await captureScenario(browser, addressBook, 'safe-address-book')
 	await addressBook.evaluate(`(() => {
 		const addButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Add New Gnosis Safe Wallet'))
 		if (!(addButton instanceof HTMLElement)) throw new Error('Add New Gnosis Safe Wallet button was not found')
 		addButton.click()
 	})()`)
 	await waitForSelector(addressBook, '.modal.is-active')
-	await captureScenario(addressBook, 'safe-address-form-empty')
+	await captureScenario(browser, addressBook, 'safe-address-form-empty')
 	await addressBook.evaluate(`(() => {
 		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
 		browser.runtime.sendMessage = async (message) => message?.method === 'popup_requestIdentifyAddress'
@@ -155,7 +156,7 @@ try {
 			setField('Decimals', '18')
 		})()`)
 		await Bun.sleep(100)
-		await captureScenario(addressBook, `address-form-${ addressType.toLowerCase() }`)
+		await captureScenario(browser, addressBook, `address-form-${ addressType.toLowerCase() }`)
 	}
 	const setSafeAddressFixture = `browser.storage.local.set({
 			independentActiveSimulationAddress: '0x1234567890123456789012345678901234567890',
@@ -226,7 +227,7 @@ try {
 		editButton.click()
 	})()`)
 	await waitForText(safeEditor, 'Refresh owners')
-	await captureScenario(safeEditor, 'safe-owner-retrieval')
+	await captureScenario(browser, safeEditor, 'safe-owner-retrieval')
 	await safeEditor.evaluate(`(() => {
 		browser.runtime.sendMessage = async (message) => {
 			if (message?.method === 'popup_addOrModifyAddressBookEntry') return await new Promise(() => undefined)
@@ -236,8 +237,8 @@ try {
 		if (!(modifyButton instanceof HTMLElement)) throw new Error('Save changes button was not found')
 		modifyButton.click()
 	})()`)
-	await waitForText(safeEditor, 'Saving...')
-	await captureScenario(safeEditor, 'safe-modify-pending')
+	await waitForText(safeEditor, 'Validating Gnosis Safe...')
+	await captureScenario(browser, safeEditor, 'safe-modify-pending')
 	await safeEditor.close()
 
 	const refreshEditor = await browser.openPage('addressBook')
@@ -261,7 +262,7 @@ try {
 		refreshButton.click()
 	})()`)
 	await waitForText(refreshEditor, 'Refreshing...')
-	await captureScenario(refreshEditor, 'safe-owner-refresh-pending')
+	await captureScenario(browser, refreshEditor, 'safe-owner-refresh-pending')
 	await refreshEditor.close()
 
 	console.info('Opening Gnosis Safe simulation-mode popup')
@@ -270,12 +271,12 @@ try {
 	await waitForText(popup, 'Treasury Gnosis Safe')
 	await waitForText(popup, 'Gnosis Safe signer in simulation')
 	await Bun.sleep(500)
-	await captureScenario(popup, 'safe-simulation-mode')
+	await captureScenario(browser, popup, 'safe-simulation-mode')
 	await popup.evaluate(`browser.storage.local.set({ simulationMode: false }).then(() => location.reload())`)
 	await waitForSelector(popup, '.popup-home-card')
-	await waitForText(popup, 'Treasury Gnosis Safe')
+	// Without a connected owner wallet, signing mode correctly has no active Gnosis Safe account.
 	await waitForText(popup, 'Connect a browser wallet to sign with the selected address.')
-	await captureScenario(popup, 'safe-signing-mode')
+	await captureScenario(browser, popup, 'safe-signing-mode')
 
 	console.info('Opening Gnosis Safe transaction confirmation')
 	const safeAddress = 0x1234567890123456789012345678901234567890n
@@ -370,7 +371,7 @@ try {
 	})()`)
 	await waitForText(failedConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
 	await waitForText(failedConfirm, 'Gas estimation error')
-	await captureScenario(failedConfirm, 'safe-confirm-transaction-failed')
+	await captureScenario(browser, failedConfirm, 'safe-confirm-transaction-failed')
 	await failedConfirm.close()
 
 	// A successful simulation enables the "Sign & add" and "Add unsigned" actions needed by the success and signing-request screenshots.
@@ -450,7 +451,7 @@ try {
 	})()`)
 	await waitForText(successfulConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
 	await waitForSelector(successfulConfirm, 'button[aria-label="Sign and add to Gnosis Safe stack"]')
-	await captureScenario(successfulConfirm, 'safe-confirm-transaction-successful')
+	await captureScenario(browser, successfulConfirm, 'safe-confirm-transaction-successful')
 	await successfulConfirm.close()
 
 	console.info('Opening simulated Gnosis Safe proposal with the EIP-712 signing request')
@@ -469,12 +470,12 @@ try {
 		signingRequestHeader.click()
 	})()`)
 	await waitForText(simulatedConfirm, 'Gnosis Safe Transaction Hash')
-	await captureScenario(simulatedConfirm, 'safe-confirm-transaction-signing-request', `(() => {
+	await captureScenario(browser, simulatedConfirm, 'safe-confirm-transaction-signing-request', `(() => {
 		const signingRequestHeader = ${ findSigningRequestHeader }
 		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
 		signingRequestHeader.scrollIntoView({ block: 'start' })
 	})()`)
-	await captureScenario(simulatedConfirm, 'safe-confirm-transaction-signing-request-hashes', `(() => {
+	await captureScenario(browser, simulatedConfirm, 'safe-confirm-transaction-signing-request-hashes', `(() => {
 		const scrollContainer = document.querySelector('.popup-block-scroll')
 		if (!(scrollContainer instanceof HTMLElement)) throw new Error('Confirmation scroll container was not found')
 		scrollContainer.scrollTop = scrollContainer.scrollHeight
@@ -482,29 +483,33 @@ try {
 	await simulatedConfirm.close()
 
 	console.info('Opening simulation stack')
+	// Confirmation captures may use an isolated profile, so seed this scenario independently before opening the stack.
+	const stackFixture = await browser.openPage('settingsView', setSafeAddressFixture)
+	await stackFixture.close()
 	const stack = await browser.openPage('simulationStack')
 	await waitForSelector(stack, '.simulation-stack-page-header')
-	await captureScenario(stack, 'safe-simulation-stack')
+	await waitForSelector(stack, 'button[aria-label="Import Gnosis Safe stack"]')
+	await captureScenario(browser, stack, 'safe-simulation-stack')
 	await stack.evaluate(`(() => {
 		const importButton = document.querySelector('button[aria-label="Import Gnosis Safe stack"]')
 		if (!(importButton instanceof HTMLElement)) throw new Error('Import Gnosis Safe button was not found')
 		importButton.click()
 	})()`)
 	await waitForSelector(stack, '.modal.is-active')
-	await captureScenario(stack, 'safe-stack-import-empty')
+	await captureScenario(browser, stack, 'safe-stack-import-empty')
 	await stack.evaluate(`(() => {
 		const textarea = document.querySelector('.modal.is-active textarea')
 		if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('Gnosis Safe stack textarea was not found')
 		textarea.value = '{ "version": "1", "transactions": [] }'
 		textarea.dispatchEvent(new InputEvent('input', { bubbles: true, data: textarea.value }))
 	})()`)
-	await captureScenario(stack, 'safe-stack-import-filled')
+	await captureScenario(browser, stack, 'safe-stack-import-filled')
 	await stack.close()
 
 	console.info('Opening settings import and export page')
 	const settings = await browser.openPage('settingsView')
 	await waitForSelector(settings, '.window-header')
-	await captureScenario(settings, 'settings-import-export')
+	await captureScenario(browser, settings, 'settings-import-export')
 	await settings.close()
 
 	const expectedScreenshotCount = 100

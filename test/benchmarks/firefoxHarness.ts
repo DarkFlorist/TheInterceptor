@@ -1,3 +1,11 @@
+import { firefoxEvaluationFailure } from './firefoxEvaluationFailure.js'
+import type { ViewportDriverPage, ViewportDriverSession } from './browserViewport.js'
+import { setFirefoxViewport } from './firefoxViewport.js'
+import { browserEvaluationExpression, parseBrowserEvaluationValue } from './browserEvaluation.js'
+import { prepareDocumentResponse } from './documentRoutes.js'
+import { withBrowserCommandTimeout } from './browserCommandTimeout.js'
+import { withBrowserFixtureSetup } from './browserFixtureSetup.js'
+import type { BrowserPage, BrowserSession, DocumentRoute } from './browserTypes.js'
 import { spawn } from 'node:child_process'
 import { access, readFile } from 'node:fs/promises'
 import * as fsConstants from 'node:fs'
@@ -9,25 +17,13 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const DEFAULT_EXTENSION_DIRECTORY = path.join(REPO_ROOT, 'app')
 
 type PendingCommand = {
+	method: string
 	resolve: (value: unknown) => void
 	reject: (reason: Error) => void
 }
 
-export type FirefoxPage = {
-	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
-	reload: () => Promise<void>
-	setViewport: (width: number, height: number) => Promise<void>
-	captureScreenshot: () => Promise<string>
-	close: () => Promise<void>
-}
-
-export type FirefoxSession = {
-	browserVersion: string
-	openPage: (url: string) => Promise<FirefoxPage>
-	openExtensionPage: (pagePath: string) => Promise<FirefoxPage>
-	openPage: (url: string) => Promise<FirefoxPage>
-	close: () => Promise<void>
-}
+export type FirefoxPage = BrowserPage
+export type FirefoxSession = BrowserSession
 
 function sleep(milliseconds: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
@@ -146,6 +142,7 @@ async function connectBidi(webSocketUrl: string) {
 	let nextCommandId = 1
 	let socket: WebSocket | undefined
 	let pendingCommands = new Map<number, PendingCommand>()
+	const listeners = new Map<string, Set<(params: unknown) => void>>()
 
 	await new Promise<void>((resolve, reject) => {
 		const connectingSocket = new WebSocket(webSocketUrl)
@@ -158,13 +155,17 @@ async function connectBidi(webSocketUrl: string) {
 			if (typeof event.data !== 'string') return
 			const message: unknown = JSON.parse(event.data)
 			const id = readProperty(message, 'id')
-			if (typeof id !== 'number') return
+			if (typeof id !== 'number') {
+				const method = readStringProperty(message, 'method')
+				if (method !== undefined) for (const listener of listeners.get(method) ?? []) listener(readProperty(message, 'params'))
+				return
+			}
 			const pendingCommand = pendingCommands.get(id)
 			if (pendingCommand === undefined) return
 			pendingCommands.delete(id)
 			const type = readStringProperty(message, 'type')
 			if (type === 'error') {
-				pendingCommand.reject(new Error(protocolErrorMessage(message) ?? `Firefox BiDi command ${ id } failed.`))
+				pendingCommand.reject(firefoxEvaluationFailure(new Error(`Firefox BiDi ${ pendingCommand.method }: ${ protocolErrorMessage(message) ?? `command ${ id } failed` }`)))
 				return
 			}
 			pendingCommand.resolve(readProperty(message, 'result'))
@@ -178,13 +179,22 @@ async function connectBidi(webSocketUrl: string) {
 	})
 
 	return {
-		send: async (method: string, params: Record<string, unknown> = {}) => {
+		send: async (method: string, params: Record<string, unknown> = {}, timeoutMs?: number) => {
 			if (socket === undefined) throw new Error('Firefox WebDriver BiDi connection is not open.')
 			const id = nextCommandId
 			nextCommandId += 1
-			const result = new Promise<unknown>((resolve, reject) => pendingCommands.set(id, { resolve, reject }))
-			socket.send(JSON.stringify({ id, method, params }))
-			return await result
+			const result = new Promise<unknown>((resolve, reject) => {
+				pendingCommands.set(id, { method, resolve, reject })
+			})
+			try { socket.send(JSON.stringify({ id, method, params })) } catch (error: unknown) {
+				const pending = pendingCommands.get(id); pendingCommands.delete(id)
+				pending?.reject(error instanceof Error ? error : new Error(String(error)))
+			}
+			try { return await withBrowserCommandTimeout(result, `Firefox BiDi ${ method }`, timeoutMs) } finally { pendingCommands.delete(id) }
+		},
+		on: (method: string, listener: (params: unknown) => void) => {
+			const current = listeners.get(method) ?? new Set<(params: unknown) => void>()
+			current.add(listener); listeners.set(method, current)
 		},
 		close: () => {
 			socket?.close()
@@ -230,7 +240,45 @@ function remoteValue<T>(evaluationResult: unknown) {
 		throw new Error(`${ readStringProperty(exceptionDetails, 'text') ?? 'Firefox script evaluation failed.' } Details: ${ JSON.stringify(exceptionDetails) }`)
 	}
 	const result = readProperty(evaluationResult, 'result')
-	return readProperty(result, 'value') as T | undefined
+	return parseBrowserEvaluationValue<T>(readProperty(result, 'value'))
+}
+
+type FirefoxRouteConnection = {
+	send: (method: string, params: Record<string, unknown>) => Promise<unknown>
+	on: (method: string, listener: (params: unknown) => void) => void
+}
+
+export function createFirefoxDocumentRoutes(connection: FirefoxRouteConnection, reportFailure: (error: unknown) => void) {
+	let routes: readonly DocumentRoute[] = []
+	let intercept: string | undefined
+	let subscribed = false
+	connection.on('network.beforeRequestSent', (params) => {
+		if (readProperty(params, 'isBlocked') !== true) return
+		const request = readProperty(params, 'request')
+		const id = readStringProperty(request, 'request'); const url = readStringProperty(request, 'url')
+		const prepared = prepareDocumentResponse(routes, url)
+		if (id === undefined) { reportFailure(new Error('Firefox intercepted an invalid request')); return }
+		const response = prepared === undefined
+			? connection.send('network.continueRequest', { request: id })
+			: connection.send('network.provideResponse', { request: id, statusCode: prepared.statusCode, headers: prepared.headers.map(({ name, value }) => ({ name, value: { type: 'string', value } })), body: { type: 'base64', value: prepared.bodyBase64 } })
+		void response.catch(reportFailure)
+	})
+	return async (nextRoutes: readonly DocumentRoute[]) => {
+		if (intercept !== undefined) {
+			await connection.send('network.removeIntercept', { intercept })
+			intercept = undefined
+		}
+		routes = nextRoutes
+		// An empty BiDi pattern list intercepts every request, so clearing must remove the intercept without installing another one.
+		if (routes.length === 0) return
+		if (!subscribed) {
+			await connection.send('session.subscribe', { events: ['network.beforeRequestSent'] })
+			subscribed = true
+		}
+		const result = await connection.send('network.addIntercept', { phases: ['beforeRequestSent'], urlPatterns: routes.map(({ url }) => ({ type: 'string', pattern: url })) })
+		intercept = readStringProperty(result, 'intercept')
+		if (intercept === undefined) throw new Error('Firefox did not return a network intercept ID')
+	}
 }
 
 async function ensureExtensionReady(extensionDirectory: string) {
@@ -277,56 +325,58 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 		const extensionUuid = await readExtensionUuid(webDriverSession.profileDirectory, extensionId)
 		const extensionOrigin = `moz-extension://${ extensionUuid }`
 		const activeBidi = bidi
-		const openPage = async (url: string): Promise<FirefoxPage> => {
+		let routeFailure: unknown
+		const checkRoutes = () => { if (routeFailure !== undefined) throw new Error('Firefox document interception failed', { cause: routeFailure }) }
+		const wrapPage = (context: string, url: string): ViewportDriverPage => ({
+			id: context,
+			url,
+			navigate: async (nextUrl, wait = 'complete') => { checkRoutes(); await activeBidi.send('browsingContext.navigate', { context, url: nextUrl, wait }); checkRoutes() },
+			evaluate: async <T = unknown>(expression: string, timeoutMs?: number) => {
+				checkRoutes()
+				return remoteValue<T>(await activeBidi.send('script.evaluate', { expression: browserEvaluationExpression(expression), target: { context }, awaitPromise: true }, timeoutMs))
+			},
+			reload: async () => { checkRoutes(); await activeBidi.send('browsingContext.reload', { context, wait: 'complete' }); checkRoutes() },
+			setViewport: async (width, height) => { await setFirefoxViewport(activeBidi, context, width, height, async () => remoteValue(await activeBidi.send('script.evaluate', { expression: browserEvaluationExpression('({ innerWidth, innerHeight })'), target: { context }, awaitPromise: true }))) },
+			captureScreenshot: async () => {
+				const screenshot = await activeBidi.send('browsingContext.captureScreenshot', { context, origin: 'document', format: { type: 'image/png' } })
+				const data = readStringProperty(screenshot, 'data')
+				if (data === undefined) throw new Error('Firefox did not return screenshot data.')
+				return data
+			},
+			close: async () => { await activeBidi.send('browsingContext.close', { context }) },
+		})
+		const openPage: ViewportDriverSession['openPage'] = async (url, wait, prepare) => {
 			const creation = await activeBidi.send('browsingContext.create', { type: 'tab' })
 			const context = readStringProperty(creation, 'context')
 			if (context === undefined) throw new Error('Firefox did not return a browsing context ID.')
-			await activeBidi.send('browsingContext.navigate', {
-				context,
-				url,
-				wait: 'complete',
-			})
-			return {
-				evaluate: async <T = unknown>(expression: string) => remoteValue<T>(await activeBidi.send('script.evaluate', {
-					expression,
-					target: { context },
-					awaitPromise: true,
-				})),
-				reload: async () => { await activeBidi.send('browsingContext.reload', { context, wait: 'complete' }) },
-
-				setViewport: async (width: number, height: number) => {
-					await activeBidi.send('browsingContext.setViewport', {
-						context,
-						viewport: { width, height },
-						devicePixelRatio: 1,
-					})
-				},
-				captureScreenshot: async () => {
-					const screenshot = await activeBidi.send('browsingContext.captureScreenshot', {
-						context,
-						origin: 'document',
-						format: { type: 'image/png' },
-					})
-					const data = readStringProperty(screenshot, 'data')
-					if (data === undefined) throw new Error('Firefox did not return screenshot data.')
-					return data
-				},
-				close: async () => {
-					await activeBidi.send('browsingContext.close', { context })
-				},
-			}
+			const page = wrapPage(context, 'about:blank')
+			try { await prepare(page); await page.navigate(url, wait); return wrapPage(context, url) } catch (error: unknown) { await page.close(); throw error }
 		}
-		return {
+
+		return withBrowserFixtureSetup({
+			browser: 'firefox',
 			browserVersion: webDriverSession.browserVersion,
-			openExtensionPage: (pagePath) => openPage(`${ extensionOrigin }/${ pagePath }`),
+			openExtensionPage: (pagePath, prepare) => openPage(`${ extensionOrigin }/${ pagePath }`, 'complete', prepare),
 			openPage,
+			addPreloadScript: async (source) => { await activeBidi.send('script.addPreloadScript', { functionDeclaration: `() => { ${ source } }` }) },
+			pages: async () => {
+				const tree = await activeBidi.send('browsingContext.getTree', { maxDepth: 0 })
+				const contexts = readProperty(tree, 'contexts')
+				if (!Array.isArray(contexts)) throw new Error('Firefox did not return browsing contexts')
+				return contexts.map((entry: unknown) => {
+					const id = readStringProperty(entry, 'context'); const url = readStringProperty(entry, 'url')
+					if (id === undefined || url === undefined) throw new Error('Firefox returned an invalid browsing context')
+					return wrapPage(id, url)
+				})
+			},
+			routeResponses: createFirefoxDocumentRoutes(activeBidi, (error) => { routeFailure = error }),
 
 			close: async () => {
 				activeBidi.close()
 				await fetch(`http://127.0.0.1:${ port }/session/${ webDriverSession.sessionId }`, { method: 'DELETE' }).catch(() => undefined)
 				await stopDriverProcess(driverProcess)
 			},
-		}
+		})
 	} catch (error) {
 		bidi?.close()
 		if (webDriverSession !== undefined) {
