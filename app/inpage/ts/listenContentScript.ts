@@ -1,5 +1,3 @@
-import { GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST } from '../../shared/ts/gnosisSafeAppsProtocol.js'
-import { createNativeGnosisSafeAppsSourceBridge } from './nativeGnosisSafeAppsSourceBridge.js'
 import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
@@ -363,15 +361,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		return connectedExtensionPort
 	}
 	connect()
-	// getRandomValues also works on ordinary HTTP pages, unlike randomUUID.
-	const randomNativeBridgeToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
-	const nativeHostBridge = createNativeGnosisSafeAppsSourceBridge(window, randomNativeBridgeToken, { setTimeout: (callback, delay) => setTimeout(callback, delay), clearTimeout: (id) => clearTimeout(id) })
-	globalThis.addEventListener('pagehide', () => nativeHostBridge.cancelPending())
-	browser.runtime.onMessage.addListener(async (message: unknown, sender) => {
-		if (typeof message === 'object' && message !== null && 'method' in message && message.method === GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST) {
-			if (sender.id !== browser.runtime.id || window.top !== window || !('origin' in message) || message.origin !== location.origin || !('request' in message)) throw new Error('Invalid native Gnosis Safe App source request.')
-			return await nativeHostBridge.request(message.request)
-		}
+	browser.runtime.onMessage.addListener(async (message: unknown) => {
 		if (
 			typeof message !== 'object'
 			|| message === null

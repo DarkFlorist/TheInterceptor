@@ -23,8 +23,9 @@ export async function prepareGnosisSafeAppsRequest(services: SimulationServicesS
 	const reply = (message: InterceptedRequestForward): GnosisSafeAppsAdmission => ({ kind: 'reply', reply: message })
 	const failure = (code: number, message: string) => reply({ type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code, message } })
 	const enabled = await getGnosisSafeAppsCompatibilityMode()
-	const connectionEligible = enabled && isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, request.uniqueRequestIdentifier.requestSocket, settings, { activeAddress, safeSigningMode })
-	if (!connectionEligible) return failure(-32602, 'Interceptor Gnosis Safe Apps compatibility is not enabled for this connection.')
+	if (!enabled) return failure(-32602, 'Enable Gnosis Safe Apps compatibility in Interceptor settings, then retry.')
+	const connectionEligible = isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, request.uniqueRequestIdentifier.requestSocket, settings, { activeAddress, safeSigningMode })
+	if (!connectionEligible) return failure(-32602, 'This website cannot use the selected Gnosis Safe on the current network. Check its website permissions in Interceptor.')
 	try {
 		const execution = getGnosisSafeAppsExecution(request)
 		if (execution !== undefined) return { kind: 'execute', context: execution }

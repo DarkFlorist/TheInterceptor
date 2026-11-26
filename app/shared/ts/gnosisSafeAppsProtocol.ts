@@ -1,6 +1,5 @@
 // Canonical SDK envelope and policy for provider, native host, and original-tab relay.
 export const GNOSIS_SAFE_APPS_RESPONSE_VERSION = '9.1.0'
-export const GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST = 'interceptor_native_gnosis_safe_source_request'
 export const GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 // Eligibility discovery can wait for permissions; the already-prepared native source relay uses a shorter round-trip deadline.
 export const GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS = 5 * 60_000

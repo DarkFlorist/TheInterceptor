@@ -967,7 +967,7 @@ export function Home(param: HomeParams) {
 
 	async function openGnosisSafeApp() {
 		const sourceTabId = param.tabState.value?.tabId
-		if (sourceTabId === undefined) throw new Error('The original website tab is unavailable.')
+		if (sourceTabId === undefined) throw new Error('The website tab is unavailable.')
 		const reply = await sendPopupMessageWithReply({ method: 'popup_openGnosisSafeApp', data: { sourceTabId } })
 		if (reply === undefined) throw new Error('Interceptor did not confirm opening the Gnosis Safe App. Please retry.')
 		if (!reply.ok) throw new Error(reply.message)

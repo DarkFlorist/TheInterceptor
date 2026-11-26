@@ -90,36 +90,51 @@ for (const success of [true, false]) test(`context changes retain the original f
 	assert.match(host.controller.view.value.status, /Pending requests finished/)
 })
 
-test('context changes suppress stale discovery but prepare a fresh frame and fresh metadata', async () => {
+test('wallet changes suppress stale discovery and require reconnection before the app can act with a new selection', async () => {
 	const host = hostHarness()
+	host.controller.start()
 	await host.controller.refresh()
 	const originalFrame = host.controller.view.value.frameGeneration
 	const discovery = host.controller.receive(request('old-chain', 'getChainInfo'))
 	host.setPreparation(async () => metadata('new-wallet'))
 	host.controller.invalidateContext(['activeSigningSafeAddress'])
-	assert.equal(host.controller.view.value.frameHidden, true)
-	assert.equal(host.controller.view.value.frameUrl, 'about:blank')
-	await host.controller.receive(request('old-frame-operation', 'sendTransactions'))
-	assert.equal(host.requests.some(({ id }) => id === 'old-frame-operation'), false, 'An old frame cannot start an operation while the new context prepares')
+	assert.equal(host.controller.view.value.frameHidden, false)
+	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
 	await host.controller.refresh()
-	assert.equal(host.controller.view.value.frameGeneration, originalFrame + 1)
+	assert.equal(host.controller.view.value.frameGeneration, originalFrame, 'Changing wallet context must retain the live signer iframe')
 	host.pending.get('old-chain')?.resolve({ id: 'old-chain', success: true, data: { chainId: 'old-chain' } })
 	await discovery
-	assert.deepEqual(host.replies, [])
+	assert.deepEqual(host.replies, [], 'A discovery started under old settings cannot publish after invalidation')
 	await host.controller.receive(request('fresh-info', 'getSafeInfo'))
-	assert.deepEqual(host.replies[0]?.data, { safeAddress: 'new-wallet' })
+	assert.equal(host.replies[0]?.success, false, 'The old app must not silently act with a newly selected wallet')
+	assert.equal(host.requests.some(({ id }) => id === 'fresh-info'), false)
+	assert.equal(host.controller.view.value.connectionError, true)
+	assert.match(host.controller.view.value.status, /Retry/)
+	assert.equal(host.controller.retry(), true)
+	assert.equal(host.reloads, 1)
+
+	host.controller.stop()
 })
 
-test('revocation clears the frame and cancels the old handshake deadline instead of overwriting the permission failure', async () => {
+test('revocation clears metadata while retaining the signer frame and cancels the old handshake deadline', async () => {
 	const host = hostHarness()
+	host.controller.start()
 	await host.controller.refresh()
+	const generation = host.controller.view.value.frameGeneration
 	host.setPreparation(async () => ({ id: 'prepare', success: false, error: 'Website permission revoked' }))
 	host.controller.invalidateContext(['websiteAccess'])
 	await host.controller.refresh()
 	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.handshakeTimeoutMs + 1)
-	assert.equal(host.controller.view.value.frameHidden, true)
-	assert.equal(host.controller.view.value.frameUrl, 'about:blank')
+	assert.equal(host.controller.view.value.frameHidden, false)
+	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
+	assert.equal(host.controller.view.value.frameGeneration, generation)
 	assert.equal(host.controller.view.value.status, 'Website permission revoked')
+	const denied = host.controller.receive(request('revoked-info', 'getSafeInfo'))
+	assert.ok(host.pending.has('revoked-info'), 'Revocation removes cached metadata; the background must explicitly refuse the current request')
+	host.pending.get('revoked-info')?.resolve({ id: 'revoked-info', success: false, error: 'Website permission revoked' })
+	await denied
+	assert.equal(host.replies.at(-1)?.success, false)
+	host.controller.stop()
 })
 
 test('a superseded preparation cannot cache or display metadata from the old wallet', async () => {
@@ -127,7 +142,7 @@ test('a superseded preparation cannot cache or display metadata from the old wal
 	const oldPreparation = Promise.withResolvers<NativeGnosisSafeAppsResponse>()
 	host.setPreparation(async () => await oldPreparation.promise)
 	const refreshing = host.controller.refresh()
-	host.controller.invalidateContext(['simulationMode'])
+	host.controller.invalidateContext(['websiteAccess'])
 	host.setPreparation(async () => metadata('current-wallet'))
 	oldPreparation.resolve(metadata('old-wallet'))
 	await refreshing
@@ -152,25 +167,23 @@ test('closing the host disposes its timers and prevents late replies or retries'
 })
 
 
-test('native hosting awaits request-owned metadata before loading the iframe and answers initial SDK discovery from that preparation', async () => {
+test('native hosting loads the real iframe before waiting for signer-dependent metadata', async () => {
 	const host = hostHarness()
 	const preparation = Promise.withResolvers<NativeGnosisSafeAppsResponse>()
 	host.setPreparation(async () => await preparation.promise)
-	const refreshing = host.controller.refresh()
-	assert.equal(host.controller.view.value.frameHidden, true)
-	assert.equal(host.controller.view.value.frameUrl, 'about:blank')
-	host.advance(20_000)
-	assert.equal(host.controller.view.value.frameHidden, true, 'slow simulation preparation does not consume the website SDK discovery window')
-	assert.equal(host.timers.size, 0, 'the website handshake deadline starts only after metadata is ready')
-	preparation.resolve(metadata('prepared-wallet'))
-	await refreshing
+	host.controller.start()
 	assert.equal(host.controller.view.value.frameHidden, false)
 	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
+	assert.deepEqual(host.requests, [], 'Starting the frame must not deadlock behind metadata that requires its signer bridge')
+	const refreshing = host.controller.refresh()
+	preparation.resolve(metadata('prepared-wallet'))
+	await refreshing
+	assert.equal(host.controller.view.value.frameGeneration, 1, 'Preparation must not recreate the iframe')
 	await host.controller.receive(request('sdk-discovery', 'getSafeInfo'))
-	assert.deepEqual(host.requests.map(({ id }) => id), ['prepare'], 'the first SDK reply needs no second simulation or RPC')
+	assert.deepEqual(host.requests.map(({ id }) => id), ['prepare'])
 	assert.deepEqual(host.replies, [{ ...metadata('prepared-wallet'), id: 'sdk-discovery' }])
+	host.controller.stop()
 })
-
 
 for (const failure of ['transport', 'RPC']) test(`${ failure } metadata refresh failure and recovery preserve the loaded app session`, async () => {
 	const host = hostHarness()
@@ -179,7 +192,7 @@ for (const failure of ['transport', 'RPC']) test(`${ failure } metadata refresh 
 	await host.controller.receive(request('initial-info', 'getSafeInfo'))
 	const frame = host.controller.view.value
 	host.setPreparation(async () => {
-		if (failure === 'transport') throw new TypeError('Source bridge temporarily unavailable')
+		if (failure === 'transport') throw new TypeError('Extension connection temporarily unavailable')
 		return { id: 'prepare', success: false, error: 'Simulation RPC temporarily unavailable' }
 	})
 	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs)
@@ -188,6 +201,7 @@ for (const failure of ['transport', 'RPC']) test(`${ failure } metadata refresh 
 	assert.equal(host.controller.view.value.frameUrl, frame.frameUrl)
 	assert.equal(host.controller.view.value.frameGeneration, frame.frameGeneration)
 	assert.match(host.controller.view.value.status, /temporarily unavailable/)
+	assert.equal(host.controller.view.value.connectionError, true, 'Actionable refresh errors must be visible in the minimal controls')
 	await host.controller.receive(request('cached-info', 'getSafeInfo'))
 	assert.deepEqual(host.replies.at(-1), { ...metadata(), id: 'cached-info' })
 	assert.equal(host.requests.length, 2, 'a failed refresh preserves the still-fresh prepared response')
@@ -197,6 +211,7 @@ for (const failure of ['transport', 'RPC']) test(`${ failure } metadata refresh 
 	assert.equal(host.controller.view.value.frameGeneration, frame.frameGeneration, 'recovery must not remount the iframe')
 	assert.equal(host.controller.view.value.frameHidden, false)
 	assert.match(host.controller.view.value.status, /Wallet information refreshed/)
+	assert.equal(host.controller.view.value.connectionError, false, 'Recovered healthy sessions can collapse their connection controls')
 	await host.controller.receive(request('refreshed-info', 'getSafeInfo'))
 	assert.deepEqual(host.replies.at(-1), { ...metadata('refreshed-wallet'), id: 'refreshed-info' })
 	assert.equal(host.reloads, 0)
@@ -222,24 +237,28 @@ test('failed refreshes do not extend the prepared metadata lifetime', async () =
 	assert.equal(host.controller.view.value.frameHidden, false)
 })
 
-test('failed initial preparation keeps the app hidden until valid metadata is available', async () => {
+test('failed initial preparation keeps the app and its wallet bridge loaded while exposing a retryable error', async () => {
 	const host = hostHarness()
+	host.controller.start()
 	for (const prepare of [
-		async (): Promise<NativeGnosisSafeAppsResponse> => { throw new TypeError('Initial bridge unavailable') },
+		async (): Promise<NativeGnosisSafeAppsResponse> => { throw new TypeError('Initial extension connection unavailable') },
 		async (): Promise<NativeGnosisSafeAppsResponse> => ({ id: 'prepare', success: false, error: 'Initial RPC unavailable' }),
 		async (): Promise<NativeGnosisSafeAppsResponse> => ({ id: 'prepare', success: true, data: { safeAddress: 42 } }),
 	]) {
 		host.setPreparation(prepare)
 		await host.controller.refresh()
-		assert.equal(host.controller.view.value.frameHidden, true)
-		assert.equal(host.controller.view.value.frameUrl, 'about:blank')
-		assert.equal(host.controller.view.value.frameGeneration, 0)
+		assert.equal(host.controller.view.value.frameHidden, false)
+		assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
+		assert.equal(host.controller.view.value.frameGeneration, 1)
 		assert.notEqual(host.controller.view.value.status, 'Preparing your selected Gnosis Safe…')
+		assert.equal(host.controller.view.value.connectionError, true)
 	}
 	host.setPreparation(async () => metadata())
 	await host.controller.refresh()
-	assert.equal(host.controller.view.value.frameHidden, false)
 	assert.equal(host.controller.view.value.frameGeneration, 1)
+	assert.equal(host.controller.retry(), true)
+	assert.equal(host.reloads, 1)
+	host.controller.stop()
 })
 
 test('a transient refresh failure cannot mask a concurrent permission invalidation or restore the old snapshot', async () => {
@@ -253,11 +272,14 @@ test('a transient refresh failure cannot mask a concurrent permission invalidati
 	transient.reject(new Error('Old transport failure'))
 	await refreshing
 	await host.controller.refresh()
-	assert.equal(host.controller.view.value.frameHidden, true)
-	assert.equal(host.controller.view.value.frameUrl, 'about:blank')
+	assert.equal(host.controller.view.value.frameHidden, false)
+	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
 	assert.equal(host.controller.view.value.status, 'Website permission revoked')
-	await host.controller.receive(request('revoked-info', 'getSafeInfo'))
-	assert.deepEqual(host.replies, [], 'explicit invalidation clears the previously prepared metadata and stops admission')
+	const denied = host.controller.receive(request('revoked-info', 'getSafeInfo'))
+	assert.ok(host.pending.has('revoked-info'), 'explicit invalidation removes the stale cached metadata')
+	host.pending.get('revoked-info')?.resolve({ id: 'revoked-info', success: false, error: 'Website permission revoked' })
+	await denied
+	assert.equal(host.replies.at(-1)?.success, false)
 })
 
 test('refresh errors after a context change preserve admitted mutation replies while blocking new requests', async () => {
@@ -284,18 +306,18 @@ test('refresh errors after a context change preserve admitted mutation replies w
 	assert.equal(host.controller.retry(), true)
 })
 
-test('source disconnection clears prepared metadata, hides an idle app and cannot recover from a stale refresh', async () => {
+test('extension disconnection clears prepared metadata, preserves an idle app and cannot recover from a stale refresh', async () => {
 	const host = hostHarness()
 	host.controller.start()
 	await host.controller.refresh()
 	const stale = Promise.withResolvers<NativeGnosisSafeAppsResponse>()
 	host.setPreparation(async () => await stale.promise)
 	const refreshing = host.controller.refresh()
-	host.controller.disconnectSource()
-	assert.equal(host.controller.view.value.frameHidden, true)
-	assert.equal(host.controller.view.value.frameUrl, 'about:blank')
-	assert.equal(host.controller.view.value.lastContextChange, 'sourceTab')
-	assert.match(host.controller.view.value.status, /original website connection was lost/)
+	host.controller.disconnectExtension()
+	assert.equal(host.controller.view.value.frameHidden, false)
+	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
+	assert.equal(host.controller.view.value.lastContextChange, 'extensionConnection')
+	assert.match(host.controller.view.value.status, /extension connection was lost/)
 	assert.equal(host.timers.size, 0)
 	stale.resolve(metadata('stale-wallet'))
 	await refreshing
@@ -303,29 +325,41 @@ test('source disconnection clears prepared metadata, hides an idle app and canno
 	await host.controller.refresh()
 	host.controller.invalidateContext(['simulationMode'])
 	await host.controller.receive(request('disconnected-info', 'getSafeInfo'))
-	assert.equal(host.controller.view.value.frameHidden, true)
-	assert.match(host.controller.view.value.status, /original website connection was lost/)
-	assert.equal(host.requests.length, 2, 'a disconnected source cannot restart metadata polling')
-	assert.deepEqual(host.replies, [], 'the previous prepared response is no longer available')
+	assert.equal(host.controller.view.value.frameHidden, false)
+	assert.match(host.controller.view.value.status, /extension connection was lost/)
+	assert.equal(host.requests.length, 2, 'a disconnected extension cannot restart metadata polling')
+	assert.equal(host.replies.at(-1)?.success, false, 'the previous prepared response is no longer available and disconnected requests are refused')
 })
 
-for (const success of [true, false]) test(`source disconnection preserves an admitted mutation's ${ success ? 'successful' : 'rejected' } terminal reply and blocks further admission`, async () => {
+for (const success of [true, false]) test(`extension disconnection preserves an admitted mutation's ${ success ? 'successful' : 'rejected' } terminal reply and blocks further admission`, async () => {
 	const host = hostHarness()
 	await host.controller.refresh()
 	const frame = host.controller.view.value
 	const operation = host.controller.receive(request('operation', 'sendTransactions'))
-	host.controller.disconnectSource()
+	host.controller.disconnectExtension()
 	assert.equal(host.controller.view.value.frameHidden, false)
 	assert.equal(host.controller.view.value.frameGeneration, frame.frameGeneration)
 	assert.equal(host.controller.retry(), false)
 	await host.controller.receive(request('disconnected-info', 'getSafeInfo'))
 	assert.equal(host.replies.at(-1)?.success, false)
-	assert.equal(host.requests.some(({ id }) => id === 'disconnected-info'), false, 'disconnection clears cached discovery and refuses new source requests')
-	const terminal = { id: 'operation', success, ...(success ? { data: { safeTxHash: 'terminal-result' } } : { error: 'Original source closed' }) }
+	assert.equal(host.requests.some(({ id }) => id === 'disconnected-info'), false, 'disconnection clears cached discovery and refuses new background requests')
+	const terminal = { id: 'operation', success, ...(success ? { data: { safeTxHash: 'terminal-result' } } : { error: 'Extension disconnected' }) }
 	host.pending.get('operation')?.resolve(terminal)
 	await operation
 	assert.deepEqual(host.replies.at(-1), terminal)
 	assert.equal(host.controller.view.value.frameGeneration, frame.frameGeneration)
-	assert.match(host.controller.view.value.status, /Pending requests finished.*original website connection was lost/)
+	assert.match(host.controller.view.value.status, /Pending requests finished.*extension connection was lost/)
 	assert.equal(host.controller.retryDisabled.value, false)
+})
+
+
+test('unsupported embedding exposes an actionable connection error without changing frame restrictions', () => {
+	const host = hostHarness()
+	host.controller.start()
+	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.handshakeTimeoutMs + 1)
+	assert.equal(host.controller.view.value.connectionError, true)
+	assert.match(host.controller.view.value.status, /block embedded pages/)
+	assert.match(host.controller.view.value.status, /Retry the connection or open the website directly/)
+	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
+	host.controller.stop()
 })

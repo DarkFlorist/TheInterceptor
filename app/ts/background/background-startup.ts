@@ -1,5 +1,7 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { getNativeGnosisSafeAppsConnectionRegistration } from './nativeGnosisSafeAppsConnectionRegistration.js'
+import { isNativeGnosisSafeAppsPreparationError } from './nativeGnosisSafeAppsSessions.js'
 import { attachNativeGnosisSafeAppsHostContext } from './nativeGnosisSafeAppsHostContext.js'
 import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
@@ -141,7 +143,13 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const frameOrigins = getFrameOrigins(port.sender.url)
+	let nativeRegistration: Awaited<ReturnType<typeof getNativeGnosisSafeAppsConnectionRegistration>>
+	try { nativeRegistration = await getNativeGnosisSafeAppsConnectionRegistration(port, socket.tabId, websiteTabConnections) } catch (error: unknown) {
+		if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
+		port.disconnect()
+		return
+	}
+	const frameOrigins = nativeRegistration?.frameOrigins ?? getFrameOrigins(port.sender.url)
 	const { websiteOrigin } = frameOrigins
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {
@@ -151,8 +159,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false }
-	const isTopFrame = isTopFramePort(port)
+	const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false, ...nativeRegistration?.properties }
+	const isTopFrame = nativeRegistration?.isSignerOwner ?? isTopFramePort(port)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
 		if (connectionInitializationPromise === undefined) throw new Error('Content script connection initialization did not start')
@@ -190,6 +198,11 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					return
 				}
 				const { simulationServicesOwner } = await getConnectionInitializationPromise()
+				try { await nativeRegistration?.beforeRequest?.() } catch (error: unknown) {
+					if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
+					port.postMessage(serializeInpageReply({ type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, interceptorApproved: true, bridgeRequestSettled: true, error: { code: 4900, message: error.message } }))
+					return
+				}
 				await pendingRequestLimiter.execute(async () => {
 					const request = {
 						method: rawMessage.method,
@@ -210,6 +223,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
 		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
+		nativeRegistration?.registered?.()
 		if (registration.createdTabConnection) {
 			await updateTabState(socket.tabId, (previousState: TabState) => {
 				return modifyObject(previousState, {

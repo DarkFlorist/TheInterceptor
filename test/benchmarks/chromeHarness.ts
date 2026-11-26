@@ -123,7 +123,7 @@ export class CdpConnection {
 
 	private handleMessage(event: MessageEvent) {
 		const data = typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data as ArrayBuffer)
-		const message = JSON.parse(data) as { id?: number, method?: string, params?: unknown, result?: unknown, error?: { message?: string, code?: number } }
+		const message = JSON.parse(data) as { id?: number, sessionId?: string, method?: string, params?: unknown, result?: unknown, error?: { message?: string, code?: number } }
 		if (message.id !== undefined) {
 			const pending = this.pending.get(message.id)
 			if (pending === undefined) return
@@ -136,12 +136,12 @@ export class CdpConnection {
 			return
 		}
 		if (message.method === undefined) return
-		const listeners = this.eventListeners.get(message.method)
+		const listeners = this.eventListeners.get(this.eventKey(message.method, message.sessionId))
 		if (listeners === undefined) return
 		for (const listener of listeners) listener(message.params)
 	}
 
-	public async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+	public async send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
 		await this.connect()
 		const socket = this.socket
 		if (socket === undefined) throw new Error(`CDP websocket ${ this.url } is not connected`)
@@ -153,21 +153,25 @@ export class CdpConnection {
 				reject,
 			})
 		})
-		socket.send(JSON.stringify({ id, method, params }))
+		socket.send(JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }))
 		return await promise
 	}
 
-	public on(eventName: string, listener: (params: unknown) => void) {
-		const listeners = this.eventListeners.get(eventName) ?? new Set<(params: unknown) => void>()
+	private eventKey(eventName: string, sessionId?: string) { return `${ sessionId ?? '' }:${ eventName }` }
+
+	public on(eventName: string, listener: (params: unknown) => void, sessionId?: string) {
+		const key = this.eventKey(eventName, sessionId)
+		const listeners = this.eventListeners.get(key) ?? new Set<(params: unknown) => void>()
 		listeners.add(listener)
-		this.eventListeners.set(eventName, listeners)
+		this.eventListeners.set(key, listeners)
 	}
 
-	public off(eventName: string, listener: (params: unknown) => void) {
-		const listeners = this.eventListeners.get(eventName)
+	public off(eventName: string, listener: (params: unknown) => void, sessionId?: string) {
+		const key = this.eventKey(eventName, sessionId)
+		const listeners = this.eventListeners.get(key)
 		if (listeners === undefined) return
 		listeners.delete(listener)
-		if (listeners.size === 0) this.eventListeners.delete(eventName)
+		if (listeners.size === 0) this.eventListeners.delete(key)
 	}
 
 	public async evaluate<T = unknown>(expression: string, options: { awaitPromise?: boolean, userGesture?: boolean } = {}) {
@@ -543,36 +547,77 @@ export async function launchChromeBrowserSession(extensionDirectory?: string): P
 		const version = await chrome.browserConnection.send<{ product: string }>('Browser.getVersion')
 		const preloads: string[] = []
 		let routes: readonly DocumentRoute[] = []
-		let routeFailure: unknown
+		let fixtureFailure: unknown
 		const connections = new Map<string, CdpConnection>()
-		const appliedPreloads = new Map<CdpConnection, number>()
-		const interceptedConnections = new Set<CdpConnection>()
-		const activeInterceptions = new Set<CdpConnection>()
-		const disableInterception = async (connection: CdpConnection) => {
+		type FixtureTarget = Pick<CdpConnection, 'send' | 'on' | 'off'>
+		const appliedPreloads = new Map<FixtureTarget, number>()
+		const interceptedConnections = new Set<FixtureTarget>()
+		const activeInterceptions = new Set<FixtureTarget>()
+		const frameAwareTargets = new Set<FixtureTarget>()
+		const childTargets = new Map<string, { readonly connection: FixtureTarget, readonly root: CdpConnection }>()
+		const frameFixtureCleanups = new Map<FixtureTarget, () => void>()
+		const clearFixtureTarget = (connection: FixtureTarget) => {
+			frameFixtureCleanups.get(connection)?.()
+			frameFixtureCleanups.delete(connection)
+			appliedPreloads.delete(connection); interceptedConnections.delete(connection); activeInterceptions.delete(connection); frameAwareTargets.delete(connection)
+		}
+		const disableInterception = async (connection: FixtureTarget) => {
 			if (!activeInterceptions.has(connection)) return
 			await connection.send('Fetch.disable')
 			activeInterceptions.delete(connection)
 		}
-		const prepareFixtures = async (connection: CdpConnection) => {
+		const prepareFixtures = async (connection: FixtureTarget, root: CdpConnection, isChild = false): Promise<void> => {
 			await connection.send('Page.enable')
-			for (const source of preloads.slice(appliedPreloads.get(connection) ?? 0)) await connection.send('Page.addScriptToEvaluateOnNewDocument', { source })
+			for (const source of preloads.slice(appliedPreloads.get(connection) ?? 0)) await connection.send('Page.addScriptToEvaluateOnNewDocument', { source, ...(isChild ? { runImmediately: true } : {}) })
 			appliedPreloads.set(connection, preloads.length)
+			// Cross-process iframes have independent CDP targets. Pause their startup until the same fixture setup is installed, including nested frames.
+			if (!frameAwareTargets.has(connection)) {
+				frameAwareTargets.add(connection)
+				const attached = (value: unknown) => {
+					if (typeof value !== 'object' || value === null || !('sessionId' in value) || typeof value.sessionId !== 'string') { fixtureFailure = new Error('Invalid Chrome iframe attachment'); return }
+					const sessionId = value.sessionId
+					const child: FixtureTarget = {
+						send: async <T = unknown>(method: string, params: Record<string, unknown> = {}) => await root.send<T>(method, params, sessionId),
+						on: (eventName, listener) => { root.on(eventName, listener, sessionId) },
+						off: (eventName, listener) => { root.off(eventName, listener, sessionId) },
+					}
+					childTargets.set(sessionId, { connection: child, root })
+					void (async () => {
+						try { await prepareFixtures(child, root, true) } catch (error: unknown) {
+							// Navigation may detach an iframe during its setup. A still-attached target must expose fixture failures to the scenario.
+							if (childTargets.has(sessionId)) fixtureFailure = error
+						} finally {
+							try { await child.send('Runtime.runIfWaitingForDebugger') } catch (error: unknown) { if (childTargets.has(sessionId)) fixtureFailure = error }
+						}
+					})()
+				}
+				const detached = (value: unknown) => {
+					if (typeof value !== 'object' || value === null || !('sessionId' in value) || typeof value.sessionId !== 'string') { fixtureFailure = new Error('Invalid Chrome iframe detachment'); return }
+					const child = childTargets.get(value.sessionId)?.connection
+					childTargets.delete(value.sessionId)
+					if (child !== undefined) clearFixtureTarget(child)
+				}
+				connection.on('Target.attachedToTarget', attached)
+				connection.on('Target.detachedFromTarget', detached)
+				frameFixtureCleanups.set(connection, () => { connection.off('Target.attachedToTarget', attached); connection.off('Target.detachedFromTarget', detached) })
+				await connection.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true, filter: [{ type: 'iframe', exclude: false }, { exclude: true }] })
+			}
 			if (routes.length === 0) { await disableInterception(connection); return }
 			if (!interceptedConnections.has(connection)) {
 				connection.on('Fetch.requestPaused', (value: unknown) => {
-					if (typeof value !== 'object' || value === null || !('requestId' in value) || typeof value.requestId !== 'string') { routeFailure = new Error('Invalid Chrome intercepted request'); return }
+					if (typeof value !== 'object' || value === null || !('requestId' in value) || typeof value.requestId !== 'string') { fixtureFailure = new Error('Invalid Chrome intercepted request'); return }
 					const request = 'request' in value ? value.request : undefined
 					const requestUrl = typeof request === 'object' && request !== null && 'url' in request ? request.url : undefined
 					const prepared = prepareDocumentResponse(routes, requestUrl)
 					const response = prepared === undefined ? connection.send('Fetch.continueRequest', { requestId: value.requestId }) : connection.send('Fetch.fulfillRequest', { requestId: value.requestId, responseCode: prepared.statusCode, responseHeaders: prepared.headers, body: prepared.bodyBase64 })
-					void response.catch((error: unknown) => { routeFailure = error })
+					void response.catch((error: unknown) => { fixtureFailure = error })
 				})
 				interceptedConnections.add(connection)
 			}
 			await connection.send('Fetch.enable', { patterns: routes.map(({ url }) => ({ urlPattern: url, requestStage: 'Request' })) })
 			activeInterceptions.add(connection)
 		}
-		const checkRoutes = () => { if (routeFailure !== undefined) throw new Error('Chrome document interception failed', { cause: routeFailure }) }
+		const checkRoutes = () => { if (fixtureFailure !== undefined) throw new Error('Chrome fixture setup failed', { cause: fixtureFailure }) }
 		const wrapPage = async (id: string, url: string): Promise<ViewportDriverPage> => {
 			let connection = connections.get(id)
 			if (connection === undefined) { connection = await connectTarget(chrome.browserDebugPort, id); connections.set(id, connection) }
@@ -582,7 +627,7 @@ export async function launchChromeBrowserSession(extensionDirectory?: string): P
 				evaluate: async <T = unknown>(expression: string, timeoutMs?: number) => { checkRoutes(); return parseBrowserEvaluationValue<T>(await bounded(active.evaluate<unknown>(browserEvaluationExpression(expression)), 'Chrome evaluation', timeoutMs)) },
 				navigate: async (nextUrl, wait = 'complete') => {
 					checkRoutes()
-					await prepareFixtures(active)
+					await prepareFixtures(active, active)
 					const token = crypto.randomUUID()
 					await bounded(active.evaluate(`globalThis.__interceptorTestNavigationToken = ${ JSON.stringify(token) }`), 'Chrome navigation sentinel')
 					await bounded(active.send('Page.navigate', { url: nextUrl }), 'Chrome navigation')
@@ -590,7 +635,7 @@ export async function launchChromeBrowserSession(extensionDirectory?: string): P
 				},
 				reload: async () => {
 					checkRoutes()
-					await prepareFixtures(active)
+					await prepareFixtures(active, active)
 					const token = crypto.randomUUID()
 					await bounded(active.evaluate(`globalThis.__interceptorTestNavigationToken = ${ JSON.stringify(token) }`), 'Chrome navigation sentinel')
 					await bounded(active.send('Page.reload'), 'Chrome reload')
@@ -600,7 +645,9 @@ export async function launchChromeBrowserSession(extensionDirectory?: string): P
 				captureScreenshot: async () => (await active.send<{ data: string }>('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, fromSurface: true })).data,
 				close: async () => {
 					if ((await waitForBrowserTargets(chrome.browserDebugPort)).some((target) => target.id === id)) await closeTarget(chrome.browserConnection, id)
-					active.close(); connections.delete(id); appliedPreloads.delete(active); interceptedConnections.delete(active); activeInterceptions.delete(active)
+					for (const [sessionId, child] of childTargets) if (child.root === active) { childTargets.delete(sessionId); clearFixtureTarget(child.connection) }
+					clearFixtureTarget(active)
+					active.close(); connections.delete(id)
 				},
 			}
 		}
@@ -616,6 +663,6 @@ export async function launchChromeBrowserSession(extensionDirectory?: string): P
 			for (const origin of new Set(value.map(({ url }) => new URL(url).origin))) for (const name of ['local-network-access', 'loopback-network']) await chrome.browserConnection.send('Browser.setPermission', { permission: { name }, setting: 'granted', origin })
 			routes = value
 			if (routes.length === 0) for (const connection of activeInterceptions) await disableInterception(connection)
-		}, close: async () => { for (const connection of connections.values()) connection.close(); await chrome.close() } })
+		}, close: async () => { for (const child of childTargets.values()) clearFixtureTarget(child.connection); childTargets.clear(); for (const connection of connections.values()) { clearFixtureTarget(connection); connection.close() }; await chrome.close() } })
 	} catch (error: unknown) { await chrome.close(); throw error }
 }

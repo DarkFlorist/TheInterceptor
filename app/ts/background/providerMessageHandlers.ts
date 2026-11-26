@@ -16,7 +16,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { refreshPendingGnosisSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
-import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
@@ -25,10 +25,15 @@ import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
+import { NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY } from '../../shared/ts/nativeGnosisSafeAppsSignerProtocol.js'
+import { isNativeGnosisSafeAppsSignerPort, takeNativeGnosisSafeAppsSignerReply } from './nativeGnosisSafeAppsSigner.js'
+import { notifyNativeGnosisSafeAppsSessionConnections } from './nativeGnosisSafeAppsSessions.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
+	// A reload can leave the old owner token alive briefly; its child may no longer belong to the current host session.
+	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeGnosisSafeAppsSigner === true && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
@@ -201,6 +206,7 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 
 export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
+	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeGnosisSafeAppsSigner === true && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
@@ -210,7 +216,9 @@ export async function walletSwitchEthereumChainReply(simulationServicesOwner: Si
 
 export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
-	const isTopFrame = isTopFramePort(port)
+	const nativeSigner = isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)
+	const isTopFrame = isTopFramePort(port) || nativeSigner
+	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeGnosisSafeAppsSigner === true && !nativeSigner) return await getConnectedToSignerResult()
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
@@ -244,7 +252,9 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwner.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()
 		}
+		if (nativeSigner && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return await getConnectedToSignerResult()
 		confirmSignerState(tabConnection, signerProviderGeneration)
+		if (nativeSigner) notifyNativeGnosisSafeAppsSessionConnections(websiteTabConnections)
 		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
@@ -279,12 +289,16 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 
 export async function signerReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const signerReply = SignerReply.parse(request)
-	const params = signerReply.params[0]
+	const originalParams = signerReply.params[0]
 	const doNotReply = { type: 'doNotReply' as const }
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+		const native = originalParams.forwardRequest.method === NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY ? await takeNativeGnosisSafeAppsSignerReply(websiteTabConnections, port, originalParams) : undefined
+		if (originalParams.forwardRequest.method === NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY && native === undefined) return doNotReply
+		const params = native === undefined ? originalParams : { ...native.reply, forwardRequest: { ...native.forward, requestId: native.uniqueRequestIdentifier.requestId } }
+		const complete = native === undefined ? doNotReply : { type: 'result' as const, method: 'signer_reply' as const, result: '0x' }
 		if (params.forwardRequest.method === 'wallet_watchAsset') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
@@ -300,15 +314,15 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			return doNotReply
 		}
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
-		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }
+		const uniqueRequestIdentifier = native?.uniqueRequestIdentifier ?? { requestId: params.forwardRequest.requestId, requestSocket }
 		const tabConnection = websiteTabConnections.get(socket.tabId)
 		// Signing is routed back through the frame that originated the request, which may be a child frame. Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port; the inpage bridge converts a provider-generation change into a terminal disconnected error.
-		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
+		if (native === undefined && (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
-			|| requestSocket.connectionName !== socket.connectionName) {
+			|| requestSocket.connectionName !== socket.connectionName)) {
 			await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
-			return doNotReply
+			return complete
 		}
 		switch(params.forwardRequest.method) {
 			case 'personal_sign':
@@ -332,17 +346,21 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}
-					return doNotReply
+					return complete
 				}
 				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 					await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
 					await updateConfirmTransactionView(ethereum, tokenPriceService)
-					return doNotReply
+					return complete
 				}
 				await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
-				return doNotReply
+				return complete
 			}
+		}
+		if (native !== undefined) {
+			replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_reply', uniqueRequestIdentifier, ...(params.success ? { result: params.reply } : { error: params.error }) })
+			return complete
 		}
 		if (params.success) return { type: 'result' as const, method: 'signer_reply' as const, result: params.reply }
 		return { type: 'result' as const, method: 'signer_reply' as const, error: params.error }

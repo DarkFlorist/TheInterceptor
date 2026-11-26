@@ -55,7 +55,13 @@ for (const simulationMode of [true, false]) test(`admitted Gnosis Safe requests 
 		if (admission.kind !== 'reply') throw new Error('Expected consent rejection')
 		assert.ok('error' in admission.reply)
 		assert.equal(admission.reply.error?.code, -32602)
+		assert.match(admission.reply.error?.message ?? '', /website permissions/)
 	}
+	await modules.setGnosisSafeAppsCompatibilityMode(false)
+	const disabled = await prepareGnosisSafeAppsRequest(guardedServices, connections, { method: 'safe_apps_request', interceptorRequest: true, usingInterceptorWithoutSigner: simulationMode, uniqueRequestIdentifier: { requestId: 2, requestSocket: socket }, params: [{ method: 'getSafeInfo' }] }, website, safeB, settings, !simulationMode)
+	assert.equal(disabled.kind, 'reply')
+	if (disabled.kind !== 'reply' || !('error' in disabled.reply)) throw new Error('Expected compatibility-setting refusal')
+	assert.match(disabled.reply.error?.message ?? '', /Enable Gnosis Safe Apps compatibility in Interceptor settings/)
 	assert.equal(metadataReads, 0)
 	assert.equal(blockReads.count, 0, 'denied requests must not query contract metadata')
 	const granted = { ...settings, websiteAccess: [{ website, access: true, addressAccess: [{ address: safeB.address, access: true }] }] }

@@ -36,9 +36,11 @@ test('native host validates launch URLs and preserves the original app path and 
 	assert.equal(host.pathname, '/html3/gnosisSafeAppsHostV3.html')
 	assert.equal(new URL(nativeGnosisSafeAppsHostUrl('moz-extension://test/', 123, appUrl, 2)).pathname, '/html/gnosisSafeAppsHost.html')
 	const launch = parseNativeGnosisSafeAppsLaunch(host.searchParams)
-	assert.equal(launch.sourceTabId, 123)
+	assert.equal(launch.hostTabId, 123)
+	assert.equal(host.searchParams.get('sourceTabId'), null)
+	assert.throws(() => parseNativeGnosisSafeAppsLaunch(new URLSearchParams({ sourceTabId: '123', appUrl })), 'old original-tab launch URLs must not create a new host session')
 	assert.equal(launch.appUrl.href, appUrl)
-	for (const tabId of ['', '-1', '1.2', 'NaN', '9007199254740992']) assert.throws(() => parseNativeGnosisSafeAppsLaunch(new URLSearchParams({ sourceTabId: tabId, appUrl })))
+	for (const tabId of ['', '-1', '1.2', 'NaN', '9007199254740992']) assert.throws(() => parseNativeGnosisSafeAppsLaunch(new URLSearchParams({ hostTabId: tabId, appUrl })))
 	for (const url of ['javascript:alert(1)', 'data:text/html,test', 'file:///app', 'https://user:password@example.org']) assert.throws(() => nativeGnosisSafeAppsHostUrl('moz-extension://test/', 1, url, 2))
 })
 
@@ -87,4 +89,9 @@ test('background context projection ignores cosmetic writes and non-local change
 	assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ websiteAccess: { oldValue: before, newValue: after } }, 'local'), [])
 	assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ simulationMode: { newValue: false } }, 'sync'), [])
 	assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ simulationMode: { newValue: false }, signingAddressPreferences: { newValue: {} } }, 'local'), ['simulationMode', 'signingAddressPreferences'])
+})
+
+
+test('same-value storage writes do not request an app reconnection', () => {
+	assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ simulationMode: { oldValue: false, newValue: false }, activeSigningSafeAddress: { oldValue: '0x1234', newValue: '0x1234' } }, 'local'), [])
 })

@@ -13,11 +13,12 @@ const firstPageScriptHash = createHash('sha256').update(firstPageScript).digest(
 const pageHtml = `<!doctype html><html><head><script>${ firstPageScript }</script></head><body>Interceptor provider injection check</body></html>`
 // Different sites force Chrome to exercise its cross-process child-frame injection path.
 const framePageHtml = `<!doctype html><script>
+const preloadAtFirstScript = globalThis.browserFixturePreloadedBeforeFrameScript === true;
 const start = () => {
 	if (!window.ethereum?.isInterceptor) { setTimeout(start, 10); return; }
 	Promise.all([ethereum.request({method:'eth_chainId'}), ethereum.request({method:'eth_accounts'})]).then(
-		([chainId, accounts]) => parent.postMessage({type:'frame-rpc-result',chainId,accounts}, '*'),
-		error => parent.postMessage({type:'frame-rpc-result',error:String(error)}, '*')
+		([chainId, accounts]) => parent.postMessage({type:'frame-rpc-result',chainId,accounts,preloadAtFirstScript}, '*'),
+		error => parent.postMessage({type:'frame-rpc-result',error:String(error),preloadAtFirstScript}, '*')
 	);
 }; start();
 </script>`
@@ -78,6 +79,7 @@ async function main() {
 		const session = await launchBrowserSession(selectedBrowser())
 		browserVersion = `${ session.browser }: ${ session.browserVersion }`
 		try {
+			await session.addPreloadScript('globalThis.browserFixturePreloadedBeforeFrameScript = true')
 			const settings = await session.openExtensionPage('html/settingsView.html')
 			try {
 				for (const enabled of [true, false]) {
@@ -92,9 +94,9 @@ async function main() {
 				try {
 					await frameParent.evaluate(`(() => {const frame=document.createElement('iframe');frame.src=${ JSON.stringify(childUrl) };document.documentElement.append(frame)})()`)
 					await waitForBrowserCondition(async () => await frameParent.evaluate('window.frameRpcResult !== undefined'), 'cross-site iframe provider RPC')
-					const result = await frameParent.evaluate<{ chainId?: string, accounts?: string[], error?: string }>('window.frameRpcResult')
-					if (result.error !== undefined || result.chainId !== '0x1' || result.accounts?.[0]?.toLowerCase() !== account) throw new Error(`Cross-site iframe RPC failed: ${ JSON.stringify(result) }`)
-					console.warn(`${ session.browser } cross-site iframe account and chain reads passed`)
+					const result = await frameParent.evaluate<{ chainId?: string, accounts?: string[], error?: string, preloadAtFirstScript?: boolean }>('window.frameRpcResult')
+					if (result.error !== undefined || result.chainId !== '0x1' || result.accounts?.[0]?.toLowerCase() !== account || result.preloadAtFirstScript !== true) throw new Error(`Cross-site iframe RPC failed: ${ JSON.stringify(result) }`)
+					console.warn(`${ session.browser } cross-site iframe preload, account and chain reads passed`)
 				} finally { await frameParent.close() }
 			} finally { await settings.close() }
 			// The MV2 background registers its webNavigation injector during startup, so wait until a page is injected at all before measuring.
