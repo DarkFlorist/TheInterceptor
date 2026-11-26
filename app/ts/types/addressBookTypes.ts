@@ -120,8 +120,8 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	...protocolAddressBookEntryOptionalFields,
 }))
 
-export type SafeEntry = funtypes.Static<typeof SafeEntry>
-export const SafeEntry = funtypes.ReadonlyObject({
+export type GnosisSafeEntry = funtypes.Static<typeof GnosisSafeEntry>
+export const GnosisSafeEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('safe'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -140,17 +140,17 @@ export const SafeEntry = funtypes.ReadonlyObject({
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155' | 'safe'
 
-export type AddressBookEntry = ContactEntry | Erc20TokenEntry | Erc721Entry | Erc1155Entry | ContractEntry | SafeEntry
+export type AddressBookEntry = ContactEntry | Erc20TokenEntry | Erc721Entry | Erc1155Entry | ContractEntry | GnosisSafeEntry
 export const AddressBookEntry: funtypes.Runtype<AddressBookEntry> = funtypes.Union(
 	ContactEntry,
 	Erc20TokenEntry,
 	Erc721Entry,
 	Erc1155Entry,
 	ContractEntry,
-	SafeEntry,
+	GnosisSafeEntry,
 )
 
-export function getSafeSignerAddresses(entry: SafeEntry) {
+export function getGnosisSafeSignerAddresses(entry: GnosisSafeEntry) {
 	return Array.from(new Set([
 		...(entry.safeSignerAddresses ?? []),
 		...(entry.safeSimulationSignerAddress === undefined ? [] : [entry.safeSimulationSignerAddress]),

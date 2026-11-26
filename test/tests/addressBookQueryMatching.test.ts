@@ -24,7 +24,7 @@ describe('AddressBook query matching', () => {
 		), false)
 	})
 
-	test('uses Gnosis Safe terminology for the internal Safe filter key', () => {
+	test('uses Gnosis Safe terminology for the internal Gnosis Safe filter key', () => {
 		assert.equal(getAddressBookFilterDisplayName('My Safes'), 'My Gnosis Safes')
 		assert.equal(getAddressBookFilterDisplayName('My Contacts'), 'My Contacts')
 	})

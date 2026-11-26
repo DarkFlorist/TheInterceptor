@@ -1,8 +1,8 @@
 import { getUnsimulatedGasLimitEdit, isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
-import { SafeMessage } from '../../safe/safeMessage.js'
-import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
+import { GnosisSafeMessage } from '../../gnosisSafe/gnosisSafeMessage.js'
+import { isGnosisSafeMessageCoSignRequest } from '../../gnosisSafe/gnosisSafeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
@@ -28,7 +28,7 @@ import { createPendingRequestInstanceId, type PendingTransactionOrSignableMessag
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
-import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
+import type { GnosisSafeSignerErrorDetails, GnosisSafeTransactionRequestContext } from '../../types/gnosisSafeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
 import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
@@ -44,13 +44,13 @@ import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.j
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 import { identifyAddress, identifyAddressWith } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
-import { prepareSafeTransactionConfirmation, type SafeTransactionConfirmationPreparation } from '../safeTransactionConfirmation.js'
-import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
-import { createSafeOffChainMessageSnapshot, persistSafeConfirmationRefresh, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
-import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPayment } from '../../safe/safePendingFlow.js'
-import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
+import { prepareGnosisSafeTransactionConfirmation, type GnosisSafeTransactionConfirmationPreparation } from '../gnosisSafeTransactionConfirmation.js'
+import { createGnosisSafeMessageCoSignSnapshot, getPendingGnosisSafeSignerAddress, getGnosisSafeSignerMismatchApprovalStatus, isExpectedGnosisSafeMessageCoSignSnapshotFailure, isGnosisSafeMessageAccountMismatchFailure, isGnosisSafeSignerSelectionFailure, resolveGnosisSafeConfirmation, GNOSIS_SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedGnosisSafeSignerSelection } from '../gnosisSafeConfirmationResolver.js'
+import { createGnosisSafeOffChainMessageSnapshot, persistGnosisSafeConfirmationRefresh, refreshAndPersistGnosisSafeSignerSelection } from '../gnosisSafeSignerSelectionRefresh.js'
+import { getCreatedGnosisSafeProposal, getGnosisSafePendingFlow, getGnosisSafeTransactionFlowGasPayment } from '../../gnosisSafe/gnosisSafePendingFlow.js'
+import { persistUnsignedGnosisSafeTransaction, resolveGnosisSafeSignerReply } from '../gnosisSafeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
-import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
+import { createGnosisSafeSignerErrorStatus } from '../gnosisSafeSignerErrors.js'
 import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
 import { getReviewedResultId } from '../reviewedResult.js'
 import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
@@ -67,7 +67,7 @@ const SIMULATION_MODE_ENABLED_AFTER_REQUEST: PendingTransactionOrSignableMessage
 }
 
 // Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
-async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+async function showStoredGnosisSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
 }
@@ -81,7 +81,7 @@ async function showSimulationStackChange(ethereum: EthereumClientService, tokenP
 			return
 		}
 		case 'safeProposalStored': {
-			await showStoredSafeProposal(ethereum, tokenPriceService)
+			await showStoredGnosisSafeProposal(ethereum, tokenPriceService)
 			return
 		}
 		default: assertNever(simulationStack)
@@ -131,12 +131,12 @@ async function removeConfirmationOfRejectedRequest(ethereum: EthereumClientServi
 	await updateViewAfterPendingRequestLeftQueue(ethereum, tokenPriceService, rejectedRequest, 'unchanged')
 }
 
-async function refreshDirectSafeExecutionSimulation(
+async function refreshDirectGnosisSafeExecutionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	pending: PendingTransactionOrSignableMessage,
 ): Promise<PendingTransactionOrSignableMessage> {
-	const flow = getSafePendingFlow(pending)
+	const flow = getGnosisSafePendingFlow(pending)
 	if (flow?.kind !== 'directExecution') return pending
 	pending = flow.pending
 	const originalRequestParameters = pending.originalRequestParameters
@@ -150,7 +150,7 @@ async function refreshDirectSafeExecutionSimulation(
 		pending.created,
 		pending.transactionIdentifier,
 		false,
-		getSafeTransactionFlowGasPayment(flow.kind),
+		getGnosisSafeTransactionFlowGasPayment(flow.kind),
 	)
 	const popupVisualisation = await refreshConfirmTransactionSimulation(
 		ethereum,
@@ -166,7 +166,7 @@ async function refreshDirectSafeExecutionSimulation(
 		: { ...pending, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 }
 
-export async function refreshPendingSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
+export async function refreshPendingGnosisSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
 	const tabState = await getTabState(tabId)
 	const refreshedSelection = {
 		selectedSigner: getWalletSelectedAccount(tabState),
@@ -174,14 +174,14 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 	}
 	let pendingStateChanged = false
 	for (const pending of await getPendingTransactionsAndMessages()) {
-		const safeSignerAddress = getPendingSafeSignerAddress(pending)
+		const safeSignerAddress = getPendingGnosisSafeSignerAddress(pending)
 		if (pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId) continue
 		if (refreshedSelection.selectedSigner !== undefined) {
-			const refresh = await refreshAndPersistSafeSignerSelection(
+			const refresh = await refreshAndPersistGnosisSafeSignerSelection(
 				ethereum,
 				pending,
 				refreshedSelection.selectedSigner,
-				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
+				async (refreshedPending) => await refreshDirectGnosisSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
 			)
 			if (refresh.persisted) pendingStateChanged = true
 			if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
@@ -190,13 +190,13 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 			safeSignerAddress === undefined
 			|| pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId
 			|| pending.approvalStatus.status === 'WaitingForSigner'
-			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
+			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code !== GNOSIS_SAFE_SIGNER_SELECTION_ERROR_CODE
 		) continue
-		const signerMismatch = await getSafeSignerMismatchApprovalStatus(tabId, safeSignerAddress, refreshedSelection)
+		const signerMismatch = await getGnosisSafeSignerMismatchApprovalStatus(tabId, safeSignerAddress, refreshedSelection)
 		if (pending.approvalStatus.status === 'WaitingForUser' && signerMismatch === undefined) continue
 		await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 			if (current.approvalStatus.status === 'WaitingForSigner') return current
-			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return current
+			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== GNOSIS_SAFE_SIGNER_SELECTION_ERROR_CODE) return current
 			pendingStateChanged = true
 			return modifyObject(current, {
 				approvalStatus: signerMismatch ?? { status: 'WaitingForUser' as const },
@@ -403,16 +403,16 @@ async function resolveNoResponseForInstance(expected: PendingTransactionOrSignab
 export const resolvePendingTransactionOrMessage = (...args: Parameters<ReturnType<typeof beginPendingTransactionResolution>>) => beginPendingTransactionResolution()(...args)
 export function beginPendingTransactionResolution() {
 	const context = { simulationModeGuard: captureSimulationModeGuard() }
-	return async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) => await resolveWithContext(ethereum, tokenPriceService, websiteTabConnections, confirmation, context, refreshedSafeSignerSelection)
+	return async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedGnosisSafeSignerSelection) => await resolveWithContext(ethereum, tokenPriceService, websiteTabConnections, confirmation, context, refreshedSafeSignerSelection)
 }
 
-async function resolveWithContext(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, { simulationModeGuard }: { readonly simulationModeGuard: SimulationModeGuard }, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+async function resolveWithContext(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, { simulationModeGuard }: { readonly simulationModeGuard: SimulationModeGuard }, refreshedSafeSignerSelection?: RefreshedGnosisSafeSignerSelection) {
 	const pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	return await resolveReadPendingRequest(ethereum, tokenPriceService, websiteTabConnections, confirmation, pendingTransactionOrMessage, simulationModeGuard, refreshedSafeSignerSelection)
 }
 
-async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, pendingTransactionOrMessage: PendingTransactionOrSignableMessage, simulationModeGuard: SimulationModeGuard, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, pendingTransactionOrMessage: PendingTransactionOrSignableMessage, simulationModeGuard: SimulationModeGuard, refreshedSafeSignerSelection?: RefreshedGnosisSafeSignerSelection) {
 	// A signer reply names only the request id, so it resolves only a request that was forwarded to the signer, never a newer request under a reused id that the user has not approved.
 	if (confirmation.data.action === 'signerIncluded' && pendingTransactionOrMessage.approvalStatus.status !== 'WaitingForSigner') return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
@@ -426,12 +426,12 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
 		&& refreshedSafeSignerSelection.verificationError === undefined
 	) {
-		const directSafeExecution = getSafePendingFlow(pendingTransactionOrMessage)?.kind === 'directExecution'
-		const refresh = await refreshAndPersistSafeSignerSelection(
+		const directSafeExecution = getGnosisSafePendingFlow(pendingTransactionOrMessage)?.kind === 'directExecution'
+		const refresh = await refreshAndPersistGnosisSafeSignerSelection(
 			ethereum,
 			pendingTransactionOrMessage,
 			refreshedSafeSignerSelection.selectedSigner,
-			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
+			async (refreshedPending) => await refreshDirectGnosisSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
 		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
@@ -444,7 +444,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 		}
 		if (refresh.persistedPending !== undefined) pendingTransactionOrMessage = refresh.persistedPending
 	}
-	const safeResolution = await resolveSafeConfirmation(
+	const safeResolution = await resolveGnosisSafeConfirmation(
 		ethereum,
 		pendingTransactionOrMessage,
 		confirmation.data.action,
@@ -459,12 +459,12 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 	}
 	if (safeResolution.status === 'refreshed') {
 		pendingTransactionOrMessage = safeResolution.pending
-		await persistSafeConfirmationRefresh(pendingTransactionOrMessage)
+		await persistGnosisSafeConfirmationRefresh(pendingTransactionOrMessage)
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
 	}
 	pendingTransactionOrMessage = safeResolution.pending
-	if (safeResolution.pendingChanged && !await persistSafeConfirmationRefresh(pendingTransactionOrMessage)) return false
+	if (safeResolution.pendingChanged && !await persistGnosisSafeConfirmationRefresh(pendingTransactionOrMessage)) return false
 	if (confirmation.data.action === 'accept') {
 		// The Safe signer refresh and resolution above, or a concurrent result refresh, may have stored new content, so the accept is checked again while claiming the request.
 		const acceptedPending = await claimAcceptedRequest(confirmation.data, pendingTransactionOrMessage)
@@ -507,7 +507,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
-		const safeReply = await persistUnsignedSafeTransaction(ethereum, pendingTransactionOrMessage)
+		const safeReply = await persistUnsignedGnosisSafeTransaction(ethereum, pendingTransactionOrMessage)
 		if (safeReply.status === 'error') {
 			await updatePendingTransactionOrMessageInstance(pendingTransactionOrMessage, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
@@ -535,7 +535,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
-			const safeReply = await resolveSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply)
+			const safeReply = await resolveGnosisSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply)
 			if (safeReply.status === 'error') {
 				await updatePendingTransactionOrMessageInstance(pendingTransactionOrMessage, async (pending) => modifyObject(pending, {
 					approvalStatus: safeReply.approvalStatus,
@@ -880,14 +880,14 @@ async function createConfirmationForMessage(
 		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : getWalletSelectedAccount(signerTabState)
 		: activeAddress
 	if (simulationSignerAddress === undefined) {
-		return formRejectMessage(SAFE_SIGNER_SELECTION_ERROR_CODE, simulationMode
+		return formRejectMessage(GNOSIS_SAFE_SIGNER_SELECTION_ERROR_CODE, simulationMode
 			? 'Select a Gnosis Safe signer for simulation before signing a message.'
 			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
 	}
 	const messageIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
-		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
+		? GnosisSafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
 	const requestOrigin = getWebsiteSocketRequestOrigin(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website.websiteOrigin)
 	const signedMessageTransaction = {
 		website,
@@ -904,18 +904,18 @@ async function createConfirmationForMessage(
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(identifyAddressWith(ethereumClientService, undefined), signedMessageTransaction, ethereumClientService.getRpcEntry())
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
-		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
+		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createGnosisSafeMessageCoSignSnapshot | typeof createGnosisSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
-			let safeMessageValidationDetails: SafeSignerErrorDetails | undefined
-		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), confirmation.review))) {
+			let safeMessageValidationDetails: GnosisSafeSignerErrorDetails | undefined
+		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isGnosisSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), confirmation.review))) {
 				try {
 					safeMessageCoSignSnapshot = visualizedPersonalSignRequest.type === 'SafeTx'
-						? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
-						: await createSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, safeMessage?.review)
+						? await createGnosisSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
+						: await createGnosisSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, safeMessage?.review)
 				} catch (error) {
-					if (!isExpectedSafeMessageCoSignSnapshotFailure(error)) throw error
+					if (!isExpectedGnosisSafeMessageCoSignSnapshotFailure(error)) throw error
 					safeMessageValidationError = getErrorMessage(error) ?? 'The Gnosis Safe transaction could not be validated.'
-					safeMessageValidationDetails = isSafeMessageAccountMismatchFailure(error) ? error.safeSignerErrorDetails : undefined
+					safeMessageValidationDetails = isGnosisSafeMessageAccountMismatchFailure(error) ? error.safeSignerErrorDetails : undefined
 			}
 		}
 		await pendingConfirmationSemaphore.execute(async () => {
@@ -935,7 +935,7 @@ async function createConfirmationForMessage(
 				website,
 				approvalStatus: safeMessageValidationError === undefined
 					? { status: 'WaitingForUser' as const }
-					: createSafeSignerErrorStatus(safeMessageValidationError, SAFE_SIGNER_SELECTION_ERROR_CODE, safeMessageValidationDetails),
+					: createGnosisSafeSignerErrorStatus(safeMessageValidationError, GNOSIS_SAFE_SIGNER_SELECTION_ERROR_CODE, safeMessageValidationDetails),
 				signedMessageTransaction,
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}
@@ -960,8 +960,8 @@ async function createConfirmationForMessage(
 			}
 		})
 	} catch(e) {
-		if (isSafeSignerSelectionFailure(e)) {
-			return formRejectMessage(SAFE_SIGNER_SELECTION_ERROR_CODE, getErrorMessage(e) ?? 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
+		if (isGnosisSafeSignerSelectionFailure(e)) {
+			return formRejectMessage(GNOSIS_SAFE_SIGNER_SELECTION_ERROR_CODE, getErrorMessage(e) ?? 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
 		}
 		await reportUnexpectedError(e)
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'Failed to process message signing request. See Interceptor for error message')
@@ -974,7 +974,7 @@ async function createConfirmationForMessage(
 // Forms the transaction a confirmation's Gnosis Safe preparation decided on. A preparation failure stands in for the transaction, which is then not formed.
 async function formPreparedTransaction(
 	ethereumClientService: EthereumClientService,
-	safePreparation: SafeTransactionConfirmationPreparation,
+	safePreparation: GnosisSafeTransactionConfirmationPreparation,
 	website: Website,
 	created: Date,
 	transactionIdentifier: bigint,
@@ -1004,13 +1004,13 @@ async function formPreparedTransaction(
 }
 
 // A refresh of a Gnosis Safe proposal whose transaction did not form when its confirmation opened (getPendingTransactionRefresh): prepares the confirmation again as opening it did, which forms the transaction and creates the proposal from it, and returns the flow and approval status to store with it. Returns undefined, keeping the pending transaction as it is, if the request is no longer a proposal of a configured Gnosis Safe. Run it with runWithPendingConfirmationLock, holding the lock until the proposal is stored.
-export async function prepareUnformedSafeProposalAgain(
+export async function prepareUnformedGnosisSafeProposalAgain(
 	ethereumClientService: EthereumClientService,
 	pending: SimulatedPendingTransaction,
-	safeRequestContext: SafeTransactionRequestContext | undefined,
+	safeRequestContext: GnosisSafeTransactionRequestContext | undefined,
 ) {
 	const tabId = pending.uniqueRequestIdentifier.requestSocket.tabId
-	const safePreparation = await prepareSafeTransactionConfirmation(
+	const safePreparation = await prepareGnosisSafeTransactionConfirmation(
 		ethereumClientService,
 		{ kind: 'transaction', parameters: pending.originalRequestParameters, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
 		pending.simulationMode,
@@ -1038,7 +1038,7 @@ async function createConfirmationForTransaction(
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const walletSignerAddress = getWalletSelectedAccount(signerTabState)
-	const safePreparation = await prepareSafeTransactionConfirmation(
+	const safePreparation = await prepareGnosisSafeTransactionConfirmation(
 		ethereumClientService,
 		confirmation,
 		simulationMode,
@@ -1090,7 +1090,7 @@ async function createConfirmationForTransaction(
 				simulationMode,
 				request.uniqueRequestIdentifier,
 				transactionToSimulate,
-				getCreatedSafeProposal(safeFlow),
+				getCreatedGnosisSafeProposal(safeFlow),
 			))
 			if (transactionToSimulate.success) {
 				await updatePendingTransactionOrMessageInstance(pendingTransaction, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))

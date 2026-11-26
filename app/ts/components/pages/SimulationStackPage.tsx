@@ -15,7 +15,7 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ImportSimulationStack } from './ImportSimulationStack.js'
-import { ImportSafeStack } from './ImportSafeStack.js'
+import { ImportGnosisSafeStack } from './ImportGnosisSafeStack.js'
 import { NetworkErrors, NetworkWithoutRpcError } from '../subcomponents/NetworkErrors.js'
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
@@ -26,7 +26,7 @@ import type { EnrichedRichListElement } from '../../types/interceptor-reply-mess
 import { createUnexpectedErrorPopupMessage } from '../../utils/unexpectedErrorPopupMessage.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
+import { CopyGnosisSafeTransactionsButton } from '../subcomponents/CopyGnosisSafeTransactionsButton.js'
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
@@ -127,7 +127,7 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
 						<span>Import</span>
 					</button>
-					<CopySafeTransactionsButton
+					<CopyGnosisSafeTransactionsButton
 						class = 'btn btn--outline'
 						disabled = { !hasSafeTransactionsToExport }
 						disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
@@ -489,7 +489,7 @@ export function SimulationStackPage() {
 			: <></> }
 			{ modalState.value.page === 'importSafe' ?
 				<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
-					<ImportSafeStack
+					<ImportGnosisSafeStack
 						close = { () => { modalState.value = { page: 'noModal' } } }
 						safeStackInput = { modalState.value.state }
 					/>

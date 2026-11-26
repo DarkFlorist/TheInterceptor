@@ -6,7 +6,7 @@ import { SignedMessageTransaction, type PreSimulationTransaction, type Simulatio
 import { getSignedMessageActiveAddress } from '../../app/ts/background/windows/personalSign.js'
 
 describe('simulation stack rows', () => {
-	test('loads messages persisted before active Safe addresses were stored separately', () => {
+	test('loads messages persisted before active Gnosis Safe addresses were stored separately', () => {
 		const serializedMessage = SignedMessageTransaction.serialize({
 			website: { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined },
 			created: new Date('2024-01-01T00:00:00.000Z'),

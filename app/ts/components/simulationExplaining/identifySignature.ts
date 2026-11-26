@@ -32,7 +32,7 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			simulationAction: 'Simulate Gnosis Safe message',
 			signingAction: 'Sign Gnosis Safe message',
 		}
-		case 'SafeMessage': return { title: 'Safe message signing request', rejectAction: 'Reject Safe message', simulationAction: 'Simulate Safe message', signingAction: 'Sign Safe message' }
+		case 'SafeMessage': return { title: 'Gnosis Safe message signing request', rejectAction: 'Reject Gnosis Safe message', simulationAction: 'Simulate Gnosis Safe message', signingAction: 'Sign Gnosis Safe message' }
 		case 'EIP712': {
 			const { name: domainName } = data.message.domain
 			const name = domainName?.type === 'string' ? `${ domainName.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'

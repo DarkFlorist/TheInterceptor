@@ -227,7 +227,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		assert.equal(remaining.signedTransaction.nonce, 0n)
 	})
 
-	test('keeps later same-sender nonces when removing a Gnosis Safe execution, which raised no nonce of the Safe', async () => {
+	test('keeps later same-sender nonces when removing a Gnosis Safe execution, which raised no nonce of the Gnosis Safe', async () => {
 		const modules = await loadModules()
 		browserMock.reset()
 		await modules.updateInterceptorTransactionStack(() => ({

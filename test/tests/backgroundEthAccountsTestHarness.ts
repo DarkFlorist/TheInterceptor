@@ -5,7 +5,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
-import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
+import { createGnosisSafeTx, gnosisSafeTxToTypedDataJson } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
@@ -174,7 +174,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 }
 
 export async function loadModules() {
-	const safeApps = await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js')
+	const safeApps = await import('../../app/ts/background/gnosisSafeAppsCompatibilityCoordinator.js')
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
@@ -182,10 +182,10 @@ export async function loadModules() {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...safeApps,
-		initializeSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
-			const feature = safeApps.createSafeAppsCompatibilityFeature(connections)
+		initializeGnosisSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
+			const feature = safeApps.createGnosisSafeAppsCompatibilityFeature(connections)
 			Object.assign(connections, { lifecycle: feature.lifecycle })
-			return await safeApps.initializeSafeAppsCompatibility(feature)
+			return await safeApps.initializeGnosisSafeAppsCompatibility(feature)
 		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
@@ -296,7 +296,7 @@ export function createEthereumWithGetBlockCounter(
 	}
 }
 
-export { addressString, createSafeTx, EthereumJsonRpcRequest, safeTxToTypedDataJson }
+export { addressString, createGnosisSafeTx, EthereumJsonRpcRequest, gnosisSafeTxToTypedDataJson }
 
 export function getWalletSwitchRequestId(messages: readonly PortMessage[], index = -1) {
 	const id = messages.filter(message => message.method === 'request_signer_to_wallet_switchEthereumChain').at(index)?.walletSwitchRequestId

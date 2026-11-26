@@ -13,12 +13,12 @@ const sampleAddressBookEntry = {
 	entrySource: 'User',
 } as const
 const addNewAddressSource = await Bun.file(new URL('../../app/ts/components/pages/AddNewAddress.tsx', import.meta.url)).text()
-const safeContractStateSource = await Bun.file(new URL('../../app/ts/background/safeContractState.ts', import.meta.url)).text()
+const safeContractStateSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeContractState.ts', import.meta.url)).text()
 const serviceLifecycleSource = await Bun.file(new URL('../../app/ts/simulation/serviceLifecycle.ts', import.meta.url)).text()
 const metadataUtilsSource = await Bun.file(new URL('../../app/ts/background/metadataUtils.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const replyMessagesSource = await Bun.file(new URL('../../app/ts/types/interceptor-reply-messages.ts', import.meta.url)).text()
-const screenshotScriptSource = await Bun.file(new URL('../../scripts/capture-safe-ui-screenshots.mts', import.meta.url)).text()
+const screenshotScriptSource = await Bun.file(new URL('../../scripts/capture-gnosis-safe-ui-screenshots.mts', import.meta.url)).text()
 
 describe('add new address save flow', () => {
 	test('waits for the save message to finish before closing the popup', async () => {
@@ -49,17 +49,17 @@ describe('add new address save flow', () => {
 		assert.equal(closed, false)
 	})
 
-	test('shows backend Safe validation errors without closing the popup', async () => {
+	test('shows backend Gnosis Safe validation errors without closing the popup', async () => {
 		let closed = false
 		const message = await saveAddressBookEntry(sampleAddressBookEntry, () => {
 			closed = true
 		}, async () => ({
 			ok: false,
-			message: 'The configured address is not an owner of this Safe.',
+			message: 'The configured address is not an owner of this Gnosis Safe.',
 		}))
 
 		assert.equal(closed, false)
-		assert.equal(message, 'The configured address is not an owner of this Safe.')
+		assert.equal(message, 'The configured address is not an owner of this Gnosis Safe.')
 	})
 
 	test('does not close when the background validation reply is missing', async () => {
@@ -82,13 +82,13 @@ describe('add new address save flow', () => {
 			async (address) => { switchedTo = address },
 			async () => ({
 				ok: false,
-				message: 'The configured address is not an owner of this Safe.',
+				message: 'The configured address is not an owner of this Gnosis Safe.',
 			}),
 		)
 
 		assert.equal(closed, false)
 		assert.equal(switchedTo, undefined)
-		assert.equal(message, 'The configured address is not an owner of this Safe.')
+		assert.equal(message, 'The configured address is not an owner of this Gnosis Safe.')
 	})
 
 	test('keeps the modal open until switching finishes', async () => {
@@ -200,7 +200,7 @@ describe('add new address save flow', () => {
 		assert.deepEqual(getAddressIdentificationKey(state), {
 			address: 0xde709f2102306220921060314715629080e2fb77n,
 			chainId: 1n,
-			requestSafeContractState: false,
+			requestGnosisSafeContractState: false,
 			windowStateId: 'uppercase-address',
 		})
 	})
@@ -314,50 +314,50 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
 		assert.equal((addNewAddressSource.match(/class = 'address-editor-disclosure-chevron'/g) ?? []).length, 2)
 		assert.match(addNewAddressSource, /class = 'address-editor-disclosure-chevron' aria-hidden = 'true'><ChevronIcon \/>/)
-		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe owners/)
-		assert.match(addNewAddressSource, /class = 'safe-signer-owner-list' role = 'radiogroup' aria-label = 'Safe signer in simulation'/)
-		assert.match(addNewAddressSource, /<p>Safe signer in simulation<\/p>/)
+		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Gnosis Safe owners/)
+		assert.match(addNewAddressSource, /class = 'gnosis-safe-signer-owner-list' role = 'radiogroup' aria-label = 'Gnosis Safe signer in simulation'/)
+		assert.match(addNewAddressSource, /<p>Gnosis Safe signer in simulation<\/p>/)
 		assert.match(addNewAddressSource, /name = 'safe-simulation-signer'/)
 		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ addressBookEntry \}/)
-		assert.match(addNewAddressSource, /safeSimulationSignerAddressBookEntries\.value = safeContractState\.ownerAddressBookEntries/)
-		assert.match(addNewAddressSource, /onChange = \{ \(\) => \{ void setSafeSignerAddress\(safeSignerAddress\) \} \}/)
+		assert.match(addNewAddressSource, /safeSimulationSignerAddressBookEntries\.value = gnosisSafeContractState\.ownerAddressBookEntries/)
+		assert.match(addNewAddressSource, /onChange = \{ \(\) => \{ void setGnosisSafeSignerAddress\(safeSignerAddress\) \} \}/)
 		assert.match(addNewAddressSource, /nonInteractive = \{ true \}/)
 		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
-		assert.doesNotMatch(addNewAddressSource, /Choose the owner used when simulating transactions|Enter a deployed Safe address|Choose how Interceptor uses this address/)
+		assert.doesNotMatch(addNewAddressSource, /Choose the owner used when simulating transactions|Enter a deployed Gnosis Safe address|Choose how Interceptor uses this address/)
 		assert.match(addNewAddressSource, /text = 'Refresh owners'/)
 		assert.match(addNewAddressSource, /safeSignerRefreshGeneration\.value \+= 1/)
-		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)
+		assert.match(addNewAddressSource, /gnosisSafeContractState\.owners\.map\(checksummedAddress\)/)
 		assert.match(addNewAddressSource, /address\.toLowerCase\(\) === currentSafeSignerAddress\.toLowerCase\(\)/)
 	})
 
 	test('shows pending feedback while an address-book modification is saved', () => {
 		assert.match(addNewAddressSource, /state = \{ saveEntryState\.value\.state \}/)
-		assert.match(addNewAddressSource, /'Validating Safe\.\.\.'/)
+		assert.match(addNewAddressSource, /'Validating Gnosis Safe\.\.\.'/)
 		assert.match(addNewAddressSource, /await waitForSaveEntry\(async \(\) => \{[\s\S]*?saveAddressBookEntryAndSwitch/)
 		assert.match(addNewAddressSource, /'Modifying and switching\.\.\.'/)
 		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| !isCurrentSafeLookupComplete\.value \|\| isAddressBookSubmissionDisabled/)
 		assert.match(addNewAddressSource, /lastSuccessfulSafeIdentification/)
 	})
 
-	test('preserves known Safe owners on lookup failure and clears them when the target changes', () => {
-		assert.match(addNewAddressSource, /const setSafeContractStateError = \(message: string\)/)
-		assert.match(addNewAddressSource, /if \(!safeContractState\.ok\) \{[\s\S]*?setSafeContractStateError\(safeContractState\.message\)/)
+	test('preserves known Gnosis Safe owners on lookup failure and clears them when the target changes', () => {
+		assert.match(addNewAddressSource, /const setGnosisSafeContractStateError = \(message: string\)/)
+		assert.match(addNewAddressSource, /if \(!gnosisSafeContractState\.ok\) \{[\s\S]*?setGnosisSafeContractStateError\(gnosisSafeContractState\.message\)/)
 		assert.match(addNewAddressSource, /const setAddress = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSimulationSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
 		assert.match(addNewAddressSource, /const setChain = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSimulationSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
 		assert.match(safeContractStateSource, /chainId === 'AllChains'[\s\S]*?'Gnosis Safe wallets must use a specific chain to load their signers\.'/)
-		assert.match(safeContractStateSource, /\(dependencies\.getRpcEntry \?\? getSafeContractRpcEntry\)\(ethereum, chainId\)/)
+		assert.match(safeContractStateSource, /\(dependencies\.getRpcEntry \?\? getGnosisSafeContractRpcEntry\)\(ethereum, chainId\)/)
 		assert.match(safeContractStateSource, /createEthereumClientService\(/)
 		assert.doesNotMatch(safeContractStateSource, /new EthereumClientService|new EthereumJSONRpcRequestHandler/)
 		assert.match(serviceLifecycleSource, /export function createEthereumClientService[\s\S]*?new EthereumClientService\([\s\S]*?new EthereumJSONRpcRequestHandler\(rpcNetwork\.httpsRpc/)
 		assert.doesNotMatch(safeContractStateSource, /Switch Interceptor to chain/)
-		assert.match(addNewAddressSource, /requestPopupSafeContractState/)
+		assert.match(addNewAddressSource, /requestPopupGnosisSafeContractState/)
 		assert.doesNotMatch(addNewAddressSource, /includeSafeContractState/)
 	})
 
-	test('keeps Safe contract retrieval separate from generic address identification', () => {
+	test('keeps Gnosis Safe contract retrieval separate from generic address identification', () => {
 		assert.match(metadataUtilsSource, /async function identifyAddressWithoutNode/)
 		assert.doesNotMatch(metadataUtilsSource, /export (?:async function|\{[^}]*)(?:identifyAddressWithoutNode|identifyAddressFromLocalMetadata)/)
-		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
+		assert.doesNotMatch(popupMessageHandlersSource, /gnosisSafeContractState|includeSafeContractState/)
 		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
 		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)
 		assert.match(safeContractStateSource, /getUserAddressBookEntriesForChainIdMorePreciseFirst/)
@@ -366,12 +366,12 @@ describe('add new address save flow', () => {
 		assert.match(screenshotScriptSource, /message\?\.method === 'popup_requestSafeContractState'\) return await new Promise/)
 	})
 
-	test('requires current Safe owners in the editor and persists the authoritative snapshot', () => {
+	test('requires current Gnosis Safe owners in the editor and persists the authoritative snapshot', () => {
 		assert.match(addNewAddressSource, /parsedSafeSignerAddresses\.length === 0[\s\S]*?Gnosis Safe owner metadata is unavailable/)
 		assert.match(addNewAddressSource, /!isCurrentSafeLookupComplete\.value \? <><\/> : <ErrorText/)
 		assert.match(addNewAddressSource, /areAddressIdentificationKeysEqual\(lastSuccessfulSafeIdentification\.value, currentIdentification\)/)
 		assert.match(popupMessageHandlersSource, /safeSignerAddresses: \[\.\.\.safeState\.owners\]/)
-		assert.match(popupMessageHandlersSource, /validateSafeOwnerIsEoa\(ethereum, entry\.data\.address, safeSimulationSignerAddress\)/)
-		assert.doesNotMatch(popupMessageHandlersSource, /Promise\.all\(getSafeSignerAddresses\(entry\.data\)/)
+		assert.match(popupMessageHandlersSource, /validateGnosisSafeOwnerIsEoa\(ethereum, entry\.data\.address, safeSimulationSignerAddress\)/)
+		assert.doesNotMatch(popupMessageHandlersSource, /Promise\.all\(getGnosisSafeSignerAddresses\(entry\.data\)/)
 	})
 })

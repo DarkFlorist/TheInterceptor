@@ -4,7 +4,7 @@ import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue,
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { getPopupVisualisationState, updateInterceptorTransactionStack, updatePopupVisualisationWithCallBack, updateTransactionState } from '../../app/ts/background/storageVariables.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
+import { GnosisSafeTransactionStacks } from '../../app/ts/types/gnosisSafeTypes.js'
 import { updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -226,12 +226,12 @@ describe('large state store helpers', () => {
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
 	})
 
-	test('stores transaction and Safe stacks in one IndexedDB batch', async () => {
+	test('stores transaction and Gnosis Safe stacks in one IndexedDB batch', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment()
 
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, stack),
-			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, []),
+			prepareLargeStateWrite('safeTransactionStacks', GnosisSafeTransactionStacks, []),
 		])
 
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
@@ -272,7 +272,7 @@ describe('large state store helpers', () => {
 
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, stack),
-			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, []),
+			prepareLargeStateWrite('safeTransactionStacks', GnosisSafeTransactionStacks, []),
 		])
 
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)

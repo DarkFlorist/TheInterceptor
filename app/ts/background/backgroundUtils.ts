@@ -209,7 +209,7 @@ export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'po
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
-export async function requestPopupSafeContractState(data: PopupRequestByMethod<'popup_requestSafeContractState'>['data']) {
+export async function requestPopupGnosisSafeContractState(data: PopupRequestByMethod<'popup_requestSafeContractState'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSafeContractState', data })
 	return reply?.method === 'popup_requestSafeContractState' ? reply : undefined
 }

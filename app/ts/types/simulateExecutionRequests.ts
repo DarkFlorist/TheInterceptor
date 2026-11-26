@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
+import { VisualizedPersonalSignRequestGnosisSafeTx } from './personal-message-definitions.js'
 import { EthereumQuantity } from './wire-types.js'
 
 export type SimulateGovernanceContractExecution = funtypes.Static<typeof SimulateGovernanceContractExecution>
@@ -12,6 +12,6 @@ export type SimulateGnosisSafeTransaction = funtypes.Static<typeof SimulateGnosi
 export const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateGnosisSafeTransaction'),
 	data: funtypes.ReadonlyObject({
-		gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx,
+		gnosisSafeMessage: VisualizedPersonalSignRequestGnosisSafeTx,
 	}),
 })

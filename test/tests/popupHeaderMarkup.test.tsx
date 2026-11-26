@@ -212,7 +212,7 @@ describe('popup header markup', () => {
 				approve: () => undefined,
 				approveButtonState: 'inactive',
 				confirmDisabled: false,
-				addToSafeStack: () => undefined,
+				addToGnosisSafeStack: () => undefined,
 				addToSafeStackButtonState: 'inactive',
 				addToSafeStackDisabled: false,
 			}), dom.document.body)
@@ -309,7 +309,7 @@ describe('popup header markup', () => {
 		dom.restore()
 	})
 
-	test('Safe signing account mismatches render named small-address details', async () => {
+	test('Gnosis Safe signing account mismatches render named small-address details', async () => {
 		const dom = installDomMock()
 		const pendingMessage: PopupPendingSignableMessage = {
 			type: 'SignableMessage',
@@ -346,15 +346,15 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		const details = findFirstByClass(dom.document.body, 'gnosis-safe-signer-error-details')
 		assert.notEqual(details, undefined)
 		assert.match(details?.textContent ?? '', /Signing accountReceiver/)
-		assert.match(details?.textContent ?? '', /Active SafeSender/)
-		assert.match(details?.textContent ?? '', /Safe ownersReceiver/)
+		assert.match(details?.textContent ?? '', /Active Gnosis SafeSender/)
+		assert.match(details?.textContent ?? '', /Gnosis Safe ownersReceiver/)
 		dom.restore()
 	})
 
-	test('Safe owner mismatches render the expected and wallet accounts without addresses in prose', async () => {
+	test('Gnosis Safe owner mismatches render the expected and wallet accounts without addresses in prose', async () => {
 		const dom = installDomMock()
 		const message = 'Gnosis Safe owner mismatch: this request expects a different owner. Select the expected owner in MetaMask, then retry.'
 		const pendingMessage: PopupPendingSignableMessage = {
@@ -385,7 +385,7 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		const details = findFirstByClass(dom.document.body, 'gnosis-safe-signer-error-details')
 		assert.match(details?.textContent ?? '', /Expected ownerSender/)
 		assert.match(details?.textContent ?? '', /Wallet accountReceiver/)
 		assert.doesNotMatch(message, /0x[0-9a-f]/iu)

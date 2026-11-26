@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
+import { getGnosisSafeAppsRequestCommand } from '../../app/ts/background/gnosisSafeAppsRequestPolicy.js'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown, stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
@@ -19,20 +19,20 @@ type FakeWindowOptions = {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 
-function sendSafeAppsCompatibility(sendBackgroundMessage: (data: unknown) => void, enabled: boolean) {
+function sendGnosisSafeAppsCompatibility(sendBackgroundMessage: (data: unknown) => void, enabled: boolean) {
 	sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled } })
 }
 
-function getSafeAppsMethod(request: InpageRequest) {
+function getGnosisSafeAppsMethod(request: InpageRequest) {
 	const safeRequest = request.params?.[0]
 	return isRecord(safeRequest) && typeof safeRequest.method === 'string' ? safeRequest.method : undefined
 }
 
-function replyToSafeAppsRequest(request: InpageRequest, sendBackgroundMessage: (data: unknown) => void, result: unknown) {
+function replyToGnosisSafeAppsRequest(request: InpageRequest, sendBackgroundMessage: (data: unknown) => void, result: unknown) {
 	sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'safe_apps_request', result })
 }
 
-function rejectSafeAppsRequest(request: InpageRequest, sendBackgroundMessage: (data: unknown) => void, message: string) {
+function rejectGnosisSafeAppsRequest(request: InpageRequest, sendBackgroundMessage: (data: unknown) => void, message: string) {
 	sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'safe_apps_request', error: { code: -32602, message } })
 }
 
@@ -336,7 +336,7 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
-	test('rejects unsafe or malformed Safe Apps messages before forwarding Ethereum requests', async () => {
+	test('rejects unsafe or malformed Gnosis Safe Apps messages before forwarding Ethereum requests', async () => {
 		const ethereumRequests: InpageRequest[] = []
 		let connected = false
 		const { fakeWindow } = createFakeWindow({
@@ -350,12 +350,12 @@ describe('inpage signer bridge', () => {
 						method: request.method,
 						result: { metamaskCompatibilityMode: false },
 					})
-					sendSafeAppsCompatibility(sendBackgroundMessage, true)
+					sendGnosisSafeAppsCompatibility(sendBackgroundMessage, true)
 					return true
 				}
 				if (request.method === 'safe_apps_request') {
-					const safeAppsMethod = getSafeAppsMethod(request)
-					rejectSafeAppsRequest(request, sendBackgroundMessage, safeAppsMethod === 'rpcCall' ? 'Unsupported Safe Apps RPC call.' : `Unsupported Safe Apps method: ${ safeAppsMethod }.`)
+					const safeAppsMethod = getGnosisSafeAppsMethod(request)
+					rejectGnosisSafeAppsRequest(request, sendBackgroundMessage, safeAppsMethod === 'rpcCall' ? 'Unsupported Gnosis Safe Apps RPC call.' : `Unsupported Gnosis Safe Apps method: ${ safeAppsMethod }.`)
 					return true
 				}
 				if (request.internal !== true) ethereumRequests.push(request)
@@ -385,21 +385,21 @@ describe('inpage signer bridge', () => {
 			fakeWindow.postMessage({ id: 'invalid-rpc-params', method: 'rpcCall', params: {}, env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
 			await waitFor(() => replies.length === 9)
 			assert.deepEqual(replies.sort((left, right) => String(left.id).localeCompare(String(right.id))), [
-				{ id: 'empty-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
-				{ id: 'invalid-env', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
-				{ id: 'invalid-method', success: false, error: 'Safe Apps method must be a string.', version: '9.1.0' },
-				{ id: 'invalid-method-and-env', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
-				{ id: 'invalid-rpc-params', success: false, error: 'Unsupported Safe Apps RPC call.', version: '9.1.0' },
-				{ id: 'invalid-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
-				{ id: 'missing-method', success: false, error: 'Safe Apps method must be a string.', version: '9.1.0' },
-				{ id: 'unknown-method', success: false, error: 'Unsupported Safe Apps method: notSafeApps.', version: '9.1.0' },
-				{ id: 'unsupported-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'empty-version', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'invalid-env', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'invalid-method', success: false, error: 'Gnosis Safe Apps method must be a string.', version: '9.1.0' },
+				{ id: 'invalid-method-and-env', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'invalid-rpc-params', success: false, error: 'Unsupported Gnosis Safe Apps RPC call.', version: '9.1.0' },
+				{ id: 'invalid-version', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'missing-method', success: false, error: 'Gnosis Safe Apps method must be a string.', version: '9.1.0' },
+				{ id: 'unknown-method', success: false, error: 'Unsupported Gnosis Safe Apps method: notSafeApps.', version: '9.1.0' },
+				{ id: 'unsupported-version', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
 			])
 			assert.deepEqual(ethereumRequests, [])
 		})
 	})
 
-	test('queues an early Safe Apps request until the enabled setting arrives', async () => {
+	test('queues an early Gnosis Safe Apps request until the enabled setting arrives', async () => {
 		const account = '0x1111111111111111111111111111111111111111'
 		const safeState = { version: '1.4.1', nonce: 7n, owners: [0x3333333333333333333333333333333333333333n, 0x4444444444444444444444444444444444444444n], threshold: 2n }
 		const ethereumRequests: InpageRequest[] = []
@@ -409,12 +409,12 @@ describe('inpage signer bridge', () => {
 				if (request.method === 'connected_to_signer') {
 					replyToConnection = () => {
 						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
-						sendSafeAppsCompatibility(sendBackgroundMessage, true)
+						sendGnosisSafeAppsCompatibility(sendBackgroundMessage, true)
 					}
 					return true
 				}
 				if (request.method === 'safe_apps_request') {
-					replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: account } })
+					replyToGnosisSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: account } })
 					return true
 				}
 				if (request.internal === true) return false
@@ -492,13 +492,13 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					publishCompatibility = (enabled) => sendSafeAppsCompatibility(sendBackgroundMessage, enabled)
+					publishCompatibility = (enabled) => sendGnosisSafeAppsCompatibility(sendBackgroundMessage, enabled)
 					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
 					return true
 				}
 				if (request.method !== 'safe_apps_request') return false
-				forwardedMethods.push(getSafeAppsMethod(request))
-				replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
+				forwardedMethods.push(getGnosisSafeAppsMethod(request))
+				replyToGnosisSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
 				return true
 			},
 		})
@@ -537,15 +537,15 @@ describe('inpage signer bridge', () => {
 			let forwarded = 0
 			const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					publishCompatibility = (enabled) => sendSafeAppsCompatibility(sendBackgroundMessage, enabled)
+					publishCompatibility = (enabled) => sendGnosisSafeAppsCompatibility(sendBackgroundMessage, enabled)
 					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
 					publishCompatibility(true)
 					return true
 				}
 				if (request.method !== 'safe_apps_request') return false
 				forwarded += 1
-				if (forwarded === 1) settleOldRequest = () => replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: 'old-safe' } })
-				else replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: 'current-safe' } })
+				if (forwarded === 1) settleOldRequest = () => replyToGnosisSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: 'old-safe' } })
+				else replyToGnosisSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: 'current-safe' } })
 				return true
 			} })
 			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-apps-inflight-discovery-${ settleWhileDisabled }`, async () => {
@@ -575,7 +575,7 @@ describe('inpage signer bridge', () => {
 	}
 
 	for (const rejected of [false, true]) {
-		test(`requests ordinary account access once for Safe discovery and ${ rejected ? 'returns rejection' : 'resumes discovery' }`, async () => {
+		test(`requests ordinary account access once for Gnosis Safe discovery and ${ rejected ? 'returns rejection' : 'resumes discovery' }`, async () => {
 			let accessRequests = 0
 			const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
@@ -591,13 +591,13 @@ describe('inpage signer bridge', () => {
 					accessRequests += 1
 					if (rejected) sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, error: { code: 4001, message: 'Connection rejected.' } })
 					else {
-						sendSafeAppsCompatibility(sendBackgroundMessage, true)
+						sendGnosisSafeAppsCompatibility(sendBackgroundMessage, true)
 						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: ['0x1111111111111111111111111111111111111111'] })
 					}
 					return true
 				}
 				if (request.method !== 'safe_apps_request') return false
-				replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
+				replyToGnosisSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
 				return true
 			} })
 			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-connect-${ rejected }`, async () => {
@@ -619,19 +619,19 @@ describe('inpage signer bridge', () => {
 		})
 	}
 
-	test('bounds early discovery and ignores signing until Safe Apps is enabled', async () => {
+	test('bounds early discovery and ignores signing until Gnosis Safe Apps is enabled', async () => {
 		let replyToConnection: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
 					replyToConnection = () => {
 						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
-						sendSafeAppsCompatibility(sendBackgroundMessage, true)
+						sendGnosisSafeAppsCompatibility(sendBackgroundMessage, true)
 					}
 					return true
 				}
 				if (request.method !== 'safe_apps_request') return false
-				rejectSafeAppsRequest(request, sendBackgroundMessage, 'Discovery fixture response.')
+				rejectGnosisSafeAppsRequest(request, sendBackgroundMessage, 'Discovery fixture response.')
 				return true
 			},
 		})
@@ -650,7 +650,7 @@ describe('inpage signer bridge', () => {
 			replyToConnection?.()
 			await waitFor(() => replies.length === 32)
 			assert.equal(replies.filter((reply) => reply.error === 'Discovery fixture response.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 0)
+			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Gnosis Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 0)
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(replies.length, 32)
 		})
@@ -682,11 +682,11 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => replies.length === 40)
 			assert.equal(new Set(replies.map((reply) => reply.id)).size, 40)
 			assert.equal(replies.filter((reply) => reply.error === 'Connection rejected.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
+			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Gnosis Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
 		})
 	})
 
-	test('drops an in-flight Safe Apps response when website approval is revoked', async () => {
+	test('drops an in-flight Gnosis Safe Apps response when website approval is revoked', async () => {
 		let pendingRpcRequest: InpageRequest | undefined
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
@@ -698,11 +698,11 @@ describe('inpage signer bridge', () => {
 						method: request.method,
 						result: { metamaskCompatibilityMode: false },
 					})
-					sendSafeAppsCompatibility(sendBackgroundMessageForRequest, true)
+					sendGnosisSafeAppsCompatibility(sendBackgroundMessageForRequest, true)
 					return true
 				}
 				if (request.method === 'safe_apps_request') {
-					replyToSafeAppsRequest(request, sendBackgroundMessageForRequest, { kind: 'ethereumRequest', method: 'eth_call', params: [], mapResult: 'passthrough' })
+					replyToGnosisSafeAppsRequest(request, sendBackgroundMessageForRequest, { kind: 'ethereumRequest', method: 'eth_call', params: [], mapResult: 'passthrough' })
 					return true
 				}
 				if (request.method === 'eth_call' && request.internal !== true) {
@@ -729,14 +729,14 @@ describe('inpage signer bridge', () => {
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			const rpcRequest = pendingRpcRequest
-			if (rpcRequest === undefined) throw new Error('Missing deferred Safe RPC request')
+			if (rpcRequest === undefined) throw new Error('Missing deferred Gnosis Safe RPC request')
 			sendBackgroundMessage({ interceptorApproved: true, requestId: rpcRequest.requestId, type: 'result', method: rpcRequest.method, result: '0x1234' })
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(responseCount, 0)
 		})
 	})
 
-	test('answers Safe Apps protocol requests only when experimental compatibility is enabled', async () => {
+	test('answers Gnosis Safe Apps protocol requests only when experimental compatibility is enabled', async () => {
 		const disabledEthereumRequests: InpageRequest[] = []
 		const disabledHarness = createFakeWindow({
 			handleRequest: (request) => {
@@ -771,7 +771,7 @@ describe('inpage signer bridge', () => {
 						method: request.method,
 						result: { metamaskCompatibilityMode: false },
 					})
-					sendSafeAppsCompatibility(sendBackgroundMessage, true)
+					sendGnosisSafeAppsCompatibility(sendBackgroundMessage, true)
 					return true
 				}
 				if (request.method === 'safe_apps_request') {
@@ -781,9 +781,9 @@ describe('inpage signer bridge', () => {
 						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0xsafehash' })
 						return true
 					}
-					void getSafeAppsRequestCommand(request.params?.[0], fakeWindow.location.origin, BigInt(account), rpcNetwork, async () => safeState).then(
-						(command) => replyToSafeAppsRequest(request, sendBackgroundMessage, command),
-						(error: unknown) => rejectSafeAppsRequest(request, sendBackgroundMessage, error instanceof Error ? error.message : 'Safe Apps request failed.'),
+					void getGnosisSafeAppsRequestCommand(request.params?.[0], fakeWindow.location.origin, BigInt(account), rpcNetwork, async () => safeState).then(
+						(command) => replyToGnosisSafeAppsRequest(request, sendBackgroundMessage, command),
+						(error: unknown) => rejectGnosisSafeAppsRequest(request, sendBackgroundMessage, error instanceof Error ? error.message : 'Gnosis Safe Apps request failed.'),
 					)
 					return true
 				}
@@ -863,18 +863,18 @@ describe('inpage signer bridge', () => {
 			const permissionParams = [{ requestAddressBook: {} }]
 			const requestPermissionsReply = await safeRequest('wallet_requestPermissions', permissionParams)
 			assert.equal(requestPermissionsReply.success, false)
-			assert.equal(requestPermissionsReply.error, 'Interceptor Safe compatibility does not support the requestAddressBook permission.')
+			assert.equal(requestPermissionsReply.error, 'Interceptor Gnosis Safe compatibility does not support the requestAddressBook permission.')
 			const aliasedRequestPermissionsReply = await safeRequest('rpcCall', { call: 'eth_requestPermissions', params: permissionParams })
 			assert.equal(aliasedRequestPermissionsReply.success, false)
-			assert.equal(aliasedRequestPermissionsReply.error, 'Interceptor Safe compatibility does not support the requestAddressBook permission.')
+			assert.equal(aliasedRequestPermissionsReply.error, 'Interceptor Gnosis Safe compatibility does not support the requestAddressBook permission.')
 			const invalidPermissionReply = await safeRequest('wallet_requestPermissions', {})
 			assert.equal(invalidPermissionReply.success, false)
-			assert.equal(invalidPermissionReply.error, 'Safe Apps permission request params must be an array.')
+			assert.equal(invalidPermissionReply.error, 'Gnosis Safe Apps permission request params must be an array.')
 			const emptyPermissionReply = await safeRequest('wallet_requestPermissions', [])
 			assert.deepEqual(emptyPermissionReply.data, [])
 			const unsupportedPermissionReply = await safeRequest('wallet_requestPermissions', [{ eth_accounts: {} }])
 			assert.equal(unsupportedPermissionReply.success, false)
-			assert.equal(unsupportedPermissionReply.error, 'Unsupported Safe Apps permission request.')
+			assert.equal(unsupportedPermissionReply.error, 'Unsupported Gnosis Safe Apps permission request.')
 			const transaction = { to: '0x2222222222222222222222222222222222222222', value: '15', data: '0x1234' }
 			const sendReply = await safeRequest('sendTransactions', { txs: [transaction], params: { safeTxGas: 21000 } })
 			assert.deepEqual(sendReply.data, { safeTxHash: '0xsafehash' })
@@ -882,13 +882,13 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(zeroGasSendReply.data, { safeTxHash: '0xsafehash' })
 			const delegateCallReply = await safeRequest('sendTransactions', { txs: [{ ...transaction, operation: 1 }] })
 			assert.equal(delegateCallReply.success, false)
-			assert.equal(delegateCallReply.error, 'Safe Apps delegate calls are not supported inside a batch or as app-provided transactions.')
+			assert.equal(delegateCallReply.error, 'Gnosis Safe Apps delegate calls are not supported inside a batch or as app-provided transactions.')
 			const batchReply = await safeRequest('sendTransactions', { txs: [transaction, transaction], params: undefined })
 			assert.equal(batchReply.success, true)
 			assert.deepEqual(batchReply.data, { safeTxHash: '0xsafehash' })
 			const batchRequest = ethereumRequests.pop()
 			const batchEnvelope = batchRequest?.params?.[0]
-			if (!isRecord(batchEnvelope) || !isRecord(batchEnvelope.params) || !Array.isArray(batchEnvelope.params.params)) throw new Error('Missing Safe execution envelope')
+			if (!isRecord(batchEnvelope) || !isRecord(batchEnvelope.params) || !Array.isArray(batchEnvelope.params.params)) throw new Error('Missing Gnosis Safe execution envelope')
 			const batchTransaction = batchEnvelope.params.params[0]
 			if (!isRecord(batchTransaction)) throw new Error('Missing batch transaction')
 			assert.equal('safeOperation' in batchTransaction, false)
@@ -4407,7 +4407,7 @@ describe('inpage signer bridge', () => {
 	})
 })
 
-test('Safe Apps message signing submits only a successful owner signature and returns the SDK message hash', async () => {
+test('Gnosis Safe Apps message signing submits only a successful owner signature and returns the SDK message hash', async () => {
 	for (const rejected of [false, true]) for (const isTypedData of [false, true]) {
 		const method = isTypedData ? 'signTypedMessage' : 'signMessage'
 		const typedMetadata = isTypedData ? { isTypedData: true } : {}
@@ -4419,21 +4419,21 @@ test('Safe Apps message signing submits only a successful owner signature and re
 			handleRequest: (request, reply) => {
 				if (request.method === 'connected_to_signer') {
 					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
-					sendSafeAppsCompatibility(reply, true)
+					sendGnosisSafeAppsCompatibility(reply, true)
 					return true
 				}
-				if (getSafeAppsMethod(request) === method) {
-					replyToSafeAppsRequest(request, reply, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, '{}'], mapResult: 'safeMessage', message: 'Hello Safe', ...typedMetadata, safeAddress, chainId: '1' })
+				if (getGnosisSafeAppsMethod(request) === method) {
+					replyToGnosisSafeAppsRequest(request, reply, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, '{}'], mapResult: 'safeMessage', message: 'Hello Gnosis Safe', ...typedMetadata, safeAddress, chainId: '1' })
 					return true
 				}
 				if (request.method === 'eth_signTypedData_v4') {
 					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, ...(rejected ? { error: { code: 4001, message: 'User rejected signing.' } } : { result: signature }) })
 					return true
 				}
-				if (getSafeAppsMethod(request) === 'submitOffChainMessage') {
+				if (getGnosisSafeAppsMethod(request) === 'submitOffChainMessage') {
 					submissions++
-					assert.deepEqual(request.params?.[0], { method: 'submitOffChainMessage', params: { message: 'Hello Safe', signature, ...typedMetadata, safeAddress, chainId: '1' } })
-					replyToSafeAppsRequest(request, reply, { kind: 'result', value: { messageHash } })
+					assert.deepEqual(request.params?.[0], { method: 'submitOffChainMessage', params: { message: 'Hello Gnosis Safe', signature, ...typedMetadata, safeAddress, chainId: '1' } })
+					replyToGnosisSafeAppsRequest(request, reply, { kind: 'result', value: { messageHash } })
 					return true
 				}
 				return false
@@ -4445,9 +4445,9 @@ test('Safe Apps message signing submits only a successful owner signature and re
 				if (isRecord(event.data) && event.data.id === 'sign-message' && typeof event.data.success === 'boolean') response = event.data
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
-			fakeWindow.postMessage({ id: 'sign-message', method, params: { message: 'Hello Safe' }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'sign-message', method, params: { message: 'Hello Gnosis Safe' }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
 			await waitFor(() => response !== undefined)
-			if (!isRecord(response)) throw new Error('Missing Safe Apps response')
+			if (!isRecord(response)) throw new Error('Missing Gnosis Safe Apps response')
 			assert.equal(response.success, !rejected)
 			assert.equal(submissions, rejected ? 0 : 1)
 			if (rejected) assert.equal(response.error, 'User rejected signing.')
@@ -4456,7 +4456,7 @@ test('Safe Apps message signing submits only a successful owner signature and re
 	}
 })
 
-test('Safe SDK settings belong to the page and survive background connection reinitialization for both signing methods', async () => {
+test('Gnosis Safe SDK settings belong to the page and survive background connection reinitialization for both signing methods', async () => {
 	const network: RpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://example.test', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const safe = 0x1111111111111111111111111111111111111111n
 	let handshakes = 0
@@ -4465,7 +4465,7 @@ test('Safe SDK settings belong to the page and survive background connection rei
 		if (request.method === 'connected_to_signer') {
 			handshakes++
 			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
-			sendSafeAppsCompatibility(reply, true)
+			sendGnosisSafeAppsCompatibility(reply, true)
 			return true
 		}
 		if (request.method === 'safe_apps_request') {
@@ -4476,7 +4476,7 @@ test('Safe SDK settings belong to the page and survive background connection rei
 				return true
 			}
 			// Each invocation uses fresh background policy state, just as after an MV3 worker restart.
-			void getSafeAppsRequestCommand(request.params?.[0], 'example.test', safe, network, async () => { throw new Error('Unexpected Safe state lookup') }).then((command) => {
+			void getGnosisSafeAppsRequestCommand(request.params?.[0], 'example.test', safe, network, async () => { throw new Error('Unexpected Gnosis Safe state lookup') }).then((command) => {
 				if (command.kind === 'ethereumRequest') {
 					assert.equal(command.method, 'eth_sendTransaction')
 					assert.equal(command.mapResult, 'safeTxHash')
@@ -4484,8 +4484,8 @@ test('Safe SDK settings belong to the page and survive background connection rei
 					assert.equal(command.safeRequestContext?.operation, 1)
 					assert.equal(command.params[0].to, '0xd53cd0ab83d845ac265be939c57f53ad838012c9')
 				}
-				replyToSafeAppsRequest(request, reply, command.kind === 'settings' ? { kind: 'result', value: { offChainSigning: command.offChainSigning } } : command)
-			}, (error) => rejectSafeAppsRequest(request, reply, String(error)))
+				replyToGnosisSafeAppsRequest(request, reply, command.kind === 'settings' ? { kind: 'result', value: { offChainSigning: command.offChainSigning } } : command)
+			}, (error) => rejectGnosisSafeAppsRequest(request, reply, String(error)))
 			return true
 		}
 		if (request.method === 'eth_sendTransaction') {
@@ -4504,7 +4504,7 @@ test('Safe SDK settings belong to the page and survive background connection rei
 		fakeWindow.postMessage({ id: 'settings', method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning: false }] }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
 		await waitFor(() => replies.has('settings'))
 		assert.deepEqual(replies.get('settings'), { id: 'settings', success: true, data: { offChainSigning: false }, version: '9.1.0' })
-		sendSafeAppsCompatibility(sendBackgroundMessage, false)
+		sendGnosisSafeAppsCompatibility(sendBackgroundMessage, false)
 		sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_connection_status', result: [] })
 		await waitFor(() => handshakes === 2)
 		for (const method of ['signMessage', 'signTypedMessage']) {

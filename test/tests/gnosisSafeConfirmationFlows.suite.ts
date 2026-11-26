@@ -1,0 +1,5 @@
+import './gnosisSafeAppsMessages.suite.js'
+import './gnosisSafeProposalSimulation.suite.js'
+import './gnosisSafeSignerConfirmation.suite.js'
+import './gnosisSafeSignerRouting.suite.js'
+import './gnosisSafeExecutionSimulation.suite.js'

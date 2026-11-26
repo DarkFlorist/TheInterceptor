@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumData } from '../types/wire-types.js'
 import { String } from 'funtypes'
 import { hashStruct, hashTypedData } from './ethereumPrimitives.js'
 import type { JSONEncodeableObject, typeJSONEncodeable } from './json.js'
-import type { SafeTx } from '../types/personal-message-definitions.js'
+import type { GnosisSafeTx } from '../types/personal-message-definitions.js'
 import type { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-signing-types.js'
 import { addressString } from './bigint.js'
 import { assertNever, modifyObject } from './typescript.js'
@@ -314,7 +314,7 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
 export type MessageHashAndSignature = { signature: string, messageHash: string }
 
-export const getSafeTxHash = (safeTx: SafeTx) => {
+export const getGnosisSafeTxHash = (safeTx: GnosisSafeTx) => {
 	const eip721SafeTxType = {
 		SafeTx: [
 			{ type: 'address', name: 'to' },

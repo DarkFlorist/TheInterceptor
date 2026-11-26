@@ -367,7 +367,7 @@ describe('Permit2 signature requests', () => {
 			'contact filled in after a failed lookup': { type: 'contact', name: checksummedAddress(tokenAddress), address: tokenAddress, entrySource: 'FilledIn' },
 			'address book contact': { type: 'contact', name: 'My NFT Collection', address: tokenAddress, entrySource: 'User' },
 			'address book contract': { type: 'contract', name: 'My Vault', address: tokenAddress, entrySource: 'User' },
-			'safe': { type: 'safe', name: 'Team Safe', address: tokenAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: false },
+			'safe': { type: 'safe', name: 'Team Gnosis Safe', address: tokenAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: false },
 			'ERC721': { type: 'ERC721', name: 'Samurai', symbol: 'SAM', address: tokenAddress, entrySource: 'OnChain' },
 			'ERC1155': { type: 'ERC1155', name: 'Items', symbol: 'ITM', decimals: undefined, address: tokenAddress, entrySource: 'OnChain' },
 		}

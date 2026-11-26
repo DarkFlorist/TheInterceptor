@@ -7,20 +7,20 @@ import { withSilencedConsole } from './consoleSilence.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
-const { createSafeValidationError } = await import('../../app/ts/safe/safeErrors.js')
+const { createGnosisSafeValidationError } = await import('../../app/ts/gnosisSafe/gnosisSafeErrors.js')
 
-test('Safe failures use the shared internal error classification mechanism', () => {
-	const error = createSafeValidationError('Select a Safe owner.', 'safe_signer_selection')
+test('Gnosis Safe failures use the shared internal error classification mechanism', () => {
+	const error = createGnosisSafeValidationError('Select a Gnosis Safe owner.', 'safe_signer_selection')
 
 	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_signer_selection'), true)
 	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_owner_validation'), false)
-	assert.equal(hasInterceptorInternalErrorCode(new Error('Select a Safe owner.'), 'safe_signer_selection'), false)
+	assert.equal(hasInterceptorInternalErrorCode(new Error('Select a Gnosis Safe owner.'), 'safe_signer_selection'), false)
 	assert.equal(classifyCaughtError(error), 'handled')
 	assert.equal(shouldSuppressUnexpectedErrorReport(error), true)
 	assert.equal(isExpectedInfrastructureError(error), false)
 })
 
-test('shared error infrastructure stays independent from Safe error codes', async () => {
+test('shared error infrastructure stays independent from Gnosis Safe error codes', async () => {
 	const caughtErrorsSource = await Bun.file(new URL('../../app/ts/utils/caughtErrors.ts', import.meta.url)).text()
 	const errorsSource = await Bun.file(new URL('../../app/ts/utils/errors.ts', import.meta.url)).text()
 
@@ -197,11 +197,11 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(browserMock.sentMessages.length, 0)
 	})
 
-	test('does not report handled Safe validation failures as unexpected errors', async () => {
+	test('does not report handled Gnosis Safe validation failures as unexpected errors', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(createSafeValidationError('Select a current Safe owner.', 'safe_signer_selection'))
+		await reportUnexpectedError(createGnosisSafeValidationError('Select a current Gnosis Safe owner.', 'safe_signer_selection'))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)

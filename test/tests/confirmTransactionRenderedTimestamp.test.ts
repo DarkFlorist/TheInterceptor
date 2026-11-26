@@ -2,13 +2,13 @@ import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeErrorString } from './errorDataFixtures.js'
 import { getFailureReasonForDisplay } from '../../app/ts/simulation/failureReasons.js'
-import { SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
+import { GNOSIS_SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/gnosisSafe/gnosisSafeExecutionFailure.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { afterEach, describe, test } from 'bun:test'
 import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock, type RenderedTreeNode } from './domMock.js'
-import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
-import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { createGnosisSafeTx, getGnosisSafeTxSigningHashes } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
+import { getGnosisSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
@@ -256,11 +256,11 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 	return pendingTransaction
 }
 
-const SAFE_SIGNING_REQUEST_CARD_TITLE = 'Gnosis Safe signing request (EIP-712)'
+const GNOSIS_SAFE_SIGNING_REQUEST_CARD_TITLE = 'Gnosis Safe signing request (EIP-712)'
 
-function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | ReturnType<typeof makeSimulatedPendingTransaction>>(pending: T) {
+function makeGnosisSafeProposal<T extends ReturnType<typeof makePendingTransaction> | ReturnType<typeof makeSimulatedPendingTransaction>>(pending: T) {
 	const transaction = pending.originalRequestParameters.params[0]
-	const safeTx = createSafeTx(1n, pending.activeAddress, {
+	const safeTx = createGnosisSafeTx(1n, pending.activeAddress, {
 		to: transaction.to,
 		value: transaction.value ?? 0n,
 		input: transaction.input,
@@ -273,7 +273,7 @@ function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | 
 			safeVersion: '1.4.1' as const,
 			threshold: 1n,
 			reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [transaction.to], threshold: 1n },
-			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 			safeTx,
 			executionGasLimit: 21_000n,
 		} },
@@ -286,7 +286,7 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 	const failed = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), value)
 	const requested = failed.originalRequestParameters.params[0]
 	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-	const safeEntry = { type: 'contact' as const, name: 'Test Safe', address: failed.activeAddress, entrySource: 'User' as const, chainId: 1n }
+	const safeEntry = { type: 'contact' as const, name: 'Test Gnosis Safe', address: failed.activeAddress, entrySource: 'User' as const, chainId: 1n }
 	const recipientEntry = { type: 'contact' as const, name: 'Recipient', address: requested.to, entrySource: 'User' as const, chainId: 1n }
 	const transaction = {
 		type: '1559' as const,
@@ -612,11 +612,11 @@ describe('ConfirmTransaction', () => {
 		for (const dom of [...mountedPopups]) await unmountConfirmTransaction(dom)
 	})
 
-	test('shows the proposal notice only for the classifier-selected Safe proposal flow', async () => {
+	test('shows the proposal notice only for the classifier-selected Gnosis Safe proposal flow', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
 		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const safeTx = createSafeTx(1n, pending.activeAddress, {
+		const safeTx = createGnosisSafeTx(1n, pending.activeAddress, {
 			to: pending.originalRequestParameters.params[0].to,
 			value: 0n,
 			input: new Uint8Array(),
@@ -629,7 +629,7 @@ describe('ConfirmTransaction', () => {
 				safeVersion: '1.4.1' as const,
 				threshold: 1n,
 				reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [pending.originalRequestParameters.params[0].to], threshold: 1n },
-				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 				safeTx,
 				executionGasLimit: 21_000n,
 			} },
@@ -662,11 +662,11 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
-	test('enables Add unsigned only for a Safe proposal whose simulated result succeeds without quarantine', async () => {
+	test('enables Add unsigned only for a Gnosis Safe proposal whose simulated result succeeds without quarantine', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const withSafeProposal = (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
-			const safeTx = createSafeTx(1n, pending.activeAddress, { to: pending.originalRequestParameters.params[0].to, value: 0n, input: new Uint8Array() }, 3n)
+		const withGnosisSafeProposal = (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
+			const safeTx = createGnosisSafeTx(1n, pending.activeAddress, { to: pending.originalRequestParameters.params[0].to, value: 0n, input: new Uint8Array() }, 3n)
 			return {
 				...pending,
 				simulationMode: false,
@@ -676,7 +676,7 @@ describe('ConfirmTransaction', () => {
 					safeVersion: '1.4.1' as const,
 					threshold: 1n,
 					reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [pending.originalRequestParameters.params[0].to], threshold: 1n },
-					safeTxHash: BigInt(getSafeTxHash(safeTx)),
+					safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 					safeTx,
 					executionGasLimit: 21_000n,
 				} },
@@ -689,14 +689,14 @@ describe('ConfirmTransaction', () => {
 		const succeeded = makeSimulatedPendingTransaction(0n)
 		await renderConfirmTransaction(dom)
 
-		await dispatchPendingTransactions(browser, [withSafeProposal(succeeded)])
+		await dispatchPendingTransactions(browser, [withGnosisSafeProposal(succeeded)])
 		assert.equal(isAddUnsignedEnabled(), true, 'a succeeding, non-quarantined result can be added unsigned')
-		await dispatchPendingTransactions(browser, [withSafeProposal(makeSimulatedPendingTransaction(0n, revertedOutcome))])
+		await dispatchPendingTransactions(browser, [withGnosisSafeProposal(makeSimulatedPendingTransaction(0n, revertedOutcome))])
 		assert.equal(isAddUnsignedEnabled(), false, 'a failing result cannot be added unsigned')
-		await dispatchPendingTransactions(browser, [withSafeProposal(makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Succeeded', quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }))])
+		await dispatchPendingTransactions(browser, [withGnosisSafeProposal(makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Succeeded', quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }))])
 		assert.equal(isAddUnsignedEnabled(), false, 'a quarantined result cannot be added unsigned')
 		const missingResult = { ...succeeded, popupVisualisation: { ...succeeded.popupVisualisation, data: { ...succeeded.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } }
-		await dispatchPendingTransactions(browser, [withSafeProposal(missingResult)])
+		await dispatchPendingTransactions(browser, [withGnosisSafeProposal(missingResult)])
 		assert.equal(isAddUnsignedEnabled(), false, 'a proposal without a located result cannot be added unsigned')
 
 		await unmountConfirmTransaction(dom)
@@ -728,13 +728,13 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
-	test('shows the EIP-712 signing request for a Safe proposal so it can be compared with a hardware signer', async () => {
+	test('shows the EIP-712 signing request for a Gnosis Safe proposal so it can be compared with a hardware signer', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
 		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)
-		const proposal = makeSafeProposal(pending)
+		const proposal = makeGnosisSafeProposal(pending)
 		const safeTx = proposal.safeFlow.safeTransaction.safeTx
-		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
+		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(GNOSIS_SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
 
 		await renderConfirmTransaction(dom)
 		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
@@ -753,9 +753,9 @@ describe('ConfirmTransaction', () => {
 
 		await dispatchPending(proposal)
 		const cardHeader = findSigningRequestCardHeader()
-		assert.notEqual(cardHeader, undefined, 'expected the Safe signing request card for a proposal')
+		assert.notEqual(cardHeader, undefined, 'expected the Gnosis Safe signing request card for a proposal')
 		if (cardHeader === undefined) throw new Error('unreachable')
-		const { domainHash, messageHash } = getSafeTxSigningHashes(safeTx)
+		const { domainHash, messageHash } = getGnosisSafeTxSigningHashes(safeTx)
 		assert.equal(dom.document.body.textContent?.includes(domainHash), false, 'the hashes are collapsed until the card is opened')
 
 		await act(async () => { await clickRenderedElement(cardHeader) })
@@ -776,17 +776,17 @@ describe('ConfirmTransaction', () => {
 			...proposal,
 			safeFlow: { kind: 'directExecution' as const, safeExecutionOriginalRequestParameters: proposal.originalRequestParameters },
 		})
-		assert.equal(findSigningRequestCardHeader(), undefined, 'direct Safe executions are signed as normal transactions and have no EIP-712 request')
+		assert.equal(findSigningRequestCardHeader(), undefined, 'direct Gnosis Safe executions are signed as normal transactions and have no EIP-712 request')
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
 
-	test('shows the EIP-712 signing request with the simulated network for a successfully simulated Safe proposal', async () => {
+	test('shows the EIP-712 signing request with the simulated network for a successfully simulated Gnosis Safe proposal', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const proposal = makeSafeProposal(makeSimulatedPendingTransaction(1_250_000_000_000_000_000n))
-		const { domainHash, messageHash } = getSafeTxSigningHashes(proposal.safeFlow.safeTransaction.safeTx)
+		const proposal = makeGnosisSafeProposal(makeSimulatedPendingTransaction(1_250_000_000_000_000_000n))
+		const { domainHash, messageHash } = getGnosisSafeTxSigningHashes(proposal.safeFlow.safeTransaction.safeTx)
 
 		await renderConfirmTransaction(dom)
 		await act(() => {
@@ -802,8 +802,8 @@ describe('ConfirmTransaction', () => {
 				}),
 			})
 		})
-		const cardHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
-		assert.notEqual(cardHeader, undefined, 'expected the Safe signing request card below the simulated transaction')
+		const cardHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(GNOSIS_SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
+		assert.notEqual(cardHeader, undefined, 'expected the Gnosis Safe signing request card below the simulated transaction')
 		if (cardHeader === undefined) throw new Error('unreachable')
 		await act(async () => { await clickRenderedElement(cardHeader) })
 
@@ -814,7 +814,7 @@ describe('ConfirmTransaction', () => {
 		assert.equal(renderedText.includes('Chain: Ethereum Mainnet (1)'), true)
 		assert.equal(renderedText.includes('Value: 1.25ETH'), true, renderedText)
 		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
-		assert.equal(renderedText.includes('Gnosis Safe: Test Safe'), true, 'address-book entries from the simulation name the Safe')
+		assert.equal(renderedText.includes('Gnosis Safe: Test Gnosis Safe'), true, 'address-book entries from the simulation name the Gnosis Safe')
 		assert.equal(renderedText.includes('To: Recipient'), true)
 
 		await unmountConfirmTransaction(dom)
@@ -824,10 +824,10 @@ describe('ConfirmTransaction', () => {
 	test('keeps the Gnosis Safe gas label, creation time and simulation time in one wrapping card footer', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const safeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { transactionStatus: 'Transaction Succeeded' }, { requiredChainId: 1n, executeThroughSafe: true })
+		const gnosisSafeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { transactionStatus: 'Transaction Succeeded' }, { requiredChainId: 1n, executeThroughSafe: true })
 
 		await renderConfirmTransaction(dom)
-		await dispatchPendingTransactions(browser, [safeExecution])
+		await dispatchPendingTransactions(browser, [gnosisSafeExecution])
 		const hasClass = (node: RenderedTreeNode, className: string) => node.attributes?.class?.split(/\s+/u).includes(className) === true
 		const footer = findRenderedElement(dom.document.body, (node) => hasClass(node, 'transaction-card-footer'))
 		if (footer === undefined) throw new Error('expected the transaction card footer below the simulated transaction')
@@ -1036,7 +1036,7 @@ describe('ConfirmTransaction', () => {
 
 		// Stored without transactionCreationFailureReason, so the popup derives it from the field the Safe layer wrote on the estimate error.
 		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), safeCallRevertedMessage: SAFE_CALL_REVERTED_MESSAGE } }
+		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), safeCallRevertedMessage: GNOSIS_SAFE_CALL_REVERTED_MESSAGE } }
 		const { transactionCreationFailureReason: _storedReason, ...dataWithoutReason } = failedPendingTransaction.popupVisualisation.data
 		const pendingTransaction = {
 			...failedPendingTransaction,
@@ -1058,7 +1058,7 @@ describe('ConfirmTransaction', () => {
 		})
 
 		const text = dom.document.body.textContent ?? ''
-		assert.equal(text.includes(SAFE_CALL_REVERTED_MESSAGE), true)
+		assert.equal(text.includes(GNOSIS_SAFE_CALL_REVERTED_MESSAGE), true)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()

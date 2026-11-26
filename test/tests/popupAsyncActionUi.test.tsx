@@ -5,7 +5,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { type GovernanceVoteInputParameters, MessageToPopup, PopupMessage, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
 import { PopupMessageReplyRequests, PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
-import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import type { VisualizedPersonalSignRequestGnosisSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { createPassthroughCompleteVisualizedSimulation, type ModifyAddressWindowState, type SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
@@ -261,7 +261,7 @@ function createIdentifyAddressReply(address: bigint, name: string) {
 	})
 }
 
-function createSafeContractStateReply(owners: readonly bigint[]) {
+function createGnosisSafeContractStateReply(owners: readonly bigint[]) {
 	return PopupRequestsReplies.popup_requestSafeContractState.serialize({
 		method: 'popup_requestSafeContractState',
 		data: {
@@ -269,7 +269,7 @@ function createSafeContractStateReply(owners: readonly bigint[]) {
 			result: {
 				ok: true,
 				owners,
-				ownerAddressBookEntries: owners.map((address, index) => ({ type: 'contact', name: `Safe Owner ${ index + 1 }`, address, entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: 1n })),
+				ownerAddressBookEntries: owners.map((address, index) => ({ type: 'contact', name: `Gnosis Safe Owner ${ index + 1 }`, address, entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: 1n })),
 				version: '1.4.1',
 			},
 		},
@@ -343,7 +343,7 @@ const zeroAddressEntry = {
 	chainId: 1n,
 }
 
-function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPersonalSignRequestSafeTx {
+function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPersonalSignRequestGnosisSafeTx {
 	return {
 		activeAddress: gnosisSignerAddress,
 		rpcNetwork: {
@@ -417,7 +417,7 @@ function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPe
 		refundReceiver: zeroAddressEntry,
 		verifyingContract: {
 			type: 'contract',
-			name: 'Safe',
+			name: 'Gnosis Safe',
 			address: gnosisSignerAddress.address,
 			entrySource: 'User',
 			abi: '[]',
@@ -1256,7 +1256,7 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	test.each(['missing', 'rejected'] as const)('keeps failed Safe lookup stable and supports explicit retry (%s)', async failure => {
+	test.each(['missing', 'rejected'] as const)('keeps failed Gnosis Safe lookup stable and supports explicit retry (%s)', async failure => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const safeAddress = '0x3000000000000000000000000000000000000003'
@@ -1272,8 +1272,8 @@ describe('popup async action UI', () => {
 			}
 			if (getRuntimeMethod(message) === 'popup_requestSafeContractState') {
 				ownerRequests++
-				if (ownerRequests > 1) return createSafeContractStateReply([BigInt(signerAddress)])
-				if (failure === 'rejected') throw new Error('Safe lookup transport failed')
+				if (ownerRequests > 1) return createGnosisSafeContractStateReply([BigInt(signerAddress)])
+				if (failure === 'rejected') throw new Error('Gnosis Safe lookup transport failed')
 				return undefined
 			}
 			if (getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry') {
@@ -1290,7 +1290,7 @@ describe('popup async action UI', () => {
 				type: 'safe' as const,
 				address: safeAddress,
 				askForAddressAccess: true,
-				name: 'Treasury Safe',
+				name: 'Treasury Gnosis Safe',
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
@@ -1335,18 +1335,18 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	test('refreshes visible Safe owners with pending feedback', async () => {
+	test('refreshes visible Gnosis Safe owners with pending feedback', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const firstOwner = 0x1111111111111111111111111111111111111111n
 		const alternateOwner = 0x3333333333333333333333333333333333333333n
 		const refreshedOwner = 0x2222222222222222222222222222222222222222n
-		const firstReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
-		const refreshReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
+		const firstReply = createDeferred<ReturnType<typeof createGnosisSafeContractStateReply>>()
+		const refreshReply = createDeferred<ReturnType<typeof createGnosisSafeContractStateReply>>()
 		let requestCount = 0
 		let tokenLookupCount = 0
 		runtimeSendMessage = async (message) => {
-			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') { tokenLookupCount++; return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe') }
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') { tokenLookupCount++; return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Gnosis Safe') }
 			if (getRuntimeMethod(message) !== 'popup_requestSafeContractState') return undefined
 			requestCount += 1
 			return requestCount === 1 ? await firstReply.promise : await refreshReply.promise
@@ -1359,7 +1359,7 @@ describe('popup async action UI', () => {
 				type: 'safe' as const,
 				address: '0x3000000000000000000000000000000000000003',
 				askForAddressAccess: true,
-				name: 'Treasury Safe',
+				name: 'Treasury Gnosis Safe',
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
@@ -1393,31 +1393,31 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		const retrieveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Retrieving...'))
-		if (retrieveButton === undefined) throw new Error('Expected pending Safe signer retrieval button')
+		if (retrieveButton === undefined) throw new Error('Expected pending Gnosis Safe signer retrieval button')
 		assert.equal(isDisabled(retrieveButton), true)
 		assert.equal(requestCount, 1)
-		assert.equal(tokenLookupCount, 0, 'Safe lookup must not wait on redundant token identification')
+		assert.equal(tokenLookupCount, 0, 'Gnosis Safe lookup must not wait on redundant token identification')
 		const nameInput = collectElements(dom.document.body, 'input').find(input => input.getAttribute('aria-label') === 'Name')
 		assert.ok(nameInput)
 		assert.equal(isDisabled(nameInput), false, 'Unrelated fields stay editable during owner lookup')
 		await act(async () => {
-			firstReply.resolve(createSafeContractStateReply([firstOwner, alternateOwner]))
+			firstReply.resolve(createGnosisSafeContractStateReply([firstOwner, alternateOwner]))
 			await firstReply.promise
 			await settleAsyncUpdates()
 		})
-		assert.equal(dom.document.body.textContent?.includes('Safe Owner 1'), true)
+		assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Owner 1'), true)
 		const ownerOptions = collectElements(dom.document.body, 'input').filter((input) => input.getAttribute?.('name') === 'safe-simulation-signer')
 		assert.equal(ownerOptions.length, 2)
-		assert.equal(dom.document.body.textContent?.includes('Safe Owner 2'), true)
+		assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Owner 2'), true)
 		const alternateOwnerOption = ownerOptions.find((input) => input.getAttribute?.('value') === '0x3333333333333333333333333333333333333333')
-		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner radio option')
+		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Gnosis Safe owner radio option')
 		const alternateOwnerLabel = alternateOwnerOption.parentNode
-		if (alternateOwnerLabel === undefined || alternateOwnerLabel === null) throw new Error('Expected alternate Safe owner label')
+		if (alternateOwnerLabel === undefined || alternateOwnerLabel === null) throw new Error('Expected alternate Gnosis Safe owner label')
 		assert.equal(collectElements(alternateOwnerLabel, 'button').length, 0)
 		await act(async () => { await changeElement(alternateOwnerOption) })
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x3333333333333333333333333333333333333333')
 		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
-		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')
+		if (refreshButton === undefined) throw new Error('Expected Gnosis Safe signer refresh button')
 		await act(async () => {
 			void clickElement(refreshButton)
 			await Promise.resolve()
@@ -1426,7 +1426,7 @@ describe('popup async action UI', () => {
 		assert.equal(isDisabled(refreshButton), true)
 
 		await act(async () => {
-			refreshReply.resolve(createSafeContractStateReply([refreshedOwner]))
+			refreshReply.resolve(createGnosisSafeContractStateReply([refreshedOwner]))
 			await refreshReply.promise
 			await settleAsyncUpdates()
 		})
@@ -1600,10 +1600,10 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
-		const outcomePanel = findFirstByClass(dom.document.body, 'safe-outcome-panel')
+		const outcomePanel = findFirstByClass(dom.document.body, 'gnosis-safe-outcome-panel')
 		assert.equal(collectTextSegments(outcomePanel).join(' '), 'Outcome if approved Simulating Gnosis Safe transaction…')
 
-		const loadingState = findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')
+		const loadingState = findFirstByClass(dom.document.body, 'gnosis-safe-outcome-panel__loading')
 		assert.equal(loadingState?.attributes?.role, 'status')
 		assert.equal(loadingState?.attributes?.['aria-label'], 'Simulating Gnosis Safe transaction')
 		assert.equal(loadingState?.textContent?.trim(), 'Simulating Gnosis Safe transaction…')
@@ -1620,7 +1620,7 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	for (const visualizer of ['Safe', 'governance']) {
+	for (const visualizer of ['Gnosis Safe', 'governance']) {
 		for (const completion of ['before edit', 'direct reply after edit', 'broadcast after edit']) {
 			test(`updates ${ visualizer } outcome address names with simulation completion via ${ completion }`, async () => {
 				const renameWhilePending = completion !== 'before edit'
@@ -1630,14 +1630,14 @@ describe('popup async action UI', () => {
 				let recipientName = 'Original recipient'
 				let simulationRequestCount = 0
 				runtimeSendMessage = async (message) => {
-					if (getRuntimeMethod(message) !== (visualizer === 'Safe' ? 'popup_simulateGnosisSafeTransaction' : 'popup_simulateGovernanceContractExecution')) return undefined
+					if (getRuntimeMethod(message) !== (visualizer === 'Gnosis Safe' ? 'popup_simulateGnosisSafeTransaction' : 'popup_simulateGovernanceContractExecution')) return undefined
 					simulationRequestCount += 1
 					return simulationRequestCount === 1 ? initialReply.promise : createGnosisSimulationSuccessReply(7n, recipientName)
 				}
 
 				try {
 					await act(() => {
-						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
+						render(visualizer === 'Gnosis Safe' ? h(modules.GnosisSafeVisualizer, {
 							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
 							activeAddress: gnosisSignerAddress.address,
 							renameAddressCallBack: () => undefined,
@@ -1752,7 +1752,7 @@ describe('popup async action UI', () => {
 
 	}
 
-	for (const visualizer of ['Safe', 'governance']) {
+	for (const visualizer of ['Gnosis Safe', 'governance']) {
 		for (const broadcastTiming of ['during request', 'after direct reply']) {
 			test(`an older matching broadcast ${ broadcastTiming } cannot discard the awaited ${ visualizer } result`, async () => {
 				const modules = await modulesPromise
@@ -1761,7 +1761,7 @@ describe('popup async action UI', () => {
 				runtimeSendMessage = async () => direct.promise
 				try {
 					await act(() => {
-						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
+						render(visualizer === 'Gnosis Safe' ? h(modules.GnosisSafeVisualizer, {
 							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
 							activeAddress: gnosisSignerAddress.address,
 							renameAddressCallBack: () => undefined,
@@ -1831,7 +1831,7 @@ describe('popup async action UI', () => {
 		await act(async () => { await clickRenderedElement(extraDetailsHeader) })
 		const renderedText = dom.document.body.textContent ?? ''
 		for (const expected of [
-			'Gnosis Safe: Safe',
+			'Gnosis Safe: Gnosis Safe',
 			'Chain: Ethereum Mainnet (1)',
 			'To: Recipient',
 			'Value (attoeth)0',
@@ -1881,7 +1881,7 @@ describe('popup async action UI', () => {
 			await clickElement(refreshButton)
 		})
 
-		assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')?.textContent?.trim(), 'Simulating Gnosis Safe transaction…')
+		assert.equal(findFirstByClass(dom.document.body, 'gnosis-safe-outcome-panel__loading')?.textContent?.trim(), 'Simulating Gnosis Safe transaction…')
 		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
 		assert.equal(dom.document.body.textContent?.includes('Initial Gnosis result'), false)
 

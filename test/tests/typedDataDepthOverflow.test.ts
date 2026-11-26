@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
-import { parseSafeTypedMessage } from '../../app/ts/safe/safeMessage.js'
+import { parseGnosisSafeTypedMessage } from '../../app/ts/gnosisSafe/gnosisSafeMessage.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
@@ -98,20 +98,20 @@ describe('typed data nested past the call stack limit', () => {
 		assert.equal(reply?.error?.message, 'Invalid eth_signTypedData_v4 parameters.')
 	})
 
-	test('a deep Safe typed message within the 100000 character limit is rejected as invalid', () => {
+	test('a deep Gnosis Safe typed message within the 100000 character limit is rejected as invalid', () => {
 		const arrayLevels = 49_000
 		const deepSafeMessage = createTypedDataJson(`{"a":${ '['.repeat(arrayLevels) }${ ']'.repeat(arrayLevels) }}`)
 		assert.ok(deepSafeMessage.length <= 100_000)
-		assert.throws(() => parseSafeTypedMessage(deepSafeMessage), { message: 'The Safe typed message is not valid EIP-712 data.' })
+		assert.throws(() => parseGnosisSafeTypedMessage(deepSafeMessage), { message: 'The Gnosis Safe typed message is not valid EIP-712 data.' })
 	})
 
-	test('a programmer error while parsing a Safe typed message propagates', () => {
+	test('a programmer error while parsing a Gnosis Safe typed message propagates', () => {
 		const programmerError = new RangeError('Invalid array length')
 		const originalParse = JSON.parse
 		// The first JSON.parse is the isJSON check, the second one is the parse that is guarded against stack overflows.
 		const parseSpy = spyOn(JSON, 'parse').mockImplementationOnce(originalParse).mockImplementationOnce(() => { throw programmerError })
 		try {
-			assert.throws(() => parseSafeTypedMessage(shallowTypedDataJson), (error: unknown) => error === programmerError)
+			assert.throws(() => parseGnosisSafeTypedMessage(shallowTypedDataJson), (error: unknown) => error === programmerError)
 		} finally {
 			parseSpy.mockRestore()
 		}

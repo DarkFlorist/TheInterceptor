@@ -1,4 +1,4 @@
-import { SafeMessageReview } from './safeReview.js'
+import { GnosisSafeMessageReview } from './gnosisSafeReview.js'
 
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
@@ -16,7 +16,7 @@ import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.j
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import type { ReadonlySignal } from '@preact/signals'
 import { DecodedError, ErrorWithCodeAndOptionalData, TransactionCreationError } from './error.js'
-import { SafeStackTransaction } from './safeTypes.js'
+import { GnosisSafeStackTransaction } from './gnosisSafeTypes.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -89,7 +89,7 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	transactionStatus: funtypes.Literal('Failed To Simulate'),
 	error: DecodedError
 }).And(funtypes.ReadonlyPartial({
-	safeTransaction: SafeStackTransaction,
+	safeTransaction: GnosisSafeStackTransaction,
 	simulationOptions: TransactionSimulationOptions,
 }))
 
@@ -110,7 +110,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
 	}).And(funtypes.ReadonlyPartial({
-		safeTransaction: SafeStackTransaction,
+		safeTransaction: GnosisSafeStackTransaction,
 		simulationOptions: TransactionSimulationOptions,
 	})),
 	funtypes.Union(
@@ -138,7 +138,7 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transactionIdentifier: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
-	safeTransaction: SafeStackTransaction,
+	safeTransaction: GnosisSafeStackTransaction,
 	simulationOptions: TransactionSimulationOptions,
 }))
 
@@ -208,7 +208,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	messageIdentifier: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
 	// Safe message review is normalized at admission and persisted independently of the transport envelope.
-	safeMessageReview: SafeMessageReview,
+	safeMessageReview: GnosisSafeMessageReview,
 	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
 	activeAddress: EthereumAddress,
 	// Full origin (`scheme://host[:port]`) of the requesting frame at request time, derived by getFrameOrigins together with `website.websiteOrigin`; it is not on `Website` because `websiteOrigin` is the scheme-less key that website access settings are persisted under. It is missing from records stored before it was recorded, from imported simulation stacks (importSimulationStack drops it because the extension never saw that frame) and when the frame had already disconnected, and getSiweQuarantineReasons then flags a sign-in message instead of comparing hosts alone.

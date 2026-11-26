@@ -1,4 +1,4 @@
-import { getConfiguredSigningSafe } from './signingAddressSelection.js'
+import { getConfiguredSigningGnosisSafe } from './signingAddressSelection.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getSettings } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -105,8 +105,8 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 	}
 	if (request.signerTabId === undefined) return { error: signerUnavailableError }
 	// A selected Safe pins the active chain for both popup and dapp requests. Reject before the wallet can diverge.
-	if (await getConfiguredSigningSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
-		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } }
+	if (await getConfiguredSigningGnosisSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
+		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Gnosis Safe is tied to its current network. Select your wallet account before switching networks.' } }
 	}
 	return await requestSignerChainChange(websiteTabConnections, rpcNetwork, request.signerTabId, timeoutMs)
 }

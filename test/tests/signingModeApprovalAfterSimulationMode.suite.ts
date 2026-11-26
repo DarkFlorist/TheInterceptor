@@ -4,7 +4,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, simulator, type StorageKeys, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createGnosisSafeAddressBookEntry, createGnosisSafeTx, createWebsitePort, fakeRpcNetwork, getGnosisSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, simulator, type StorageKeys, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const SIMULATION_MODE_ENABLED_AFTER_REQUEST_MESSAGE = 'The Interceptor switched to simulation mode after this request was made. Reject this request and send it again.'
 const socket = uniqueRequestIdentifier.requestSocket
@@ -214,11 +214,11 @@ test('simulation mode switched on and off during the popup approval\'s pending-r
 })
 
 // A signing-mode Gnosis Safe proposal whose approval first refreshes the wallet-selected owner through the website's signer connection.
-async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void>) {
+async function setUpSigningModeGnosisSafeProposal(onAccountRequest: () => Promise<void>) {
 	await modules.changeSimulationMode({ simulationMode: false })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress })])
+	await modules.updateUserAddressBookEntries(() => [createGnosisSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress })])
 	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerName: 'MetaMask', signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTx = createGnosisSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...signingModeTransaction,
 		safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
@@ -227,7 +227,7 @@ async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void
 			safeVersion: '1.4.1',
 			threshold: 2n,
 			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [], threshold: 2n },
-			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)),
 			safeTx,
 		} },
 	}] })
@@ -254,10 +254,10 @@ async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void
 	return { postedMessages, websiteTabConnections, approve }
 }
 
-test('simulation mode switched on and off during the Safe signer account refresh refuses the forward', async () => {
+test('simulation mode switched on and off during the Gnosis Safe signer account refresh refuses the forward', async () => {
 	for (const followUp of ['reject', 'approveAgain'] as const) {
 		let switched = false
-		const { postedMessages, websiteTabConnections, approve } = await setUpSigningModeSafeProposal(async () => {
+		const { postedMessages, websiteTabConnections, approve } = await setUpSigningModeGnosisSafeProposal(async () => {
 			if (switched) return
 			switched = true
 			await switchSimulationModeOnAndOff()

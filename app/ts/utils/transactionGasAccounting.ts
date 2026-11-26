@@ -1,10 +1,10 @@
-import type { SafeStackTransaction } from '../types/safeTypes.js'
+import type { GnosisSafeStackTransaction } from '../types/gnosisSafeTypes.js'
 import { authorizesExecutedCall, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 
 export type TransactionGasAccounting = {
 	readonly gasSpent: bigint
 	readonly realizedGasPrice: bigint
-	readonly safeTransaction?: SafeStackTransaction
+	readonly safeTransaction?: GnosisSafeStackTransaction
 	readonly simulationOptions?: TransactionSimulationOptions
 }
 

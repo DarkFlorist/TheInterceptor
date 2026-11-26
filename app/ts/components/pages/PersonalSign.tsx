@@ -9,7 +9,7 @@ import { TokenApprovalsVisualisation } from '../simulationExplaining/customExpla
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TokenSymbol } from '../subcomponents/coins.js'
-import type { Permit2Witness, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestPermit2Batch, VisualizedPersonalSignRequestPermit2SignatureTransfer, VisualizedPersonalSignRequestSafeTx, SiweMessage } from '../../types/personal-message-definitions.js'
+import type { Permit2Witness, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestPermit2Batch, VisualizedPersonalSignRequestPermit2SignatureTransfer, VisualizedPersonalSignRequestGnosisSafeTx, SiweMessage } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -22,7 +22,7 @@ import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
+import { GnosisSafeTxSigningDetails } from '../subcomponents/GnosisSafeTxSigningDetails.js'
 import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { type ReadonlySignal, useSignal } from '@preact/signals'
@@ -188,7 +188,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 		/>
 		case 'SafeMessage': return <>
-			<p class = 'paragraph'>Approve an off-chain Safe owner signature. The app can publish this message and signature to the Safe message service. The Safe threshold must be met before the message is fully signed.</p>
+			<p class = 'paragraph'>Approve an off-chain Gnosis Safe owner signature. The app can publish this message and signature to the Gnosis Safe message service. The Gnosis Safe threshold must be met before the message is fully signed.</p>
 			<p class = 'paragraph'>{ visualizedPersonalSignRequest.review.isTypedData ? 'EIP-712 typed message (domain, types and values):' : 'Message:' }</p>
 			<div class = 'textbox'><p class = 'paragraph' style = 'white-space: pre-wrap'>{ visualizedPersonalSignRequest.review.text }</p></div>
 		</>
@@ -389,7 +389,7 @@ type ExtraDetailsCardParams = {
 }
 
 type GnosisSafeExtraDetailsParams = {
-	visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx
+	visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestGnosisSafeTx
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -397,7 +397,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 	const { domainHash, messageHash, safeTxHash, verifyingContract, to, gasToken, refundReceiver } = visualizedPersonalSignRequestSafeTx
 	// Spans the whole ExtraDetails grid so the full-width hashes and the input do not get squeezed into one grid column.
 	return <div style = 'grid-column: 1 / -1'>
-		<SafeTxSigningDetails
+		<GnosisSafeTxSigningDetails
 			safeTx = { visualizedPersonalSignRequestSafeTx.message }
 			hashes = { { domainHash, messageHash, safeTxHash } }
 			addressBookEntries = { { verifyingContract, to, gasToken, refundReceiver } }

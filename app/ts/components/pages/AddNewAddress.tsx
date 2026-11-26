@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, requestPopupGnosisSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { AddressIcon, getActiveAddressEntry, SmallAddress } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { createRef } from 'preact'
@@ -62,18 +62,18 @@ export type AddressIdentificationKey = {
 	address: bigint
 	chainId: ChainIdWithUniversal
 	windowStateId: string
-	requestSafeContractState: boolean
+	requestGnosisSafeContractState: boolean
 }
 
 export function getAddressIdentificationKey(state: ModifyAddressWindowState): AddressIdentificationKey | undefined {
 	if (!state.incompleteAddressBookEntry.addingAddress && state.incompleteAddressBookEntry.type !== 'safe') return undefined
 	const address = parseUserEnteredAddress(state.incompleteAddressBookEntry.address, state.incompleteAddressBookEntry.chainId)
 	if (address === undefined) return undefined
-	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId, requestSafeContractState: state.incompleteAddressBookEntry.type === 'safe' }
+	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId, requestGnosisSafeContractState: state.incompleteAddressBookEntry.type === 'safe' }
 }
 
 export function areAddressIdentificationKeysEqual(left: AddressIdentificationKey | undefined, right: AddressIdentificationKey | undefined) {
-	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId && left?.requestSafeContractState === right?.requestSafeContractState
+	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId && left?.requestGnosisSafeContractState === right?.requestGnosisSafeContractState
 }
 
 export function isIdentificationRequestCurrent(state: ModifyAddressWindowState, requestedIdentification: AddressIdentificationKey) {
@@ -163,7 +163,7 @@ type RenderinCompleteAddressBookParams = {
 	safeSignerLookupState: AsyncStates
 	safeSimulationSignerAddressBookEntries: Signal<AddressBookEntries>
 	fetchAbiAndNameFromBlockExplorer: () => Promise<void>
-	refreshSafeSigners: () => void
+	refreshGnosisSafeSigners: () => void
 }
 
 type AbiInputParams = {
@@ -205,7 +205,7 @@ export async function updateModifyAddressWindowState(
 	}
 }
 
-function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, safeSignerLookupState, safeSimulationSignerAddressBookEntries, fetchAbiAndNameFromBlockExplorer, refreshSafeSigners }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, safeSignerLookupState, safeSimulationSignerAddressBookEntries, fetchAbiAndNameFromBlockExplorer, refreshGnosisSafeSigners }: RenderinCompleteAddressBookParams) {
 	const disableDueToSource = isCuratedEntrySource(modifyAddressWindowState.value.incompleteAddressBookEntry.entrySource)
 	const logoUri = modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false && 'logoUri' in modifyAddressWindowState.value.incompleteAddressBookEntry ? modifyAddressWindowState.value.incompleteAddressBookEntry.logoUri : undefined
 	const selectedChainId = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.chainId ?? 1n)
@@ -241,7 +241,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 		safeVersion: undefined,
 	} : { chainId: chainEntry.chainId }))
 	const setAbi = async (abi: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { abi: abi.trim().length === 0 ? undefined : abi }))
-	const setSafeSignerAddress = async (safeSimulationSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { safeSimulationSignerAddress }))
+	const setGnosisSafeSignerAddress = async (safeSimulationSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { safeSimulationSignerAddress }))
 	const setSymbol = async (symbol: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { symbol }))
 	const setDecimals = async (inputEvent: Event) => updateIncompleteAddressBookEntry(previousEntry => {
 		if (!(inputEvent.target instanceof HTMLInputElement) || inputEvent.target === null) return previousEntry
@@ -298,26 +298,26 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</div>
 			{ entry.type === 'safe' ? <section class = 'address-editor-section address-editor-field--wide address-editor-safe-section'>
 				<div class = 'address-editor-section-heading'>
-					<p class = 'address-editor-heading'>Safe owners{ hasSafeSigners ? ` · ${ safeSignerAddresses.value.length }` : '' }</p>
+					<p class = 'address-editor-heading'>Gnosis Safe owners{ hasSafeSigners ? ` · ${ safeSignerAddresses.value.length }` : '' }</p>
 					<AsyncActionButton
 						class = 'btn btn--outline is-small'
 						state = { safeSignerLookupState }
 						text = 'Refresh owners'
 						pendingText = { hasSafeSigners ? 'Refreshing...' : 'Retrieving...' }
 						disabled = { disableDueToSource || parseUserEnteredAddress(entry.address, entry.chainId) === undefined }
-						onClick = { refreshSafeSigners }
+						onClick = { refreshGnosisSafeSigners }
 					/>
 				</div>
 				{ hasSafeSigners
-					? <div class = 'safe-signer-owner-picker'>
-						<p>Safe signer in simulation</p>
-						<div class = 'safe-signer-owner-list' role = 'radiogroup' aria-label = 'Safe signer in simulation'>
+					? <div class = 'gnosis-safe-signer-owner-picker'>
+						<p>Gnosis Safe signer in simulation</p>
+						<div class = 'gnosis-safe-signer-owner-list' role = 'radiogroup' aria-label = 'Gnosis Safe signer in simulation'>
 							{ safeSignerAddresses.value.map((safeSignerAddress) => {
 								const parsedAddress = stringToAddress(safeSignerAddress)
 								if (parsedAddress === undefined) return <></>
 								const addressBookEntry = getActiveAddressEntry(parsedAddress, safeSimulationSignerAddressBookEntries.value)
-								return <label class = 'safe-signer-owner-option' key = { safeSignerAddress }>
-									<input type = 'radio' name = 'safe-simulation-signer' value = { safeSignerAddress } checked = { selectedSafeSignerAddress.value.toLowerCase() === safeSignerAddress.toLowerCase() } disabled = { disableDueToSource } onChange = { () => { void setSafeSignerAddress(safeSignerAddress) } } />
+								return <label class = 'gnosis-safe-signer-owner-option' key = { safeSignerAddress }>
+									<input type = 'radio' name = 'safe-simulation-signer' value = { safeSignerAddress } checked = { selectedSafeSignerAddress.value.toLowerCase() === safeSignerAddress.toLowerCase() } disabled = { disableDueToSource } onChange = { () => { void setGnosisSafeSignerAddress(safeSignerAddress) } } />
 									<SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => undefined } noEditAddress = { true } nonInteractive = { true } />
 								</label>
 							}) }
@@ -402,7 +402,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const currentAddressLookupError = useComputed(() => {
 		const lookup = addressLookup.value
 		const identification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
-		return lookup.state === 'rejected' && identification?.requestSafeContractState === false && areAddressIdentificationKeysEqual(lastCompletedIdentification.value, identification)
+		return lookup.state === 'rejected' && identification?.requestGnosisSafeContractState === false && areAddressIdentificationKeysEqual(lastCompletedIdentification.value, identification)
 			? lookup.error.message : undefined
 	})
 
@@ -424,7 +424,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	useSignalEffect(() => {
 		safeSignerRefreshGeneration.value
-		const setSafeContractStateError = (message: string) => {
+		const setGnosisSafeContractStateError = (message: string) => {
 			const currentState = param.modifyAddressWindowState.peek()
 			param.modifyAddressWindowState.value = modifyObject(currentState, {
 				errorState: { blockEditing: false, message },
@@ -436,29 +436,29 @@ export function AddNewAddress(param: AddAddressParam) {
 			try {
 				const [identifiedAddress, safeContractStateReply] = await Promise.all([
 					// Safe state already supplies owner metadata; optional token identification must not delay it.
-					requestedIdentification.requestSafeContractState ? Promise.resolve(undefined)
+					requestedIdentification.requestGnosisSafeContractState ? Promise.resolve(undefined)
 						: requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId }),
-					requestedIdentification.requestSafeContractState
-						? requestPopupSafeContractState({ address: requestedIdentification.address, chainId: requestedIdentification.chainId })
+					requestedIdentification.requestGnosisSafeContractState
+						? requestPopupGnosisSafeContractState({ address: requestedIdentification.address, chainId: requestedIdentification.chainId })
 						: Promise.resolve(undefined),
 				])
 				if (!isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) return
-				if (!requestedIdentification.requestSafeContractState && (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId)) {
+				if (!requestedIdentification.requestGnosisSafeContractState && (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId)) {
 					throw new Error(getMissingPopupReplyErrorMessage('Looking up address metadata'))
 				}
 				const identifiedAddressBookEntry = identifiedAddress?.data.chainId === requestedIdentification.chainId ? identifiedAddress.data.addressBookEntry : undefined
-				if (requestedIdentification.requestSafeContractState && (safeContractStateReply === undefined || safeContractStateReply.data.chainId !== requestedIdentification.chainId)) {
-					setSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
-				} else if (requestedIdentification.requestSafeContractState && safeContractStateReply !== undefined) {
-					const safeContractState = safeContractStateReply.data.result
-					if (!safeContractState.ok) {
-						setSafeContractStateError(safeContractState.message)
+				if (requestedIdentification.requestGnosisSafeContractState && (safeContractStateReply === undefined || safeContractStateReply.data.chainId !== requestedIdentification.chainId)) {
+					setGnosisSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
+				} else if (requestedIdentification.requestGnosisSafeContractState && safeContractStateReply !== undefined) {
+					const gnosisSafeContractState = safeContractStateReply.data.result
+					if (!gnosisSafeContractState.ok) {
+						setGnosisSafeContractStateError(gnosisSafeContractState.message)
 						return
 					}
 					lastSuccessfulSafeIdentification.value = requestedIdentification
-					safeSimulationSignerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
+					safeSimulationSignerAddressBookEntries.value = gnosisSafeContractState.ownerAddressBookEntries
 					const currentState = param.modifyAddressWindowState.peek()
-					const safeSignerAddresses = safeContractState.owners.map(checksummedAddress)
+					const safeSignerAddresses = gnosisSafeContractState.owners.map(checksummedAddress)
 					const currentSafeSignerAddress = currentState.incompleteAddressBookEntry.safeSimulationSignerAddress
 					const safeSimulationSignerAddress = currentSafeSignerAddress === undefined
 						? safeSignerAddresses[0]
@@ -467,7 +467,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						incompleteAddressBookEntry: modifyObject(currentState.incompleteAddressBookEntry, {
 							safeSignerAddresses,
 							safeSimulationSignerAddress,
-							safeVersion: safeContractState.version,
+							safeVersion: gnosisSafeContractState.version,
 						}),
 						errorState: undefined,
 					})
@@ -489,14 +489,14 @@ export function AddNewAddress(param: AddAddressParam) {
 		const currentIdentification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
 		if (currentIdentification === undefined || areAddressIdentificationKeysEqual(lastCompletedIdentification.value, currentIdentification)) return
 		if (inFlightIdentifications.value.some((identification) => areAddressIdentificationKeysEqual(identification, currentIdentification))) return
-		if (currentIdentification.requestSafeContractState) {
+		if (currentIdentification.requestGnosisSafeContractState) {
 			void waitForSafeSignerLookup(async () => await identifyAddress(currentIdentification))
 			return
 		}
 		void waitForAddressLookup(async () => await identifyAddress(currentIdentification))
 	})
 
-	const refreshSafeSigners = () => {
+	const refreshGnosisSafeSigners = () => {
 		safeSignerRefreshGeneration.value += 1
 		lastCompletedIdentification.value = undefined
 		lastSuccessfulSafeIdentification.value = undefined
@@ -629,7 +629,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const areInputsValid = useComputed(() => completeAddressBookEntryOrError.value.type !== 'error')
 	const isCurrentSafeLookupComplete = useComputed(() => {
 		const currentIdentification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
-		return currentIdentification?.requestSafeContractState !== true
+		return currentIdentification?.requestGnosisSafeContractState !== true
 			|| areAddressIdentificationKeysEqual(lastSuccessfulSafeIdentification.value, currentIdentification)
 	})
 
@@ -714,7 +714,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							safeSignerLookupState = { safeSignerLookup.value.state }
 							safeSimulationSignerAddressBookEntries = { safeSimulationSignerAddressBookEntries }
 							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
-								refreshSafeSigners = { refreshSafeSigners }
+								refreshGnosisSafeSigners = { refreshGnosisSafeSigners }
 						/>
 					<div class = 'address-editor-errors'>
 					{ completeAddressBookEntryOrError.value.type !== 'error' || !isCurrentSafeLookupComplete.value ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
@@ -732,8 +732,8 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 				<footer class = 'modal-card-foot window-footer address-editor-footer'>
 					<button class = 'btn btn--outline' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
-					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === parseUserEnteredAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address, param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { incompleteAddressBookEntry.value.type === 'safe' ? 'Validating Safe and switching...' : incompleteAddressBookEntry.value.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
-					<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { incompleteAddressBookEntry.value.type === 'safe' ? 'Validating Safe...' : incompleteAddressBookEntry.value.addingAddress ? 'Creating...' : 'Saving...' } />
+					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === parseUserEnteredAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address, param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { incompleteAddressBookEntry.value.type === 'safe' ? 'Validating Gnosis Safe and switching...' : incompleteAddressBookEntry.value.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
+					<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { incompleteAddressBookEntry.value.type === 'safe' ? 'Validating Gnosis Safe...' : incompleteAddressBookEntry.value.addingAddress ? 'Creating...' : 'Saving...' } />
 				</footer>
 		</div>
 	</> )

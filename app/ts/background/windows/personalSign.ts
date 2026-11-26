@@ -1,4 +1,4 @@
-import { SafeMessage } from '../../safe/safeMessage.js'
+import { GnosisSafeMessage } from '../../gnosisSafe/gnosisSafeMessage.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { type OpenSeaOrderMessage, type Permit2SignatureTransferKind, type Permit2Witness, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest, findPermit2WitnessField, getPermit2SignatureTransferKind } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
@@ -11,7 +11,7 @@ import type { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
-import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
+import { getMessageAndDomainHash, getGnosisSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import type { EIP712Message } from '../../types/eip721.js'
 import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
@@ -141,7 +141,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 
 	if (maybeParsed.success === false) {
 		const hashes = getMessageAndDomainHash(originalParams.originalRequestParameters)
-		const safeMessage = SafeMessage.safeParse({ typedData: namedParams.param, review: signedMessageTransaction.safeMessageReview })
+		const safeMessage = GnosisSafeMessage.safeParse({ typedData: namedParams.param, review: signedMessageTransaction.safeMessageReview })
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(identify, namedParams.param)
@@ -266,7 +266,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 				parsedMessageDataAddressBookEntries: await promiseAllMapAbortSafe(addressesInEventsAndInputData, (address) => identify(address)),
 				isValidMessage: isValid.valid,
 				...hashes,
-				safeTxHash: getSafeTxHash(parsed),
+				safeTxHash: getGnosisSafeTxHash(parsed),
 			}
 		}
 		case 'OrderComponents': return {

@@ -35,7 +35,7 @@ async function renderWarningSigns(dom: ReturnType<typeof installDomMock>, isInsi
 	return { leadingSign, trailingSign }
 }
 
-// Selectors such as .safe-signer-option-address > .inline-card expect the card to be the outermost element InlineCard renders, so a warning must not add a wrapper around it; the card's spacing rules also expect the signs to be its direct children.
+// Selectors such as .gnosis-safe-signer-option-address > .inline-card expect the card to be the outermost element InlineCard renders, so a warning must not add a wrapper around it; the card's spacing rules also expect the signs to be its direct children.
 for (const warning of [warningMessage, undefined]) {
 	test(`renders the card as its outermost element ${ warning === undefined ? 'without a warning' : 'with a warning, also while it is explained' }`, async () => {
 		const dom = installDomMock()

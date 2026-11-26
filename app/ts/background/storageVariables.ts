@@ -18,7 +18,7 @@ import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
-import { SafeTransactionStacks } from '../types/safeTypes.js'
+import { GnosisSafeTransactionStacks } from '../types/gnosisSafeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
@@ -438,7 +438,7 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 	})
 }
 
-export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
+export const getGnosisSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', GnosisSafeTransactionStacks) ?? []
 
 function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: InterceptorTransactionStack) {
 	const ids = interceptorTransactionStack.operations
@@ -449,20 +449,20 @@ function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: Inte
 
 type TransactionState = {
 	readonly interceptorTransactionStack: InterceptorTransactionStack
-	readonly safeTransactionStacks: SafeTransactionStacks
+	readonly safeTransactionStacks: GnosisSafeTransactionStacks
 }
 
 export async function updateTransactionState(updateFunc: (previousState: TransactionState) => TransactionState): Promise<TransactionState> {
 	return await transactionStateSemaphore.execute(async () => {
 		const previousState = {
 			interceptorTransactionStack: await getInterceptorTransactionStack(),
-			safeTransactionStacks: await getSafeTransactionStacks(),
+			safeTransactionStacks: await getGnosisSafeTransactionStacks(),
 		}
 		const updatedState = updateFunc(previousState)
 		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),
-			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, updatedState.safeTransactionStacks),
+			prepareLargeStateWrite('safeTransactionStacks', GnosisSafeTransactionStacks, updatedState.safeTransactionStacks),
 		])
 		return updatedState
 	})

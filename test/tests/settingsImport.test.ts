@@ -271,15 +271,15 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('round-trips Gnosis Safe settings in version 1.6 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		const { changeSimulationMode, exportSettingsAndAddressBook, getGnosisSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setGnosisSafeAppsCompatibilityMode } = await settingsModulePromise
 		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Exported signing Safe',
+			name: 'Exported signing Gnosis Safe',
 			address: signingSafeAddress,
 			chainId: testRpcNetwork.chainId,
 			entrySource: 'User',
@@ -292,7 +292,7 @@ describe('settings import', () => {
 			activeSigningSafeAddress: signingSafeAddress,
 		})
 		await rememberSigningAddressPreference({ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId })
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
 		assert.equal(exportedSettings.version, '1.6')
@@ -305,7 +305,7 @@ describe('settings import', () => {
 		await importSettingsAndAddressBook(exportedSettings)
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
-		assert.equal(await getSafeAppsCompatibilityMode(), true)
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
 		const previousTabState = await getTabState(1)
 		const transition = await getSigningAddressSelectionTransition(importedSettings, previousTabState, {
@@ -317,14 +317,14 @@ describe('settings import', () => {
 		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
 	})
 
-	test('publishes imported Safe preferences only after their address book entry', async () => {
+	test('publishes imported Gnosis Safe preferences only after their address book entry', async () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Ordered import Safe',
+			name: 'Ordered import Gnosis Safe',
 			address: signingSafeAddress,
 			chainId: testRpcNetwork.chainId,
 			entrySource: 'User',
@@ -348,7 +348,7 @@ describe('settings import', () => {
 		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 	})
 
-	test('clears a pre-existing signing Safe when importing a legacy export', async () => {
+	test('clears a pre-existing signing Gnosis Safe when importing a legacy export', async () => {
 		const signingSafeAddress = 0x6666666666666666666666666666666666666666n
 		const signerAddress = 0x6767676767676767676767676767676767676767n
 		const { changeSimulationMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
@@ -368,7 +368,7 @@ describe('settings import', () => {
 				simulationMode: false,
 				addressBookEntries: [{
 					type: 'safe',
-					name: 'Legacy signing Safe',
+					name: 'Legacy signing Gnosis Safe',
 					address: signingSafeAddress,
 					chainId: testRpcNetwork.chainId,
 					entrySource: 'User',
@@ -393,14 +393,14 @@ describe('settings import', () => {
 		assert.deepEqual(transition.selection, { type: 'signer', address: signerAddress })
 	})
 
-	test('keeps experimental Safe Apps compatibility disabled for legacy imports', async () => {
-		const { getSafeAppsCompatibilityMode, importSettingsAndAddressBook, setSafeAppsCompatibilityMode } = await settingsModulePromise
-		assert.equal(await getSafeAppsCompatibilityMode(), false)
-		await setSafeAppsCompatibilityMode(true)
+	test('keeps experimental Gnosis Safe Apps compatibility disabled for legacy imports', async () => {
+		const { getGnosisSafeAppsCompatibilityMode, importSettingsAndAddressBook, setGnosisSafeAppsCompatibilityMode } = await settingsModulePromise
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), false)
+		await setGnosisSafeAppsCompatibilityMode(true)
 
 		await importSettingsAndAddressBook(buildVersion14Import(false, false))
 
-		assert.equal(await getSafeAppsCompatibilityMode(), false)
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), false)
 	})
 
 	test('serializes legacy preference clearing after an in-flight preference write', async () => {
@@ -426,7 +426,7 @@ describe('settings import', () => {
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
-			name: 'Pre-import signing Safe',
+			name: 'Pre-import signing Gnosis Safe',
 			address: signingSafeAddress,
 			chainId: testRpcNetwork.chainId,
 			entrySource: 'User',
@@ -450,7 +450,7 @@ describe('settings import', () => {
 		assert.deepEqual(transition.selection, { type: 'signer', address: signerAddress })
 	})
 
-	test('resets a legacy version 1.4 unified address instead of inferring a signing Safe', async () => {
+	test('resets a legacy version 1.4 unified address instead of inferring a signing Gnosis Safe', async () => {
 		const safeAddress = 0x7777777777777777777777777777777777777777n
 		const legacyExport = buildVersion14Import(false, false)
 		if (legacyExport.version !== '1.4') throw new Error('Expected version 1.4 test settings')
@@ -460,7 +460,7 @@ describe('settings import', () => {
 				...legacyExport.settings,
 				activeSimulationAddress: safeAddress,
 				simulationMode: false,
-				addressBookEntries: [{ type: 'safe', name: 'Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
+				addressBookEntries: [{ type: 'safe', name: 'Legacy Gnosis Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
 			},
 		}
 		const { defaultActiveAddresses, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
@@ -545,7 +545,7 @@ describe('settings import', () => {
 	const preImportSigningPreference = { signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
 
 	const storePreImportSettings = async () => {
-		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
+		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setGnosisSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: testRpcNetwork, activeSimulationAddress: 0x9292929292929292929292929292929292929292n, activeSigningAddress: 0x9393939393939393939393939393939393939393n, activeSigningSafeAddress: 0x9494949494949494949494949494949494949494n })
@@ -553,7 +553,7 @@ describe('settings import', () => {
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'pre-import.example', icon: undefined, title: 'Pre-import' }, access: false }])
 		await setPage({ page: 'Home' })
 		await setUseTabsInsteadOfPopup(false)
-		await setSafeAppsCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
 		await persistMetamaskCompatibilityMode(true)
 	}
 
@@ -591,7 +591,7 @@ describe('settings import', () => {
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
 				simulationMode: false,
-				addressBookEntries: [{ type: 'safe', name: 'Version 1.5 signing Safe', address: version15SigningSafeAddress, chainId: testRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [version15SigningPreference.signerAddress] }],
+				addressBookEntries: [{ type: 'safe', name: 'Version 1.5 signing Gnosis Safe', address: version15SigningSafeAddress, chainId: testRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [version15SigningPreference.signerAddress] }],
 				useTabsInsteadOfPopup: false,
 				metamaskCompatibilityMode: false,
 			},
@@ -599,7 +599,7 @@ describe('settings import', () => {
 		const assertResetsSigningState = async () => {
 			assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 			assert.equal((await settings.getSettings()).activeSigningSafeAddress, undefined)
-			assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+			assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), false)
 		}
 		return [
 			{ exportedSettings: buildVersion10Import(), assertImportedValues: async () => {
@@ -635,13 +635,13 @@ describe('settings import', () => {
 				assert.equal(importedSettings.activeSimulationAddress, version15SimulationAddress)
 				assert.equal(importedSettings.activeSigningSafeAddress, version15SigningSafeAddress)
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [version15SigningPreference])
-				assert.equal(await settings.getSafeAppsCompatibilityMode(), false, 'version 1.5 has no Safe Apps compatibility, so it is reset')
+				assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), false, 'version 1.5 has no Gnosis Safe Apps compatibility, so it is reset')
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
 			} },
 			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
-				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+				assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), false)
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 			} },
 		]
@@ -731,7 +731,7 @@ describe('settings import', () => {
 		inFlightWriteGate.release()
 		await Promise.all([inFlightAddressBookWrite, settingsImport, laterWebsiteAccessUpdate, laterPreferenceUpdate])
 
-		assert.deepEqual((await getUserAddressBookEntries()).map(({ name }) => name), ['Version 1.5 signing Safe'])
+		assert.deepEqual((await getUserAddressBookEntries()).map(({ name }) => name), ['Version 1.5 signing Gnosis Safe'])
 		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['later.example'])
 		assert.deepEqual((await getSigningAddressPreferences()).map(({ signerAddress }) => signerAddress), [0xa3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3n, laterSignerAddress])
 	})

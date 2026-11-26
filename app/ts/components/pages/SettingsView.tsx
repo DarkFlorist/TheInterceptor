@@ -179,7 +179,7 @@ export function SettingsView() {
 			data: { metamaskCompatibilityMode: checked }
 		})
 	}
-	async function requestToSafeAppsCompatibilityMode(checked: boolean) {
+	async function requestToGnosisSafeAppsCompatibilityMode(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
 			data: { safeAppsCompatibilityMode: checked }
@@ -215,9 +215,9 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental).' }
+							text = { 'Advertise as a Gnosis Safe wallet to Gnosis Safe Apps (experimental).' }
 							checked = { safeAppsCompatibilityMode.value }
-							onInput = { requestToSafeAppsCompatibilityMode }
+							onInput = { requestToGnosisSafeAppsCompatibilityMode }
 						/>
 					</li>
 					<li>

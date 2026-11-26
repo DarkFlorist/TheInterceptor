@@ -12,18 +12,18 @@ const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/addressBook.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/settings.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/websiteAccess.ts', import.meta.url)),
-	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
+	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/gnosisSafe.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupSettingsCommands.ts', import.meta.url)),
 ]
-const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationResolver.ts', import.meta.url)).text()
-const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
-const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
-const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
-const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
+const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeConfirmationResolver.ts', import.meta.url)).text()
+const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeConfirmationPersistence.ts', import.meta.url)).text()
+const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeTransactionConfirmation.ts', import.meta.url)).text()
+const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeSignerSelectionRefresh.ts', import.meta.url)).text()
+const safePendingFlowSource = await Bun.file(new URL('../../app/ts/gnosisSafe/gnosisSafePendingFlow.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
-const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
+const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
 const accessManagementSource = await Bun.file(new URL('../../app/ts/background/accessManagement.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
 const websiteActiveAddressSource = await Bun.file(new URL('../../app/ts/background/websiteActiveAddress.ts', import.meta.url)).text()
@@ -33,7 +33,7 @@ const refreshPopupSimulationSource = popupMessageHandlersSource.slice(
 	popupMessageHandlersSource.indexOf('export async function popupChangeActiveRpc'),
 )
 
-const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
+const hasDuplicatedGnosisSafePendingFlowDiscriminant = (source: string) => {
 	const aliases = new Map(Array.from(
 		source.matchAll(/^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;?\s*$/gmu),
 		(match) => [match[1], match[2]] as const,
@@ -57,7 +57,7 @@ const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
 	}))
 }
 
-const hasRawSafeFieldAfterTransactionNarrowing = (source: string) => {
+const hasRawGnosisSafeFieldAfterTransactionNarrowing = (source: string) => {
 	const normalizedSource = source.replace(/\s+/gu, ' ')
 	return /\b([A-Za-z_$][A-Za-z0-9_$]*)\.type !== 'Transaction'.{0,3000}\b\1\.safeFlow\.(?:kind|state|safeExecutionOriginalRequestParameters|safeTransaction)\b/u.test(normalizedSource)
 }
@@ -74,12 +74,12 @@ test('simulation service keeps compatibility exports backed by focused signing m
 	assert.equal(simulationFacade.simulatePersonalSign, simulationPersonalSigning.simulatePersonalSign)
 })
 
-test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
-	assert.match(safeAppsCompatibilityCoordinatorSource, /function createSafeAppsCompatibilityCoordinator/u)
+test('Gnosis Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
+	assert.match(safeAppsCompatibilityCoordinatorSource, /function createGnosisSafeAppsCompatibilityCoordinator/u)
 	assert.match(websiteTabConnectionsSource, /from '\.\/websiteLifecycle\.js'/u)
-	assert.doesNotMatch(accessManagementSource, /safeAppsCompatibilityCoordinator/u)
+	assert.doesNotMatch(accessManagementSource, /gnosisSafeAppsCompatibilityCoordinator/u)
 	assert.doesNotMatch(websiteTabConnectionsSource, /from '\.\/accessManagement\.js'/u)
-	assert.doesNotMatch(accessManagementSource, /function createSafeAppsCompatibilityCoordinator/u)
+	assert.doesNotMatch(accessManagementSource, /function createGnosisSafeAppsCompatibilityCoordinator/u)
 	assert.match(backgroundUtilsSource, /export const getWebsiteSocketConnection/u)
 	assert.match(websiteActiveAddressSource, /export async function getWebsiteActiveAddress/u)
 	assert.doesNotMatch(safeAppsCompatibilityCoordinatorSource, /function getConnectionDetails|function getActiveAddressForDomain/u)
@@ -126,14 +126,14 @@ test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('__proto__'), false)
 })
 
-test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
-	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessageInstance\(/u)
-	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
-	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
-	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
+test('Gnosis Safe signer refresh persistence is isolated from confirmation resolution', () => {
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistGnosisSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessageInstance\(/u)
+	assert.match(confirmTransactionSource, /refreshAndPersistGnosisSafeSignerSelection\(/u)
+	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshGnosisSafeSignerSelection/u)
+	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeGnosisSafeSignerSelectionRefresh/u)
 	assert.doesNotMatch(safeSignerSelectionRefreshSource, /JSON\.stringify/u)
-	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshSafeSignerSelection/u)
-	assert.doesNotMatch(confirmTransactionSource, /function mergeSafeSignerSelectionRefresh/u)
+	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshGnosisSafeSignerSelection/u)
+	assert.doesNotMatch(confirmTransactionSource, /function mergeGnosisSafeSignerSelectionRefresh/u)
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
 })
 
@@ -198,31 +198,31 @@ test('the signer-reply update check finds calls by syntax, not by text position'
 	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', aliasedImport), [{ enclosingFunction: 'elsewhere', isCall: true }])
 })
 
-test('Safe pending flow discrimination has one owner', () => {
+test('Gnosis Safe pending flow discrimination has one owner', () => {
 	assert.match(safePendingFlowSource, /kind: 'directExecution'/u)
 	assert.match(safePendingFlowSource, /kind: 'messageCoSign'/u)
 	assert.match(safePendingFlowSource, /kind: 'proposal'/u)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(`
 		candidate.type === 'Transaction'
 			&& candidate.safeFlow.kind === 'proposal'
 	`), true)
-	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(`
+	assert.equal(hasRawGnosisSafeFieldAfterTransactionNarrowing(`
 		if (candidate.type !== 'Transaction') return
 		use(candidate.safeFlow.safeTransaction)
 	`), true)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(`
 		const alias = candidate
 		candidate.type === 'Transaction'
 			&& alias.safeFlow.state === 'created'
 	`), true)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationResolverSource), false)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationPersistenceSource), false)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeTransactionConfirmationSource), false)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeSignerSelectionRefreshSource), false)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionSource), false)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(popupMessageHandlersSource), false)
-	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionPageSource), false)
-	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(refreshPopupSimulationSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(safeConfirmationResolverSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(safeConfirmationPersistenceSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(safeTransactionConfirmationSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(safeSignerSelectionRefreshSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(confirmTransactionSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(popupMessageHandlersSource), false)
+	assert.equal(hasDuplicatedGnosisSafePendingFlowDiscriminant(confirmTransactionPageSource), false)
+	assert.equal(hasRawGnosisSafeFieldAfterTransactionNarrowing(refreshPopupSimulationSource), false)
 	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.safeFlow/u)
 })
 

@@ -1,18 +1,18 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { TabState } from '../types/user-interface-types.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
-import { getActiveAddressSelection, resolveSigningSafe } from '../utils/activeAddressSelection.js'
+import { getActiveAddressSelection, resolveSigningGnosisSafe } from '../utils/activeAddressSelection.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getSigningAddressPreferences, rememberSigningAddressPreference } from './settings.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 
-export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {
-	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
+export async function getConfiguredSigningGnosisSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {
+	return resolveSigningGnosisSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
 }
 
-export async function getConfiguredSigningSafe(settings: Settings, signerAccounts: readonly bigint[]) {
+export async function getConfiguredSigningGnosisSafe(settings: Settings, signerAccounts: readonly bigint[]) {
 	if (settings.simulationMode) return undefined
-	return await getConfiguredSigningSafeForChain(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerAccounts)
+	return await getConfiguredSigningGnosisSafeForChain(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 
 export async function rememberSigningAddressSelection(preference: SigningAddressPreference) {
@@ -41,7 +41,7 @@ export async function getSigningAddressSelectionTransition(
 	previousTabState: TabState,
 	currentTabState: TabState,
 ): Promise<SigningAddressSelectionTransition> {
-	const selectedSafe = await getConfiguredSigningSafe(settings, currentTabState.signerAccounts)
+	const selectedSafe = await getConfiguredSigningGnosisSafe(settings, currentTabState.signerAccounts)
 	const configuredActiveAddress = settings.simulationMode
 		? settings.activeSimulationAddress
 		: selectedSafe?.address ?? previousTabState.activeSigningAddress

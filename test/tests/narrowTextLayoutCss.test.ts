@@ -21,19 +21,19 @@ describe('narrow text layout CSS', () => {
 		const checkboxText = expectRule(css, '.form-control .checkbox-text')
 		assert.match(checkboxText, /overflow-wrap\s*:\s*anywhere\s*;/)
 
-		const safeSignerOption = expectRule(css, '.safe-signer-option')
+		const safeSignerOption = expectRule(css, '.gnosis-safe-signer-option')
 		assert.match(safeSignerOption, /align-items\s*:\s*center\s*;/)
 		assert.match(safeSignerOption, /width\s*:\s*100%\s*;/)
-		assert.match(css, /\.safe-signer-option:has\(\[type=radio\]:not\(:disabled\)\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
-		assert.match(css, /\.safe-signer-option \[type=radio\]:not\(:disabled\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
-		assert.match(css, /\.safe-signer-option:has\(\[type=radio\]:checked\):before\s*\{[\s\S]*?background\s*:\s*var\(--white-color\)\s*;/)
+		assert.match(css, /\.gnosis-safe-signer-option:has\(\[type=radio\]:not\(:disabled\)\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
+		assert.match(css, /\.gnosis-safe-signer-option \[type=radio\]:not\(:disabled\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
+		assert.match(css, /\.gnosis-safe-signer-option:has\(\[type=radio\]:checked\):before\s*\{[\s\S]*?background\s*:\s*var\(--white-color\)\s*;/)
 
-		const safeSignerAddress = expectRule(css, '.safe-signer-option-address')
+		const safeSignerAddress = expectRule(css, '.gnosis-safe-signer-option-address')
 		assert.match(safeSignerAddress, /grid-column\s*:\s*2\s*;/)
 		assert.match(safeSignerAddress, /display\s*:\s*flex\s*;/)
 		assert.match(safeSignerAddress, /overflow\s*:\s*hidden\s*;/)
 
-		const safeSignerAddressText = expectRule(css, '.safe-signer-option-address > code')
+		const safeSignerAddressText = expectRule(css, '.gnosis-safe-signer-option-address > code')
 		assert.match(safeSignerAddressText, /text-overflow\s*:\s*ellipsis\s*;/)
 		assert.match(safeSignerAddressText, /white-space\s*:\s*nowrap\s*;/)
 
@@ -45,17 +45,17 @@ describe('narrow text layout CSS', () => {
 		assert.match(retrievalSource, /align-items\s*:\s*center\s*;/)
 		assert.match(retrievalSource, /display\s*:\s*inline-flex\s*;/)
 
-		const safeSignerConnectionMessage = expectRule(css, '.safe-signer-connection-message')
+		const safeSignerConnectionMessage = expectRule(css, '.gnosis-safe-signer-connection-message')
 		assert.match(safeSignerConnectionMessage, /max-width\s*:\s*100%\s*;/)
 		assert.match(safeSignerConnectionMessage, /overflow-wrap\s*:\s*anywhere\s*;/)
 
-		const safeSignerHomeDropdown = expectRule(css, '.safe-signer-address .dropdown-menu,\n.safe-signer-address .dropdown-content')
+		const safeSignerHomeDropdown = expectRule(css, '.gnosis-safe-signer-address .dropdown-menu,\n.gnosis-safe-signer-address .dropdown-content')
 		assert.match(safeSignerHomeDropdown, /box-sizing\s*:\s*border-box\s*;/)
 		assert.match(safeSignerHomeDropdown, /max-width\s*:\s*100%\s*;/)
 		assert.match(safeSignerHomeDropdown, /width\s*:\s*100%\s*;/)
-		const safeSignerHomeMenu = expectRule(css, '.safe-signer-address .dropdown-menu')
+		const safeSignerHomeMenu = expectRule(css, '.gnosis-safe-signer-address .dropdown-menu')
 		assert.match(safeSignerHomeMenu, /min-width\s*:\s*0\s*;/)
-		const safeSignerHomeOption = expectRule(css, '.safe-signer-home-option')
+		const safeSignerHomeOption = expectRule(css, '.gnosis-safe-signer-home-option')
 		assert.match(safeSignerHomeOption, /min-width\s*:\s*0\s*;/)
 		assert.match(safeSignerHomeOption, /width\s*:\s*100%\s*;/)
 		const staticBigAddress = expectRule(css, '.multiline-card--static')
@@ -69,9 +69,9 @@ describe('narrow text layout CSS', () => {
 		assert.match(dropdownHover, /background-color\s*:\s*color-mix\(/)
 		assert.match(dropdownHover, /color\s*:\s*var\(--text-color\)\s*;/)
 
-		const safeSignerOwnerList = expectRule(css, '.safe-signer-owner-list')
+		const safeSignerOwnerList = expectRule(css, '.gnosis-safe-signer-owner-list')
 		assert.match(safeSignerOwnerList, /display\s*:\s*grid\s*;/)
-		const safeSignerOwnerOption = expectRule(css, '.safe-signer-owner-option')
+		const safeSignerOwnerOption = expectRule(css, '.gnosis-safe-signer-owner-option')
 		assert.match(safeSignerOwnerOption, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
 		assert.match(safeSignerOwnerOption, /min-width\s*:\s*0\s*;/)
 
@@ -125,7 +125,7 @@ describe('narrow text layout CSS', () => {
 		assert.match(addressEditorSection, /border-radius\s*:\s*8px\s*;/)
 		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')
 		assert.match(addressEditorSectionHeading, /align-items\s*:\s*center\s*;/)
-		const safeSignerOwnerAddress = expectRule(css, '.safe-signer-owner-option > .inline-card')
+		const safeSignerOwnerAddress = expectRule(css, '.gnosis-safe-signer-owner-option > .inline-card')
 		assert.match(safeSignerOwnerAddress, /max-width\s*:\s*100%\s*;/)
 		assert.match(safeSignerOwnerAddress, /min-width\s*:\s*0\s*;/)
 
