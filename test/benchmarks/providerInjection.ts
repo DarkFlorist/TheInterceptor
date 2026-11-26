@@ -1,3 +1,4 @@
+import { getProviderInjectionFailure, type ProviderInjectionResult } from './providerInjectionAssertions.js'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { launchBrowserSession, selectedBrowser } from './browserHarness.js'
@@ -5,7 +6,7 @@ import { launchBrowserSession, selectedBrowser } from './browserHarness.js'
 // Checks provider injection in either browser with the same page observations. The page's first script records whether the provider existed when it ran, each script element the extension adds with whether the provider existed when the page observed it, and any CSP violation.
 const firstPageScript = [
 	'window.injectionObservations = { providerAtFirstPageScript: window.ethereum?.isInterceptor === true, addedScripts: [], cspViolations: 0 }',
-	'new MutationObserver((mutations) => { for (const mutation of mutations) for (const node of mutation.addedNodes) if (node instanceof HTMLScriptElement && node !== document.currentScript) window.injectionObservations.addedScripts.push({ external: node.src !== "", providerDefined: window.ethereum?.isInterceptor === true }) }).observe(document, { childList: true, subtree: true })',
+	'new MutationObserver((mutations) => { for (const mutation of mutations) for (const node of mutation.addedNodes) if (node instanceof HTMLScriptElement && node !== document.currentScript) window.injectionObservations.addedScripts.push({ external: node.src !== "", src: node.src, providerDefined: window.ethereum?.isInterceptor === true }) }).observe(document, { childList: true, subtree: true })',
 	'addEventListener("securitypolicyviolation", () => { window.injectionObservations.cspViolations += 1 })',
 ].join('\n')
 const firstPageScriptHash = createHash('sha256').update(firstPageScript).digest('base64')
@@ -19,26 +20,7 @@ const pageLoadsPerPath = 5
 // Polls for the provider so a page where it arrives late, or never, is told apart from one where it arrived in time.
 const waitForInterceptorProvider = 'new Promise((resolve) => { const startedAt = Date.now(); const poll = () => { if (window.ethereum?.isInterceptor === true) resolve(true); else if (Date.now() - startedAt > 10000) resolve(false); else setTimeout(poll, 50) }; poll() })'
 
-type AddedScript = { readonly external: boolean, readonly providerDefined: boolean }
-type InjectionObservations = { readonly providerAtFirstPageScript: boolean, readonly addedScripts: readonly AddedScript[], readonly cspViolations: number }
-type PageResult = { readonly path: string, readonly load: number, readonly providerArrived: boolean | undefined, readonly observations: InjectionObservations | undefined }
-
-function getFailure({ path, providerArrived, observations }: PageResult) {
-	if (providerArrived !== true) return 'the provider never arrived'
-	if (observations === undefined) return 'the page did not record its observations'
-	// The MV2 injection starts after a background round trip, so on a page that loads this fast it may land before or after the page's first script; either order is valid, but it must be the expected one of the two.
-	if (observations.providerAtFirstPageScript) return undefined
-	const [firstAddedScript, secondAddedScript] = observations.addedScripts
-	if (firstAddedScript === undefined || firstAddedScript.external) return 'the page did not see the inline provider script being added'
-	if (path !== strictCspPath) {
-		if (!firstAddedScript.providerDefined) return 'the inline provider was not defined synchronously when its script element was added'
-		if (observations.addedScripts.length !== 1) return 'the extension URL fallback ran although the inline provider was allowed'
-		return undefined
-	}
-	if (observations.cspViolations === 0) return 'the strict CSP did not block the inline provider script'
-	if (secondAddedScript?.external !== true) return 'the extension URL fallback did not run after the CSP blocked the inline provider'
-	return undefined
-}
+type PageResult = ProviderInjectionResult & { readonly path: string, readonly load: number }
 
 async function startPageServer() {
 	const server = createServer((request, response) => {
@@ -92,7 +74,7 @@ async function main() {
 		} finally { await session.close() }
 	} finally { await pageServer.close() }
 	const failures = results.flatMap((result) => {
-		const failure = getFailure(result)
+		const failure = getProviderInjectionFailure(result, result.path === strictCspPath)
 		return failure === undefined ? [] : [`${ result.path } load ${ result.load }: ${ failure }`]
 	})
 	console.warn(JSON.stringify({ ok: failures.length === 0, browserVersion, failures, results }, undefined, 2))
