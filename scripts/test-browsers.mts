@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 export const sharedBrowserScenarios = [
 	{ id: 'browser-harness-contract', script: 'test:browser:harness-contract', args: [] },
 	{ id: 'provider-injection', script: 'test:browser:provider-injection', args: [] },
+	{ id: 'wallet-signing', script: 'test:browser:wallet-signing', args: [] },
 	{ id: 'rpc-communication', script: 'test:browser:rpc-communication', args: [] },
 ] as const
 

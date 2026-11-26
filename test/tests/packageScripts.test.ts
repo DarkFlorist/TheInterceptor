@@ -60,6 +60,7 @@ describe('package scripts', () => {
 		const scripts = getPackageScripts()
 
 		assert.equal(getScript(scripts, 'typecheck').split(' && ')[0], 'bun run check:recovery-dependency')
+		assert.equal(getScript(scripts, 'typecheck').includes('compile-shared'), false)
 		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
 			'bun run check:recovery-dependency',
 			'bun run compile-contracts',
@@ -163,7 +164,7 @@ describe('package scripts', () => {
 			'bun run check:recovery-dependency',
 			'bun run compile-contracts',
 			'bun run clean-js-output',
-			'bun --bun tsc --project tsconfig.json',
+			'bun ./scripts/compile-typescript.mts tsconfig-app-build.json',
 		])
 		assert.equal(compilerOptions.declaration, true)
 		assert.equal(compilerOptions.declarationMap, true)

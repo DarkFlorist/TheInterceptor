@@ -242,6 +242,8 @@ export const PopupPendingSignableMessage = funtypes.Intersect(
 )
 
 export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction
+
+export type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 

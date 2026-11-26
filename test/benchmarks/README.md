@@ -129,7 +129,7 @@ For comparisons, build each revision and run the same command with the same brow
 
 ## Combined Chrome and Firefox tests
 
-Run `bun run test:browsers` after installing browser executables with `bun run install-chrome` and `bun run install-firefox`. The same provider injection/CSP and RPC permission/reload scenarios run on Chrome MV3 and Firefox MV2.
+Run `bun run test:browsers` after installing browser executables with `bun run install-chrome` and `bun run install-firefox`. The same provider injection/CSP, wallet approval/signing/rejection and RPC permission/reload scenarios run on Chrome MV3 and Firefox MV2. Wallet tests use a local signer double and never broadcast transactions.
 
 Add product scenarios to the shared registry in `scripts/test-browsers.mts`. Use `bun run test:browsers --scenario=provider-injection` to select a scenario on both browsers. The explicit Chrome-only communication check exercises MV3 MAIN/ISOLATED registration and service-worker startup, APIs that Firefox MV2 does not use.
 

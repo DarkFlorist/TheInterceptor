@@ -1,5 +1,6 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
 import { createGnosisSafeAppsCompatibilityFeature, initializeGnosisSafeAppsCompatibility } from './gnosisSafeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
@@ -38,7 +39,7 @@ import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
-import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
+import { acknowledgeAndTrackBridgeRequest } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'

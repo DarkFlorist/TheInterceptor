@@ -1329,6 +1329,46 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	for (const method of ['eth_requestAccounts', 'wallet_requestPermissions']) {
+		test(`account connections wait for the latest startup signer handshake: ${ method }`, async () => {
+			const handshakes: (() => void)[] = []
+			let accountRequests = 0
+			const result = method === 'eth_requestAccounts' ? ['0x1111111111111111111111111111111111111111'] : [{ parentCapability: 'eth_accounts' }]
+			const { fakeWindow, sendBackgroundMessage } = createFakeWindow({ handleRequest: (request, reply) => {
+				if (request.method === 'connected_to_signer') {
+					handshakes.push(() => reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } }))
+					return true
+				}
+				if (request.method === 'eth_chainId') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0x1' })
+					return true
+				}
+				if (request.method !== method) return false
+				accountRequests++
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method, result })
+				return true
+			} })
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?startup-account-handshake-${ method }`, async () => {
+				await waitFor(() => handshakes.length === 1)
+				const provider = Reflect.get(fakeWindow, 'ethereum')
+				if (!isRecord(provider) || typeof provider.request !== 'function') throw new Error('Interceptor provider missing')
+				const pending = provider.request({ method, ...(method === 'wallet_requestPermissions' ? { params: [{ eth_accounts: {} }] } : {}) })
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				assert.equal(accountRequests, 0, 'connection must not use an unconfirmed signer epoch')
+				assert.equal(await provider.request({ method: 'eth_chainId' }), '0x1', 'independent RPC reads remain available during signer initialization')
+				// The content script asks for a fresh status while the initial report is in flight.
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_connection_status', result: [] })
+				await waitFor(() => handshakes.length === 2)
+				handshakes[0]?.()
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				assert.equal(accountRequests, 0, 'the superseded report must not release account requests')
+				handshakes[1]?.()
+				assert.deepEqual(await pending, result)
+				assert.equal(accountRequests, 1, 'dispatch once after initialization, without retrying wallet prompts')
+			})
+		})
+	}
+
 	test('reports a fresh signer epoch when the background requests reconnect status', async () => {
 		const connectedToSignerParams: unknown[][] = []
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({

@@ -42,7 +42,7 @@ test('a Firefox failure makes the paired run fail after Chrome succeeds', async 
 	const failures = await runBrowserTests(async (script, args = []) => {
 		if (script === 'setup-chrome') version = 3
 		if (script === 'setup-firefox') version = 2
-		return script === 'test:browser:provider-injection' && args.includes('--browser=firefox') ? 2 : 0
+		return script === 'test:browser:wallet-signing' && args.includes('--browser=firefox') ? 2 : 0
 	}, async () => version)
-	assert.deepEqual(failures, [{ browser: 'Firefox MV2', step: 'test:browser:provider-injection', exitCode: 2 }])
+	assert.deepEqual(failures, [{ browser: 'Firefox MV2', step: 'test:browser:wallet-signing', exitCode: 2 }])
 })

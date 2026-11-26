@@ -1,0 +1,9 @@
+{
+	"extends": "./tsconfig-inpage.json",
+	"compilerOptions": {
+		"rootDir": "app/inpage/ts",
+		"noEmit": false,
+		"tsBuildInfoFile": "app/inpage/js/tsconfig-inpage-build.tsbuildinfo"
+	},
+	"references": [{ "path": "./tsconfig-shared.json" }]
+}

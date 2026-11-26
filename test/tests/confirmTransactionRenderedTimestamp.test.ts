@@ -1470,6 +1470,7 @@ describe('ConfirmTransaction', () => {
 		// A new block re-simulates the request while the approval still waits for its window.
 		await updatePendingTransactionOrMessageInstance(reviewed, async (pending) => ({ ...pending, popupVisualisation: refreshed.popupVisualisation }))
 		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
+		assert.equal(findRenderedElement(dom.document.body, (node) => getRenderedProp(node, 'data-confirmation-review-changed') !== undefined), undefined, 'an in-flight transport is not a completed accept attempt')
 		windowReleased.resolve()
 		const { accept, resolution } = await acceptReachedBackground.promise
 		await act(async () => { await resolution })
@@ -1481,8 +1482,35 @@ describe('ConfirmTransaction', () => {
 		assert.deepEqual((await getInterceptorTransactionStack()).operations, [], 'nothing was added to the simulation')
 		assert.deepEqual(accept, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: reviewed.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(reviewedAsStored), forceSend: true } }, 'the accept names the clicked result')
 		assert.equal(isSendAnywayTicked(dom), false, 'the refreshed result needs a new acknowledgement')
+		await settleUntil(() => findRenderedElement(dom.document.body, (node) => getRenderedProp(node, 'data-confirmation-review-changed') !== undefined) !== undefined)
+		assert.equal(dom.document.body.textContent?.includes('The simulation changed while you were confirming.'), true)
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
+
+	test('failed confirmation delivery does not announce an acceptance refusal for a newer background copy', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		const reviewed = makeSimulatedPendingTransaction(0n)
+		const updated = makeSimulatedPendingTransaction(0n, revertedOutcome)
+		try {
+			await browserStorageLocalSet2({ pendingTransactionsAndMessages: [reviewed] })
+			browser.setConfirmDialogHandler(async () => {
+				await dispatchPendingTransactions(browser, [updated])
+				throw new Error('background unavailable')
+			})
+			await renderConfirmTransaction(dom)
+			await dispatchPendingTransactions(browser, [reviewed])
+			await settleUntil(() => isConfirmEnabled(dom))
+			const button = findConfirmButton(dom)
+			assert.ok(button)
+			await act(async () => { await clickRenderedElement(button) })
+			await settleUntil(() => dom.document.body.textContent?.includes('Failed to confirm transaction: background unavailable') === true)
+			assert.equal(dom.document.body.textContent?.includes('Failed to confirm transaction: background unavailable'), true)
+			assert.equal(findRenderedElement(dom.document.body, (node) => getRenderedProp(node, 'data-confirmation-review-changed') !== undefined), undefined)
+		} finally { await unmountConfirmTransaction(dom); dom.restore() }
+	})
+
 })

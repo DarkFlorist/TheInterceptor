@@ -1,3 +1,5 @@
+import { INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
+import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 const GNOSIS_SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -294,9 +296,8 @@ type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly typ
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
-const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
-const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
+// Account connections wait for signer ownership; reads can proceed independently. The shared account-method policy is bundled into this classic provider.
 
 function normalizeSignerChainId(chainId: string) {
 	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
@@ -933,10 +934,9 @@ class InterceptorMessageListener {
 			if (this.extensionMessagePort === undefined) return
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
-				method: 'InterceptorError',
+				...INTERCEPTOR_DIAGNOSTIC_REQUEST,
 				params: [diagnostics],
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
-				requestId: -1,
 				internal: true,
 			}
 			this.extensionMessagePort.postMessage(message)
@@ -955,6 +955,8 @@ class InterceptorMessageListener {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
+			// Startup can receive a fresh signer-status request while the initial report is in flight. Dispatch account connections only after the latest report, so background ownership checks do not reject initialization as a wallet replacement.
+			if (isAccountConnectionMethod(methodAndParams.method)) await this.waitForLatestSignerConnectionTransition()
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,

@@ -1,3 +1,4 @@
+import { isSamePendingRequestInstance } from '../utils/pendingRequestIdentity.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -9,7 +10,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingRequestInstance, PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -79,12 +80,6 @@ export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifi
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
 	})
-}
-
-type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
-
-export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
-	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
 }
 
 // Updates only the pending request instance that was read earlier, so work that awaited in between never stores into a different request the page sent under the same request id. Returns whether that instance is still pending.
