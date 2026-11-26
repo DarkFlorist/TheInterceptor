@@ -75,6 +75,11 @@ describe('background startup lifecycle', () => {
 		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnectionAndProvisionallyClaimSignerState(')
 		const firstTabStateWrite = connectionHandler.indexOf('await updateTabState(')
 
+		const nativeContext = connectionHandler.indexOf('const contextPromise = (async () => {')
+		const contextEnd = connectionHandler.indexOf('\n\t})()', nativeContext)
+		assert.equal(nativeContext >= 0 && contextEnd < listenerRegistration, true)
+		const synchronousSetup = connectionHandler.slice(0, nativeContext) + connectionHandler.slice(contextEnd + '\n\t})()'.length, listenerRegistration)
+		assert.equal(/\bawait\b/.test(synchronousSetup), false, 'The runtime port must listen before browser authentication yields; otherwise the first bridge message is lost and prevents all later requests')
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
 		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
 	})

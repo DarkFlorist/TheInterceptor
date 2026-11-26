@@ -143,24 +143,30 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	let nativeRegistration: Awaited<ReturnType<typeof getNativeGnosisSafeAppsConnectionRegistration>>
-	try { nativeRegistration = await getNativeGnosisSafeAppsConnectionRegistration(port, socket.tabId, websiteTabConnections) } catch (error: unknown) {
-		if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
-		port.disconnect()
-		return
-	}
-	const frameOrigins = nativeRegistration?.frameOrigins ?? getFrameOrigins(port.sender.url)
-	const { websiteOrigin } = frameOrigins
+	const senderUrl = port.sender.url
 	const identifier = websiteSocketToString(socket)
-	const websitePromise = (async () => {
-		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-		await updateKnownWebsiteMetadata(website)
-		return website
-	})()
-	silenceChromeUnCaughtPromise(websitePromise)
+	// Install port listeners synchronously: native-frame authentication performs browser I/O, while the page may send its first request immediately.
+	const contextPromise = (async () => {
+		let nativeRegistration: Awaited<ReturnType<typeof getNativeGnosisSafeAppsConnectionRegistration>>
+		try { nativeRegistration = await getNativeGnosisSafeAppsConnectionRegistration(port, socket.tabId, websiteTabConnections) } catch (error: unknown) {
+			if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
+			port.disconnect()
+			return undefined
+		}
+		const frameOrigins = nativeRegistration?.frameOrigins ?? getFrameOrigins(senderUrl)
+		const { websiteOrigin } = frameOrigins
+		const websitePromise = (async () => {
+			const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+			await updateKnownWebsiteMetadata(website)
+			return website
+		})()
+		silenceChromeUnCaughtPromise(websitePromise)
 
-	const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false, ...nativeRegistration?.properties }
-	const isTopFrame = nativeRegistration?.isSignerOwner ?? isTopFramePort(port)
+		const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false, ...nativeRegistration?.properties }
+		const isTopFrame = nativeRegistration?.isSignerOwner ?? isTopFramePort(port)
+		return { nativeRegistration, websiteOrigin, websitePromise, newConnection, isTopFrame }
+	})()
+	silenceChromeUnCaughtPromise(contextPromise)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
 		if (connectionInitializationPromise === undefined) throw new Error('Content script connection initialization did not start')
@@ -198,6 +204,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					return
 				}
 				const { simulationServicesOwner } = await getConnectionInitializationPromise()
+				const context = await contextPromise
+				if (context === undefined) return
+				const { nativeRegistration, websiteOrigin, websitePromise } = context
 				try { await nativeRegistration?.beforeRequest?.() } catch (error: unknown) {
 					if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
 					port.postMessage(serializeInpageReply({ type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, interceptorApproved: true, bridgeRequestSettled: true, error: { code: 4900, message: error.message } }))
@@ -222,6 +231,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	if (!listenersRegistered) return
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
+		const context = await contextPromise
+		if (context === undefined) return
+		const { nativeRegistration, newConnection, isTopFrame, websiteOrigin } = context
 		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
 		nativeRegistration?.registered?.()
 		if (registration.createdTabConnection) {
@@ -238,6 +250,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		}
 	})
 	await connectionInitializationPromise
+	const context = await contextPromise
+	if (context === undefined) return
+	const { websitePromise } = context
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
