@@ -4,7 +4,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
-import { buildRuntimeEntrypoints } from '../../build/bundler.mts'
+import { buildRuntimeEntrypoints, copyRuntimeEntrypoints } from '../../build/bundler.mts'
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 
 test('one runtime build ships and embeds identical classic provider bytes per compatibility mode', async () => {
@@ -48,4 +48,44 @@ test('one runtime build ships and embeds identical classic provider bytes per co
 		}
 
 	} finally { fs.rmSync(outdir, { recursive: true, force: true }) }
+})
+
+// Production copies generated variants over the compiled JS destinations. Its next run must still read untouched TS sources.
+test('runtime generation can run twice after copying artifacts over the compiled entrypoints', async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'interceptor-repeat-bundle-'))
+	const outdir = path.join(root, '.runtime-bundles')
+	const inpagePath = path.join(root, 'inpage/js/inpage.js')
+	const documentStartPath = path.join(root, 'inpage/js/document_start.js')
+	const inpageSourcePath = path.join(process.cwd(), 'app/inpage/ts/inpage.ts')
+	const documentStartSourcePath = path.join(process.cwd(), 'app/inpage/ts/document_start.ts')
+	const originalSources = [inpageSourcePath, documentStartSourcePath].map((file) => fs.readFileSync(file, 'utf8'))
+	try {
+		fs.mkdirSync(path.dirname(inpagePath), { recursive: true })
+		for (const file of [inpagePath, documentStartPath]) fs.writeFileSync(file, '// Compiled runtime destination, not a marker-bearing input.\n')
+		const options = { root: process.cwd(), outdir, inpagePath, documentStartPath, inpageSourcePath, documentStartSourcePath }
+		const generate = async () => {
+			const artifacts = await buildRuntimeEntrypoints([inpagePath, documentStartPath], options)
+			// Map the generated extension paths into the temporary app root, like production's copy step.
+			copyRuntimeEntrypoints(artifacts.map((artifact) => ({ ...artifact, entrypointPath: path.join(root, path.relative(process.cwd(), artifact.entrypointPath)) })))
+			return artifacts.map((artifact) => fs.readFileSync(artifact.bundledEntrypointPath, 'utf8'))
+		}
+		const first = await generate()
+		fs.rmSync(outdir, { recursive: true, force: true })
+		assert.deepEqual(await generate(), first)
+		assert.deepEqual([inpageSourcePath, documentStartSourcePath].map((file) => fs.readFileSync(file, 'utf8')), originalSources)
+	} finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+test('re-bundling keeps rewritten vendored runtime imports external', async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'interceptor-repeat-external-'))
+	const entrypoint = path.join(root, 'extension.js')
+	const polyfill = path.join(process.cwd(), 'app/vendor/webextension-polyfill/dist/browser-polyfill.js')
+	try {
+		fs.writeFileSync(entrypoint, `import browser from ${ JSON.stringify(polyfill) }; console.log(browser);`)
+		for (let run = 0; run < 2; run++) {
+			const bundles = await buildRuntimeEntrypoints([entrypoint], { root, outdir: path.join(root, 'out'), inpagePath: path.join(root, 'unused-provider.js'), documentStartPath: path.join(root, 'unused-document.js') })
+			copyRuntimeEntrypoints(bundles)
+			assert.match(fs.readFileSync(entrypoint, 'utf8'), /import.*browser-polyfill\.js/)
+		}
+	} finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
