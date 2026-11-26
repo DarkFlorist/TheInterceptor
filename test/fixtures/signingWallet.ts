@@ -1,5 +1,5 @@
 // Local wallet double: returned transaction hashes never represent a real broadcast.
-export function createSigningWalletScript(address: string, transactionHash: string) {
+export function createSigningWalletScript(address: string, transactionHash: string, typedDataSignature?: string) {
 return `(() => {
 	globalThis.__fakeSignerPreloadStarted = true
 	const requests = []
@@ -16,6 +16,11 @@ return `(() => {
 				case 'eth_accounts':
 				case 'eth_requestAccounts': return [${ JSON.stringify(address) }]
 				case 'eth_sendTransaction': return ${ JSON.stringify(transactionHash) }
+				case 'eth_signTypedData_v4': {
+					const signature = ${ JSON.stringify(typedDataSignature) ?? 'undefined' };
+					if (signature !== undefined) return signature;
+					throw Object.assign(new Error('No typed-data signature configured for this fixture'), { code: -32601 });
+				}
 				default: throw Object.assign(new Error('Unsupported fake signer method: ' + method), { code: -32601 })
 			}
 		},

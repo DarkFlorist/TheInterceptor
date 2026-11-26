@@ -1,3 +1,4 @@
+import { registerNativeGnosisSafeAppsSession, getNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
 import { getSiteReadRequestAccessContext } from '../../app/ts/background/siteReadRequestAdmission.js'
 import { hasRequestAccessAddress, createRequestAccessContextResolver } from '../../app/ts/background/requestAccessContext.js'
 import * as assert from 'assert'
@@ -11,7 +12,7 @@ import { createPort, createDeferredValue, createEthereumWithGetBlockCounter, ins
 const resolveRequestAccessContext = createRequestAccessContextResolver([{ method: 'site_rpc_request', resolve: getSiteReadRequestAccessContext }])
 
 async function harness() {
-	installBrowserMock()
+	installBrowserMock({ manifestVersion: 3 })
 	Object.assign(browser.runtime, { id: 'test-extension', getURL: (path: string) => new URL(path, 'moz-extension://test-extension/').href })
 	const modules = await loadModules()
 	const address = 0x6868686868686868686868686868686868686868n
@@ -25,33 +26,38 @@ async function harness() {
 	const connections: WebsiteTabConnections = new Map()
 	const urls = new Map<number, string>()
 	const tabReads: number[] = []
+	Object.assign(browser, { webNavigation: { getFrame: async () => ({ parentFrameId: 0, url: 'https://app.aave.com/' }) } })
+	const frame = spyOn(browser.webNavigation, 'getFrame').mockImplementation(async () => ({ parentFrameId: 0, url: 'https://app.aave.com/' }))
 	const originalGet = browser.tabs.get
 	const getTab = spyOn(browser.tabs, 'get').mockImplementation(async (tabId) => {
 		tabReads.push(tabId)
 		return { ...await originalGet(tabId), url: urls.get(tabId) }
 	})
 	const add = (tabId: number, frameId: number, sourceTabId?: number) => {
-		const socket = { tabId, connectionName: BigInt(tabId) }
+		const socket = { tabId, connectionName: BigInt(tabId * 100 + frameId) }
 		const result = createPort(tabId, undefined, frameId, socket.connectionName)
-		const url = sourceTabId === undefined ? 'https://app.aave.com/' : nativeGnosisSafeAppsHostUrl('moz-extension://test-extension/', sourceTabId, 'https://app.aave.com/', 3)
-		Object.assign(result.port.sender ?? {}, { id: 'test-extension', url: 'https://app.aave.com/' })
+		const url = nativeGnosisSafeAppsHostUrl('moz-extension://test-extension/', tabId, 'https://app.aave.com/', 3)
+		Object.assign(result.port.sender ?? {}, { id: 'test-extension', url: frameId === 0 ? url : 'https://app.aave.com/' })
 		Object.assign(result.port.sender?.tab ?? {}, { url })
 		urls.set(tabId, url)
 		const connection = { port: result.port, socket, websiteOrigin: website.websiteOrigin, requestOrigin: 'https://app.aave.com', approved: frameId === 0, wantsToConnect: false }
-		connections.set(tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } })
+		Object.assign(connection, frameId === 0 ? { nativeGnosisSafeAppOrigin: 'https://app.aave.com' } : { nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: getNativeGnosisSafeAppsSession(connections, tabId)?.port })
+		connections.set(tabId, { connections: { ...connections.get(tabId)?.connections, [modules.websiteSocketToString(socket)]: connection } })
+		Object.assign(result.port, { onDisconnect: { addListener: () => undefined, removeListener: () => undefined } })
+		if (frameId === 0) registerNativeGnosisSafeAppsSession(connections, tabId, result.port, 'https://app.aave.com')
 		return { ...result, socket, connection }
 	}
-	const source = add(10, 0)
+	const source = add(20, 0)
 	const child = add(20, 7, 10)
 	const unrelatedSource = add(30, 0)
-	const unrelatedChild = add(40, 8, 30)
+	const unrelatedChild = add(30, 8, 30)
 	const services = createEthereumWithGetBlockCounter({ count: 0 })
 	const send = async (target: typeof child, method = 'site_rpc_request', params: unknown[] = [{ chainId: '0x1', request: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] } }], websiteInput: typeof website | Promise<typeof website> = website) => {
 		const requestId = target.messages.length + 100
 		await modules.handleInterceptedRequest(target.port, website.websiteOrigin, websiteInput, services.simulationServicesOwner, target.socket, { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId, requestSocket: target.socket }, method, params }, connections, noopPublishRpcConnectionStatus)
 		return target.messages.find((message) => message.requestId === requestId)
 	}
-	return { ...modules, ethereum: services.ethereum, address, website, connections, urls, tabReads, source, child, unrelatedSource, unrelatedChild, send, restore: () => getTab.mockRestore() }
+	return { ...modules, ethereum: services.ethereum, address, website, connections, urls, tabReads, source, child, unrelatedSource, unrelatedChild, send, restore: () => { getTab.mockRestore(); frame.mockRestore() } }
 }
 
 test('native HTTP reads share the provider access gate while keeping the child unapproved', async () => {
@@ -107,7 +113,7 @@ test('source lifecycle refreshes only its native children and preserves revocati
 			if (event === 'signerAccountsChanged') feature.lifecycle.signerAccountsChanged?.(h.source.socket)
 			if (event === 'disconnect') { h.source.connection.approved = false; feature.lifecycle.approvalChanged?.(h.source.socket, false) }
 			if (event === 'approve') { h.source.connection.approved = true; feature.lifecycle.approvalChanged?.(h.source.socket, true) }
-			if (event === 'remove') { h.connections.delete(h.source.socket.tabId); feature.lifecycle.connectionRemoved?.(h.source.socket) }
+			if (event === 'remove') { delete h.connections.get(h.source.socket.tabId)?.connections[h.websiteSocketToString(h.source.socket)]; feature.lifecycle.connectionRemoved?.(h.source.socket) }
 			await waitForPortMessageCount(h.child.messages, 'site_behavior', count + 1)
 			assert.equal(h.unrelatedChild.messages.length, unrelatedCount, event)
 			assert.equal(h.unrelatedSource.messages.length, unrelatedSourceCount, event)
@@ -187,12 +193,11 @@ test('hosting revocation retracts native children while ordinary HTTP capability
 		assert.ok(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception)
 		const childPublications = h.child.messages.filter((message) => message.method === 'site_behavior').length
 		await h.setGnosisSafeAppsCompatibilityMode(false)
-		await waitForPortMessageCount(h.child.messages, 'site_behavior', childPublications + 1)
-		assert.equal(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception, undefined)
+		assert.equal((await h.send(h.child))?.result, '0x1', 'SDK disabled leaves HTTP enabled')
 		assert.equal(h.source.messages.filter((message) => message.method === 'safe_apps_compatibility').at(-1)?.result?.enabled, false)
 		const publications = h.child.messages.filter((message) => message.method === 'site_behavior').length
 		await h.setGnosisSafeAppsCompatibilityMode(true)
-		await waitForPortMessageCount(h.child.messages, 'site_behavior', publications + 1)
+		assert.equal((await h.send(h.child))?.result, '0x1')
 		assert.ok(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception)
 		assert.equal(h.child.connection.approved, false)
 	} finally { dispose(); h.restore() }
@@ -249,7 +254,7 @@ test('native HTTP execution reuses one admitted authority and validates its capt
 		assert.equal(resolve.mock.calls.length, 1, 'discovery and execution share one native authority instead of resolving it twice')
 		const context = await resolve.mock.results[0]?.value
 		assert.ok(context)
-		assert.strictEqual(context.sourceSocket, h.source.socket)
+		assert.strictEqual(context.hostSocket, h.source.socket)
 		assert.equal(h.child.connection.approved, false)
 	} finally { resolve.mockRestore(); h.restore() }
 })
@@ -331,7 +336,7 @@ test('native publication tokens discard an earlier valid context after source an
 			await captured.promise
 			if (change === 'approval') { h.source.connection.approved = false; feature.lifecycle.approvalChanged?.(h.source.socket, false) }
 			if (change === 'permission') { await h.updateWebsiteAccess(() => [{ website: h.website, access: false }]); feature.lifecycle.accessReconciled?.() }
-			if (change === 'source-navigation') { h.urls.set(10, 'https://attacker.example/'); feature.lifecycle.connectionRemoved?.(h.source.socket) }
+			if (change === 'source-navigation') { h.urls.set(20, 'https://attacker.example/'); feature.lifecycle.connectionRemoved?.(h.source.socket) }
 			if (change === 'host-navigation') { h.urls.set(20, 'moz-extension://test-extension/html/settingsView.html'); feature.lifecycle.connectionReady?.(h.child.socket) }
 			if (change === 'mode') { await h.changeSimulationMode({ simulationMode: false }); feature.lifecycle.accessReconciled?.() }
 			if (change === 'chain') {
@@ -483,7 +488,7 @@ for (const hosting of [false, true]) for (const reads of [false, true]) test(`re
 		if (reads) for (const target of [h.source, h.child]) await waitForPortMessageCount(target.messages, 'site_behavior', 1)
 		assert.equal(h.source.messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), hosting)
 		assert.equal(h.source.messages.some((message) => message.method === 'site_behavior' && message.result?.rpcInterception !== undefined), reads, 'approved top-level reads are independent of SDK hosting')
-		assert.equal(h.child.messages.some((message) => message.method === 'site_behavior' && message.result?.rpcInterception !== undefined), hosting && reads, 'native iframe reads additionally require their legitimate SDK host context')
+		assert.equal(h.child.messages.some((message) => message.method === 'site_behavior' && message.result?.rpcInterception !== undefined), reads, 'native iframe HTTP preference is independent of SDK discovery')
 	} finally { dispose(); h.restore() }
 })
 

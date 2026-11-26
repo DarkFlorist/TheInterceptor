@@ -22,6 +22,7 @@
 		"activeTab",
 		"storage",
 		"scripting",
+		"webNavigation",
 		"declarativeNetRequest"
 	],
 	"web_accessible_resources": [

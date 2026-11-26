@@ -14,13 +14,14 @@ type HostPorts = {
 
 type HostView = {
 	readonly status: string
+	readonly connectionError?: boolean
 	readonly frameUrl: string
 	readonly frameHidden: boolean
 	readonly frameGeneration: number
 	readonly lastContextChange?: string
 }
 
-const SOURCE_DISCONNECTED_STATUS = 'The original website connection was lost. Retry the connection, or reopen the app from its website.'
+const EXTENSION_DISCONNECTED_STATUS = 'The extension connection was lost. Retry the connection to reconnect to Interceptor.'
 
 // The component owns DOM/source validation; this controller owns the app session and its pending approvals.
 export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
@@ -30,7 +31,7 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 	const retryDisabled = computed(() => pendingOperations.value !== 0)
 	const update = (patch: Partial<HostView>) => { view.value = { ...view.peek(), ...patch } }
 	let stopped = false
-	let sourceDisconnected = false
+	let extensionDisconnected = false
 	let started = false
 	let generation = 0
 	let prepared: { readonly response: NativeGnosisSafeAppsResponse, readonly at: number } | undefined
@@ -42,31 +43,31 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 	let cancelHandshake: (() => void) | undefined
 	let cancelRefresh: (() => void) | undefined
 	const failure = (id: string, error: unknown): NativeGnosisSafeAppsResponse => createGnosisSafeAppsErrorResponse({ id }, error instanceof Error ? error.message : String(error))
-	const showError = (error: unknown) => { if (!stopped) update({ status: error instanceof Error ? error.message : String(error) }) }
+	const showError = (error: unknown) => { if (!stopped) update({ connectionError: true, status: error instanceof Error ? error.message : String(error) }) }
 	const clearHandshake = () => { cancelHandshake?.(); cancelHandshake = undefined }
 	const loadFrame = () => {
 		receivedHandshake = false
 		clearHandshake()
-		update({ frameUrl: ports.appUrl, frameHidden: false, frameGeneration: view.peek().frameGeneration + 1, status: 'Waiting for the website’s Gnosis Safe App handshake…' })
+		update({ frameUrl: ports.appUrl, frameHidden: false, frameGeneration: view.peek().frameGeneration + 1, status: 'Waiting for the website’s Gnosis Safe App handshake…', connectionError: false })
 		cancelHandshake = ports.schedule(() => {
-			if (!receivedHandshake && !stopped) update({ status: 'No Gnosis Safe App handshake received. This website may block embedded pages, require a different parent origin, or not support Gnosis Safe Apps. You can use the original tab or retry.' })
+			if (!receivedHandshake && !stopped) update({ connectionError: true, status: 'No Gnosis Safe App handshake received. This website may block embedded pages, require a different parent origin, or not support Gnosis Safe Apps. Retry the connection or open the website directly.' })
 		}, NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.handshakeTimeoutMs)
 	}
 	const refresh = async () => {
-		if (stopped || sourceDisconnected) return
+		if (stopped || extensionDisconnected) return
 		if (refreshing !== undefined) return await refreshing
 		const snapshotGeneration = generation
 		refreshing = (async () => {
 			try {
 				const response = await ports.request({ id: 'prepare', method: 'getSafeInfo', env: { sdkVersion: GNOSIS_SAFE_APPS_RESPONSE_VERSION } })
 				if (stopped || generation !== snapshotGeneration) return
-				if (!response.success) throw new Error(typeof response.error === 'string' ? response.error : 'Gnosis Safe preparation failed. Check the selected wallet and approve access in the original tab.')
+				if (!response.success) throw new Error(typeof response.error === 'string' ? response.error : 'Gnosis Safe preparation failed. Select a Gnosis Safe in Interceptor and approve website access when prompted.')
 				if (typeof response.data !== 'object' || response.data === null || !('safeAddress' in response.data) || typeof response.data.safeAddress !== 'string') throw new Error('The selected wallet did not provide Gnosis Safe metadata.')
 				const recovered = refreshFailed
 				refreshFailed = false
 				prepared = { response, at: ports.now() }
 				if (view.peek().frameHidden && !pausedForContextChange) loadFrame()
-				else if (recovered && !pausedForContextChange) update({ status: receivedHandshake ? 'Wallet information refreshed. The app connection is still active.' : 'Waiting for the website’s Gnosis Safe App handshake…' })
+				else if (recovered && !pausedForContextChange) update({ connectionError: false, status: receivedHandshake ? 'Wallet information refreshed. The app connection is still active.' : 'Waiting for the website’s Gnosis Safe App handshake…' })
 			} catch (error: unknown) {
 				if (generation !== snapshotGeneration || stopped) return
 				// Refresh failures do not invalidate the app session or extend its cached metadata lifetime. Explicit context changes alone clear preparation and pause or replace the frame.
@@ -84,10 +85,10 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 		if (stopped || view.peek().frameHidden) return
 		const request = parseNativeGnosisSafeAppsRequest(value)
 		if (request === undefined) return
-		if (pausedForContextChange) { ports.postResponse(failure(request.id, sourceDisconnected ? SOURCE_DISCONNECTED_STATUS : 'The wallet or permissions changed. Retry the connection before making another app request.')); return }
+		if (pausedForContextChange) { ports.postResponse(failure(request.id, extensionDisconnected ? EXTENSION_DISCONNECTED_STATUS : 'The wallet or permissions changed. Retry the connection before making another app request.')); return }
 		receivedHandshake = true
 		clearHandshake()
-		update({ status: 'Gnosis Safe App handshake received. Requests use Interceptor’s normal permissions and approvals.' })
+		update({ connectionError: false, status: 'Gnosis Safe App handshake received. Requests use Interceptor’s normal permissions and approvals.' })
 		if (pending >= GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT) { ports.postResponse(failure(request.id, 'Too many pending Gnosis Safe App requests.')); return }
 		if (request.method === 'getSafeInfo' && prepared !== undefined && ports.now() - prepared.at <= NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.preparedMetadataLifetimeMs) {
 			ports.postResponse({ ...prepared.response, id: request.id })
@@ -100,32 +101,35 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 		try {
 			let response: NativeGnosisSafeAppsResponse
 			try { response = await ports.request(request) } catch (error: unknown) { response = failure(request.id, error) }
-			if (!stopped && (!discovery || generation === requestGeneration)) ports.postResponse(response)
+			if (!stopped && (!discovery || generation === requestGeneration)) {
+				ports.postResponse(response)
+				if (!response.success) showError(response.error)
+			}
 		} finally {
 			pending--
 			if (!discovery) pendingOperations.value--
-			if (pausedForContextChange && !retryDisabled.peek()) update({ status: sourceDisconnected ? `Pending requests finished. ${ SOURCE_DISCONNECTED_STATUS }` : 'Pending requests finished. Retry the connection to use the changed wallet or permissions.' })
+			if (pausedForContextChange && !retryDisabled.peek()) update({ status: extensionDisconnected ? `Pending requests finished. ${ EXTENSION_DISCONNECTED_STATUS }` : 'Pending requests finished. Retry the connection to use the changed wallet or permissions.' })
 		}
 	}
 	const invalidateContext = (changedKeys: readonly string[]) => {
 		generation++
+		clearHandshake()
 		prepared = undefined
 		refreshFailed = false
 		// Context changes stop admission, but the original frame must survive to receive an already-admitted operation's terminal reply.
-		if (retryDisabled.peek()) pausedForContextChange = true
-		if (!pausedForContextChange) {
-			clearHandshake()
-			update({ frameHidden: true, frameUrl: 'about:blank' })
-		}
-		update({ lastContextChange: changedKeys.join(','), status: sourceDisconnected ? SOURCE_DISCONNECTED_STATUS : pausedForContextChange ? 'Wallet or permissions changed while requests were pending. Finish those requests, then retry the connection.' : 'Wallet or permissions changed. Preparing the app again…' })
-		if (!sourceDisconnected) void refresh()
+		if (retryDisabled.peek() || changedKeys.some((key) => key !== 'websiteAccess')) pausedForContextChange = true
+		// Keep the real app frame and wallet bridge alive. Background admission rechecks the changed permissions/account before every request.
+
+		update({ lastContextChange: changedKeys.join(','), connectionError: pausedForContextChange, status: extensionDisconnected ? EXTENSION_DISCONNECTED_STATUS : pausedForContextChange ? retryDisabled.peek() ? 'Wallet or permissions changed while requests were pending. Finish those requests, then retry the connection.' : 'Wallet or network changed. Retry the connection so the app uses the current selection.' : 'Website permissions changed. Checking access again…' })
+		if (!extensionDisconnected) void refresh()
 	}
-	const disconnectSource = () => {
-		if (stopped || sourceDisconnected) return
-		sourceDisconnected = true
+	const disconnectExtension = () => {
+		if (stopped || extensionDisconnected) return
+		extensionDisconnected = true
+		pausedForContextChange = true
 		cancelRefresh?.()
 		cancelRefresh = undefined
-		invalidateContext(['sourceTab'])
+		invalidateContext(['extensionConnection'])
 	}
 	const stop = () => {
 		stopped = true
@@ -135,12 +139,12 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 		clearHandshake()
 	}
 	return {
-		view, retryDisabled, receive, invalidateContext, disconnectSource, showError, refresh, stop,
+		view, retryDisabled, receive, invalidateContext, disconnectExtension, showError, refresh, stop,
 		start: () => {
-			if (started || stopped || sourceDisconnected) return
+			if (started || stopped || extensionDisconnected) return
 			started = true
 			cancelRefresh = ports.repeat(() => { void refresh() }, NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs)
-			void refresh()
+			loadFrame()
 		},
 		retry: () => {
 			if (stopped || retryDisabled.peek()) return false

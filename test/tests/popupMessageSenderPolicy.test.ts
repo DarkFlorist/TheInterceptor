@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'bun:test'
 import * as fs from 'node:fs'
+import { describe, expect, test } from 'bun:test'
 import { getPopupMessageSenderKind, isPopupMessageAllowedFromSender } from '../../app/ts/background/popupMessageSenderPolicy.js'
-import { isPopupMessageMethod, NATIVE_GNOSIS_SAFE_APPS_REQUEST, popupMessageProtocol, requiresExtensionPageSender } from '../../app/ts/types/popupMessageProtocol.js'
+import { isPopupMessageMethod, popupMessageProtocol, requiresExtensionPageSender } from '../../app/ts/types/popupMessageProtocol.js'
 
 const extensionId = 'interceptor-id'
 const extensionRootUrl = 'chrome-extension://interceptor-id/'
@@ -23,18 +23,6 @@ describe('popup message sender policy', () => {
 
 	test('every writer of hosting or compatibility settings is declared extension-page only', () => {
 		for (const method of ['popup_import_settings', 'popup_ChangeSettings', 'popup_openGnosisSafeApp']) expect(extensionPageOnlyMethods).toContain(method)
-	})
-
-	test('the native host relay is privileged in the canonical inventory and passes the sender gate before dispatch', () => {
-		expect(extensionPageOnlyMethods).toContain(NATIVE_GNOSIS_SAFE_APPS_REQUEST)
-		const source = fs.readFileSync('app/ts/background/background-startup.ts', 'utf8')
-		const listener = source.slice(source.indexOf('browser.runtime.onMessage.addListener'))
-		expect(listener.indexOf('if (!isPopupMessageAllowedFromSender(')).toBeLessThan(listener.indexOf('await waitForBackgroundStartup()'))
-		expect(listener).not.toContain('relayNativeGnosisSafeAppsRequest')
-		expect(listener).toContain('publishRpcConnectionStatus, sender)')
-		const ui = fs.readFileSync('app/ts/components/pages/NativeGnosisSafeAppsHost.tsx', 'utf8')
-		expect(ui).toContain('method: NATIVE_GNOSIS_SAFE_APPS_REQUEST')
-		expect(ui).not.toContain(`'${ NATIVE_GNOSIS_SAFE_APPS_REQUEST }'`)
 	})
 
 	test('every protocol entry flagged extension-page only is rejected for a content script sender', () => {

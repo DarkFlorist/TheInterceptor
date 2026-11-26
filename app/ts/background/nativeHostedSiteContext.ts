@@ -3,35 +3,32 @@ import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getTabIfExists } from '../utils/requests.js'
-import { isNativeGnosisSafeAppsLaunchValidationError, parseNativeGnosisSafeAppsLaunch } from '../utils/nativeGnosisSafeAppsHost.js'
 import { getWebsiteSocketConnection, isTopFramePort } from './backgroundUtils.js'
 import { isGnosisSafeAppsConnectionEligible, isGnosisSafeAppsConnectionEligibleForAdmittedAddress } from './gnosisSafeAppsConnectionEligibility.js'
-import { getGnosisSafeAppsCompatibilityMode } from './settings.js'
+import { getNativeGnosisSafeAppsSession } from './nativeGnosisSafeAppsSessions.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { getHtmlPageUrl } from '../utils/htmlPages.js'
-import { getAuthorizedNativeGnosisSafeAppsHostSenderUrl } from './nativeGnosisSafeAppsHostSender.js'
+import { getNativeGnosisSafeAppsChildLaunch, getNativeGnosisSafeAppsHostLaunch } from './nativeGnosisSafeAppsHostSender.js'
 
 type NativeHostedSiteDependencies = {
-	readonly extensionId: string
-	readonly hostUrls: readonly string[]
 	readonly getTab: (tabId: number) => Promise<{ readonly url?: string } | undefined>
-	readonly getEligibleSourceAddress: (connections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) => Promise<AddressBookEntry | undefined>
+	readonly getFrame: (tabId: number, frameId: number) => Promise<{ readonly url?: string, readonly parentFrameId?: number, readonly documentId?: string } | undefined>
+	readonly getEligibleHostAddress: (connections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) => Promise<AddressBookEntry | undefined>
 }
 
-async function getEligibleSourceAddress(connections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
-	if (!await getGnosisSafeAppsCompatibilityMode() || !await isGnosisSafeAppsConnectionEligible(connections, socket, settings)) return undefined
-	const source = getWebsiteSocketConnection(connections, socket)
-	return source === undefined ? undefined : await getWebsiteActiveAddress(connections, source.websiteOrigin, settings, socket)
+async function getEligibleHostAddress(connections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
+	if (!await isGnosisSafeAppsConnectionEligible(connections, socket, settings)) return undefined
+	const host = getWebsiteSocketConnection(connections, socket)
+	return host === undefined ? undefined : await getWebsiteActiveAddress(connections, host.websiteOrigin, settings, socket)
 }
 
 const defaultDependencies = (): NativeHostedSiteDependencies => ({
-	extensionId: browser.runtime.id,
-	hostUrls: [getHtmlPageUrl('gnosisSafeAppsHost')],
 	getTab: getTabIfExists,
-	getEligibleSourceAddress,
+	getFrame: async (tabId, frameId) => await browser.webNavigation.getFrame({ tabId, frameId }),
+	getEligibleHostAddress,
 })
 
-function getHttpOrigin(value: string) {
+function getHttpOrigin(value: string | undefined) {
+	if (value === undefined) return undefined
 	try {
 		const url = new URL(value)
 		return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' ? url.origin : undefined
@@ -41,54 +38,53 @@ function getHttpOrigin(value: string) {
 	}
 }
 
-// This syntactic relationship scopes capability invalidations even while the source has no permission. It grants no read authority: getNativeHostedSiteContext checks live tabs and access.
-export function getNativeHostedSiteSourceTabId(connections: WebsiteTabConnections, childSocket: WebsiteSocket, suppliedDependencies?: Pick<NativeHostedSiteDependencies, 'extensionId' | 'hostUrls'>) {
+// Registration marks browser-verified direct children even when no signer wallet is installed. This classifies a hosted frame; it grants no read authority.
+export function isNativeHostedSiteChild(connections: WebsiteTabConnections, childSocket: WebsiteSocket) {
 	const child = getWebsiteSocketConnection(connections, childSocket)
-	const sender = child?.port.sender
-	if (child === undefined || typeof sender?.id !== 'string' || sender.frameId === undefined || sender.frameId <= 0 || sender.tab?.id !== childSocket.tabId || sender.tab.url === undefined || sender.url === undefined || child.requestOrigin === undefined) return undefined
-	const dependencies = suppliedDependencies ?? defaultDependencies()
-	const hostUrl = getAuthorizedNativeGnosisSafeAppsHostSenderUrl(sender, dependencies.extensionId, dependencies.hostUrls, sender.tab.url)
-	if (hostUrl === undefined || getHttpOrigin(sender.url) !== child.requestOrigin) return undefined
-	let launch: ReturnType<typeof parseNativeGnosisSafeAppsLaunch>
-	try { launch = parseNativeGnosisSafeAppsLaunch(new URL(hostUrl).searchParams) } catch (error: unknown) {
-		if (isNativeGnosisSafeAppsLaunchValidationError(error)) return undefined
-		throw error
-	}
-	return launch.appUrl.origin === child.requestOrigin && launch.sourceTabId !== childSocket.tabId ? launch.sourceTabId : undefined
+	if (child?.nativeGnosisSafeAppsSigner !== true || isTopFramePort(child.port)) return false
+	const launch = getNativeGnosisSafeAppsChildLaunch(child.port.sender)
+	return launch !== undefined && child.requestOrigin === launch.appUrl.origin && child.websiteOrigin === launch.appUrl.host
 }
 
-// This is a read-only context, not a replacement connection or signer owner. Browser sender data and live tabs bind the actual child to its approved source website.
+// HTTP reads borrow only the authenticated host session's approved app-origin authority. They never select another tab, approve the child, or require an external wallet in simulation mode.
 export async function getNativeHostedSiteContext(connections: WebsiteTabConnections, childSocket: WebsiteSocket, settings: Settings, suppliedDependencies?: NativeHostedSiteDependencies) {
-	if (!settings.simulationMode) return undefined
+	if (!settings.simulationMode || !isNativeHostedSiteChild(connections, childSocket)) return undefined
 	const dependencies = suppliedDependencies ?? defaultDependencies()
-	const sourceTabId = getNativeHostedSiteSourceTabId(connections, childSocket, dependencies)
 	const child = getWebsiteSocketConnection(connections, childSocket)
 	const sender = child?.port.sender
-	if (sourceTabId === undefined || child === undefined || sender?.tab?.url === undefined || child.requestOrigin === undefined) return undefined
-	const origin = child.requestOrigin
+	const launch = getNativeGnosisSafeAppsChildLaunch(sender)
+	if (child === undefined || sender?.frameId === undefined || sender.tab?.url === undefined || launch === undefined) return undefined
+	const frameId = sender.frameId
+	const origin = launch.appUrl.origin
 	const hostUrl = sender.tab.url
-	const source = Object.values(connections.get(sourceTabId)?.connections ?? {}).find((connection) => connection.approved && isTopFramePort(connection.port) && connection.requestOrigin === child.requestOrigin)
-	if (source === undefined) return undefined
-	const activeAddress = await dependencies.getEligibleSourceAddress(connections, source.socket, settings)
-	if (activeAddress?.type !== 'safe' || !isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, source.socket, settings, { activeAddress, safeSigningMode: false })) return undefined
+	const host = Object.values(connections.get(childSocket.tabId)?.connections ?? {}).find((connection) => {
+		if (connection.nativeGnosisSafeAppOrigin !== origin || !isTopFramePort(connection.port) || connection.port.sender?.url !== hostUrl || connection.websiteOrigin !== launch.appUrl.host || connection.requestOrigin !== origin) return false
+		return getNativeGnosisSafeAppsHostLaunch(connection.port.sender)?.appUrl.href === launch.appUrl.href
+	})
+	if (host === undefined || !host.approved || getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.port !== host.port || child.nativeGnosisSafeAppsHostPort !== host.port) return undefined
+	const activeAddress = await dependencies.getEligibleHostAddress(connections, host.socket, settings)
+	if (activeAddress?.type !== 'safe' || !isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, host.socket, settings, { activeAddress, safeSigningMode: false })) return undefined
 	const connectionsAreCurrent = () => getWebsiteSocketConnection(connections, childSocket) === child
-		&& getWebsiteSocketConnection(connections, source.socket) === source
-		&& source.approved && isTopFramePort(source.port) && !isTopFramePort(child.port)
-		&& child.requestOrigin === origin && source.requestOrigin === origin
-	const matchesSettings = (currentSettings: Settings) => isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, source.socket, currentSettings, { activeAddress, safeSigningMode: false })
+		&& getWebsiteSocketConnection(connections, host.socket) === host
+		&& getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.port === host.port && child.nativeGnosisSafeAppsHostPort === host.port
+		&& child.nativeGnosisSafeAppsSigner === true && host.nativeGnosisSafeAppOrigin === origin
+		&& host.approved && isTopFramePort(host.port) && !isTopFramePort(child.port)
+		&& child.requestOrigin === origin && host.requestOrigin === origin
+		&& child.websiteOrigin === launch.appUrl.host && host.websiteOrigin === launch.appUrl.host
+	const matchesSettings = (currentSettings: Settings) => currentSettings.simulationMode && isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, host.socket, currentSettings, { activeAddress, safeSigningMode: false })
 	const browserBindingsAreCurrent = async () => {
 		if (!connectionsAreCurrent()) return false
-		// Read browser bindings after eligibility work so navigation during that work cannot leave a valid-looking stale context.
-		const [host, sourceTab] = await Promise.all([dependencies.getTab(childSocket.tabId), dependencies.getTab(sourceTabId)])
-		return host?.url === hostUrl && sourceTab?.url !== undefined && getHttpOrigin(sourceTab.url) === origin && connectionsAreCurrent()
+		// Validate the actual frame after eligibility work. Same-origin SPA path/hash changes preserve authority; document replacement loses its exact connection reference.
+		const [tab, frame] = await Promise.all([dependencies.getTab(childSocket.tabId), dependencies.getFrame(childSocket.tabId, frameId)])
+		const documentMatches = frame?.documentId === undefined || !('documentId' in sender) || typeof sender.documentId !== 'string' || frame.documentId === sender.documentId
+		return documentMatches && tab?.url === hostUrl && frame?.parentFrameId === 0 && getHttpOrigin(frame.url) === origin && connectionsAreCurrent()
 	}
 	if (!await browserBindingsAreCurrent()) return undefined
-	// Execution revalidates this captured authority without selecting another source or rebuilding the native launch relationship.
 	const isCurrent = async (currentSettings: Settings) => {
 		if (!matchesSettings(currentSettings) || !connectionsAreCurrent()) return false
-		const currentAddress = await dependencies.getEligibleSourceAddress(connections, source.socket, currentSettings)
+		const currentAddress = await dependencies.getEligibleHostAddress(connections, host.socket, currentSettings)
 		if (currentAddress?.type !== 'safe' || currentAddress.address !== activeAddress.address || currentAddress.chainId !== activeAddress.chainId) return false
 		return await browserBindingsAreCurrent()
 	}
-	return { sourceSocket: source.socket, origin, activeAddress, isCurrent }
+	return { hostSocket: host.socket, origin, activeAddress, isCurrent }
 }

@@ -1,8 +1,6 @@
-import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage } from '../../app/shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/shared/ts/bridgeWireProtocol.js'
 import * as assert from 'assert'
-import { spyOn, test } from 'bun:test'
-import { parseGnosisSafeAppsRequest } from '../../app/shared/ts/gnosisSafeAppsProtocol.js'
+import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest } from '../../app/ts/background/bridgeRequestDelivery.js'
 import { getManifestV2DocumentStartScriptPath } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
@@ -577,72 +575,12 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		}, { configurable: false, value: legacyListener })
 	})
 	for (const source of ['standalone-listener', 'manifest-v2-document-start'] as const) {
-		test(`${ source } admits native host requests only from its extension into the original top-level origin`, async () => {
+		test(`${ source } no longer forwards retired original-tab SDK relay requests`, async () => {
 			await withContentScriptMock(source, async ({ runtimeMessageListeners, postedWindowMessages }) => {
 				const receive = runtimeMessageListeners[0]
 				assert.ok(receive)
-				const message = { method: 'interceptor_native_gnosis_safe_source_request', origin: 'https://bridge.example', request: { id: 'sdk-original', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } } }
-				await assert.rejects(async () => await receive(message, { id: 'another-extension' }), /Invalid native/)
-				await assert.rejects(async () => await receive({ ...message, origin: 'https://foreign.example' }, { id: 'test-extension' }), /Invalid native/)
-				Object.defineProperty(globalThis, 'top', { configurable: true, value: {} })
-				await assert.rejects(async () => await receive(message, { id: 'test-extension' }), /Invalid native/)
-				Object.defineProperty(globalThis, 'top', { configurable: true, value: globalThis })
+				for (const id of ['test-extension', 'another-extension']) assert.equal(await receive({ method: 'interceptor_native_gnosis_safe_source_request', origin: 'https://bridge.example', request: { id: 'retired', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } } }, { id }), undefined)
 				assert.deepEqual(postedWindowMessages, [{ type: 'interceptor_bridge_ready' }])
-			})
-		})
-
-		test(`${ source } correlates native host replies by its private id, token, source and origin`, async () => {
-			await withContentScriptMock(source, async ({ runtimeMessageListeners, eventListeners, postedWindowMessages }) => {
-				const receive = runtimeMessageListeners[0]
-				assert.ok(receive)
-				const original = { id: 'sdk-original', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
-				const pending = Promise.resolve(receive({ method: 'interceptor_native_gnosis_safe_source_request', origin: 'https://bridge.example', request: original }, { id: 'test-extension' }))
-				const forwarded = postedWindowMessages.at(-1)
-				const wrapper = parseGnosisSafeAppsBridgeMessage(forwarded)
-				assert.ok(wrapper)
-				const parsed = parseGnosisSafeAppsRequest(wrapper.envelope)
-				assert.ok(parsed !== undefined && 'request' in parsed)
-				assert.notEqual(parsed.id, original.id)
-				assert.ok(typeof wrapper.bridgeToken === 'string' && wrapper.bridgeToken.length > 0)
-				assert.deepEqual(parsed.request.env, original.env)
-				const reply = { id: parsed.id, success: true, data: { safeAddress: '0x1111111111111111111111111111111111111111' }, version: '9.1.0' }
-				let settled = false
-				void pending.then(() => { settled = true })
-				const foreignSource = new MessageEvent('message', { data: createGnosisSafeAppsBridgeMessage(reply, wrapper.bridgeToken), origin: 'https://bridge.example' })
-				Object.defineProperty(foreignSource, 'source', { value: {} })
-				dispatchWindowMessage(eventListeners, foreignSource, false)
-				const foreignOrigin = new MessageEvent('message', { data: createGnosisSafeAppsBridgeMessage(reply, wrapper.bridgeToken), origin: 'https://foreign.example' })
-				Object.defineProperty(foreignOrigin, 'source', { value: globalThis })
-				dispatchWindowMessage(eventListeners, foreignOrigin, false)
-				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: createGnosisSafeAppsBridgeMessage(reply, 'wrong-token') }))
-				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: createGnosisSafeAppsBridgeMessage({ ...reply, id: original.id }, wrapper.bridgeToken) }))
-				await Promise.resolve()
-				assert.equal(settled, false)
-				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: createGnosisSafeAppsBridgeMessage(reply, wrapper.bridgeToken) }))
-				assert.deepEqual(await pending, { id: original.id, success: true, data: reply.data, version: '9.1.0' })
-				assert.equal(eventListeners.get('message')?.length, 1, 'settling removes the per-request listener')
-			})
-		})
-
-		test(`${ source } does not time out or replay a native mutation and cancels it when the source page leaves`, async () => {
-			await withContentScriptMock(source, async ({ runtimeMessageListeners, eventListeners, postedWindowMessages, disconnectListeners }) => {
-				const receive = runtimeMessageListeners[0]
-				assert.ok(receive)
-				const timerSpy = spyOn(globalThis, 'setTimeout')
-				try {
-					const pending = Promise.resolve(receive({ method: 'interceptor_native_gnosis_safe_source_request', origin: 'https://bridge.example', request: { id: 'mutation', method: 'sendTransactions', env: { sdkVersion: '9.1.0' }, params: { txs: [] } } }, { id: 'test-extension' }))
-					assert.equal(timerSpy.mock.calls.length, 0, 'a mutation waiting for user approval has no retry-inviting expiry')
-					assert.equal(postedWindowMessages.length, 2)
-					disconnectListeners[0]?.()
-					assert.equal(postedWindowMessages.length, 2, 'background port reconnection must not replay SDK mutations')
-					for (const listener of eventListeners.get('pagehide') ?? []) {
-						const event = new Event('pagehide')
-						if (typeof listener === 'function') listener(event)
-						else listener.handleEvent(event)
-					}
-					assert.deepEqual(JSON.parse(JSON.stringify(await pending)), { type: 'interceptor_gnosis_safe_apps_source_disconnected', id: 'mutation' })
-					assert.equal(eventListeners.get('message')?.length, 1)
-				} finally { timerSpy.mockRestore() }
 			})
 		})
 	}

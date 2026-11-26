@@ -119,11 +119,22 @@ export async function preparePortfolioApiInterception(request: Request, context:
 			if (!isJsonRecord(group)) return group
 			const originalRows = jsonArray(field(group, 'chainBalances')) ?? []
 			const chainBalances = originalRows.map((row) => {
-				const updated = [...remaining].find((candidate) => field(field(candidate, 'token'), 'address') === field(row, 'address') && field(field(candidate, 'token'), 'chainId') === field(row, 'chainId'))
+				const updated = [...remaining].find((candidate) => address(field(field(candidate, 'token'), 'address')) && address(field(row, 'address')) && apiAddress(String(field(field(candidate, 'token'), 'address'))) === apiAddress(String(field(row, 'address'))) && field(field(candidate, 'token'), 'chainId') === field(row, 'chainId'))
 				if (updated === undefined || !isJsonRecord(row)) return row
 				remaining.delete(updated)
 				return { ...withoutPositionChanges(row), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') }
 			})
+			// A token already grouped on another chain keeps one group when simulation adds this chain.
+			for (const updated of remaining) {
+				const updatedToken = field(updated, 'token')
+				const updatedAddress = field(updatedToken, 'address')
+				if (!address(updatedAddress) || !originalRows.some((row) => {
+					const existingAddress = field(row, 'address')
+					return address(existingAddress) && apiAddress(existingAddress) === apiAddress(updatedAddress)
+				})) continue
+				chainBalances.push({ chainId, address: updatedAddress, decimals: field(updatedToken, 'decimals'), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') })
+				remaining.delete(updated)
+			}
 			const totals = aggregatePortfolioGroup(chainBalances.map((row) => ({
 				raw: BigInt(String(field(field(row, 'amount'), 'raw'))),
 				decimals: numeric(field(row, 'decimals')),

@@ -1,4 +1,6 @@
 import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethods.js'
+import { createGnosisSafeAppsRequestHandler } from '../../shared/ts/gnosisSafeAppsClient.js'
+import { NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK, NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY, parseNativeGnosisSafeAppsSignerRequest } from '../../shared/ts/nativeGnosisSafeAppsSignerProtocol.js'
 import { INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, isGnosisSafeAppsCancellation } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
@@ -10,10 +12,8 @@ import { createGnosisSafeAppsTransport, type GnosisSafeAppsWindow } from '../../
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
 
 type GnosisSafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
-type GnosisSafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
 
 const isGnosisSafeAppsCompatibilityCandidate = (value: unknown): value is GnosisSafeAppsCompatibilityCandidate => isRecord(value)
-const isGnosisSafeAppsCommandCandidate = (value: unknown): value is GnosisSafeAppsCommandCandidate => isRecord(value)
 
 function parseGnosisSafeAppsCompatibility(value: unknown) {
 	if (!isGnosisSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
@@ -21,46 +21,8 @@ function parseGnosisSafeAppsCompatibility(value: unknown) {
 	return { enabled: value.enabled, canRequestAccess: value.canRequestAccess === true }
 }
 
-async function executeGnosisSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest, requestSafeApps: (request: Pick<GnosisSafeAppsRequest, 'method' | 'params'>) => Promise<unknown>): Promise<unknown> {
-	if (!isGnosisSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Gnosis Safe Apps command.')
-	if (command.kind === 'result') return command.value
-	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash' && command.mapResult !== 'safeMessage')) throw new Error('Interceptor returned an invalid Gnosis Safe Apps Ethereum request.')
-	if (command.mapResult === 'safeMessage' && (typeof command.message !== 'string' || typeof command.safeAddress !== 'string' || typeof command.chainId !== 'string')) throw new Error('Interceptor returned an invalid Gnosis Safe message request.')
-	const result = command.safeRequestContext === undefined
-		? await requestEthereum({ method: command.method, params: command.params })
-		: await requestSafeApps({ method: 'execute', params: command })
-	if (command.mapResult === 'passthrough') return result
-	if (command.mapResult === 'safeMessage') {
-		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Gnosis Safe owner signature.')
-		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId, ...(command.isTypedData === true ? { isTypedData: true } : {}) } })
-		if (!isGnosisSafeAppsCommandCandidate(submitted) || submitted.kind !== 'result') throw new Error('Interceptor returned an invalid Gnosis Safe message submission response.')
-		return submitted.value
-	}
-	if (typeof result !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
-	return { safeTxHash: result }
-}
-
 // Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
 const isGnosisSafeAppsDiscoveryRequest = (request: ParsedGnosisSafeAppsRequest) => 'request' in request && isGnosisSafeAppsDiscoveryMethod(request.request.method)
-
-function createGnosisSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
-	let offChainSigning = true
-	return async (request: Pick<GnosisSafeAppsRequest, 'method' | 'params'>) => {
-		const signingRequest = request.method === 'signMessage' || request.method === 'signTypedMessage'
-		const command = await requestBackground({ method: request.method, ...(request.params === undefined ? {} : { params: request.params }), ...(signingRequest ? { offChainSigning } : {}) })
-		const result = await executeGnosisSafeAppsCommand(command, requestEthereum, requestBackground)
-		if (request.method === 'rpcCall' && isRecord(request.params)) {
-			const { call } = request.params
-			if (call === 'safe_setSettings') {
-				if (!isRecord(result)) throw new Error('Interceptor returned invalid Gnosis Safe Apps settings.')
-				const { offChainSigning: updated } = result
-				if (typeof updated !== 'boolean') throw new Error('Interceptor returned invalid Gnosis Safe Apps settings.')
-				offChainSigning = updated
-			}
-		}
-		return result
-	}
-}
 
 function createGnosisSafeAppsBridge(windowObject: GnosisSafeAppsWindow, requestSafeApps: (request: Pick<GnosisSafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
 	const transport = createGnosisSafeAppsTransport(windowObject)
@@ -1494,6 +1456,19 @@ class InterceptorMessageListener {
 		})
 	}
 
+	private readonly requestNativeGnosisSafeAppFromSigner = async (value: unknown) => {
+		const parameters = parseNativeGnosisSafeAppsSignerRequest(value)
+		if (parameters === undefined) throw new Error('Malformed Gnosis Safe App signer request.')
+		const outcome = this.signerWindowEthereumRequest === undefined || this.signerProviderGeneration !== parameters.signerProviderGeneration
+			? { type: 'providerChanged' as const, signerProviderGeneration: this.signerProviderGeneration }
+			: await this.requestFromCurrentSigner(parameters.request)
+		const forwardRequest = { type: 'forwardToSigner' as const, replyWithSignersReply: true as const, method: NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY, params: { token: parameters.token }, requestId: 0 }
+		const result = outcome.type === 'success'
+			? { success: true as const, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
+			: { success: false as const, forwardRequest, error: outcome.type === 'error' ? this.normalizeSignerErrorForBackground(outcome.error) : { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the Gnosis Safe App wallet request finished.' }, signerProviderGeneration: outcome.signerProviderGeneration }
+		await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [result] })
+	}
+
 	private readonly requestWatchAssetFromSigner = async (parameters: unknown) => {
 		if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)
 			|| !('parameters' in parameters)
@@ -1662,6 +1637,7 @@ class InterceptorMessageListener {
 					return await this.requestChangeChainFromSigner(replyRequest.result, replyRequest.walletSwitchRequestId)
 				}
 				case 'request_signer_to_wallet_watchAsset': return await this.requestWatchAssetFromSigner(replyRequest.result)
+				case NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK: return await this.requestNativeGnosisSafeAppFromSigner(replyRequest.result)
 				case 'request_signer_connection_status': return await this.connectToSigner(this.signerName)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break

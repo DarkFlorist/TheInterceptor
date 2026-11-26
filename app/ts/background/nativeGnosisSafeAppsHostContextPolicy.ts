@@ -32,7 +32,7 @@ function safeWalletContext(value: unknown) {
 // Website and address metadata are refreshed during normal requests. Only permission or Gnosis Safe wallet fields may interrupt the app's wallet context.
 export function nativeGnosisSafeAppsStorageChangeAffectsContext(key: string, change: browser.storage.StorageChange) {
 	const project = key === 'websiteAccess' ? websitePermissionContext : key === 'userAddressBookEntriesV3' ? safeWalletContext : undefined
-	if (project === undefined) return true
+	if (project === undefined) return JSON.stringify(change.oldValue) !== JSON.stringify(change.newValue)
 	const before = project(change.oldValue)
 	const after = project(change.newValue)
 	// Unknown/corrupt persisted data fails closed rather than retaining a grant-derived metadata snapshot.

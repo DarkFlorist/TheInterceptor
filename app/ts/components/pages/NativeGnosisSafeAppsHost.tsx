@@ -1,34 +1,22 @@
+import { connectNativeGnosisSafeAppsHost } from '../../utils/nativeGnosisSafeAppsConnection.js'
 import { NATIVE_GNOSIS_SAFE_APPS_HOST_CONTEXT_PORT, NativeGnosisSafeAppsHostContextChange } from '../../types/nativeGnosisSafeAppsHostContext.js'
-import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { useEffect, useMemo, useRef } from 'preact/hooks'
 import { createNativeGnosisSafeAppsHostController } from './nativeGnosisSafeAppsHostController.js'
-import { parseNativeGnosisSafeAppsLaunch, parseNativeGnosisSafeAppsResponse } from '../../utils/nativeGnosisSafeAppsHost.js'
-import { useAsyncState } from '../../utils/preact-utilities.js'
-import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { ErrorComponent } from '../subcomponents/Error.js'
-import { NATIVE_GNOSIS_SAFE_APPS_REQUEST } from '../../types/popupMessageProtocol.js'
+import { parseNativeGnosisSafeAppsLaunch } from '../../utils/nativeGnosisSafeAppsHost.js'
 
 export function NativeGnosisSafeAppsHost() {
 	const launch = useMemo(() => parseNativeGnosisSafeAppsLaunch(new URLSearchParams(location.search)), [])
 	const frame = useRef<HTMLIFrameElement>()
-	const originalTab = useAsyncState<void>()
+	const connection = useMemo(connectNativeGnosisSafeAppsHost, [])
 	const controller = useMemo(() => createNativeGnosisSafeAppsHostController({
 		appUrl: launch.appUrl.href,
-		request: async (request) => {
-			const id = crypto.randomUUID()
-			const relay = await sendPopupMessageWithReply({ method: NATIVE_GNOSIS_SAFE_APPS_REQUEST, data: { sourceTabId: launch.sourceTabId, origin: launch.appUrl.origin, request: { ...request, id } } })
-			if (relay === undefined) throw new Error('The original website relay is unavailable. Check the original tab and retry.')
-			if (!relay.ok) throw new Error(relay.message)
-			const parsed = parseNativeGnosisSafeAppsResponse(relay.response)
-			if (parsed === undefined || parsed.id !== id) throw new Error('Interceptor returned an invalid Gnosis Safe App response. Check the original tab and retry.')
-			return { ...parsed, id: request.id }
-		},
+		request: connection.request,
 		postResponse: (response) => { frame.current?.contentWindow?.postMessage(response, launch.appUrl.origin) },
 		reload: () => location.reload(),
 		now: () => performance.now(),
 		schedule: (callback, delay) => { const timer = setTimeout(callback, delay); return () => clearTimeout(timer) },
 		repeat: (callback, delay) => { const timer = setInterval(callback, delay); return () => clearInterval(timer) },
-	}), [launch])
+	}), [launch, connection])
 	useEffect(() => {
 		const receive = (event: MessageEvent<unknown>) => {
 			const current = controller.view.peek()
@@ -42,35 +30,38 @@ export function NativeGnosisSafeAppsHost() {
 		const context = browser.runtime.connect({ name: NATIVE_GNOSIS_SAFE_APPS_HOST_CONTEXT_PORT })
 		context.onMessage.addListener((value: unknown) => {
 			const change = NativeGnosisSafeAppsHostContextChange.parse(value)
-			if (change.type === 'source-disconnected') controller.disconnectSource()
-			else controller.invalidateContext(change.keys)
+			controller.invalidateContext(change.keys)
 		})
-		context.onDisconnect.addListener(controller.disconnectSource)
-		controller.start()
+		context.onDisconnect.addListener(controller.disconnectExtension)
+		void connection.ready().then(controller.start).catch(controller.showError)
 		return () => {
 			controller.stop()
-			context.onDisconnect.removeListener(controller.disconnectSource)
+			connection.disconnect()
+			context.onDisconnect.removeListener(controller.disconnectExtension)
 			context.disconnect()
 			window.removeEventListener('message', receive)
 			window.removeEventListener('pagehide', controller.stop)
 		}
-	}, [controller, launch])
+	}, [controller, launch, connection])
 	const view = controller.view.value
-	return <section style = { { display: 'flex', flexDirection: 'column', minHeight: '100vh', gap: '12px', padding: '16px', boxSizing: 'border-box', color: 'var(--text-color)' } }>
-		<h1 class = 'title'>Gnosis Safe App</h1>
-		<strong class = 'paragraph'>{ launch.appUrl.origin }</strong>
-		<p class = 'paragraph' role = 'status' data-last-context-change = { view.lastContextChange }>{ view.status }</p>
-		<p class = 'paragraph'>Keep the original website tab open. Interceptor uses its wallet connection and website permissions for requests and approvals.</p>
-		<div style = { { display: 'flex', gap: '12px', flexWrap: 'wrap' } }>
-			<AsyncActionButton type = 'button' class = 'btn btn--outline' state = { originalTab.value.value.state } text = 'Show original tab' pendingText = 'Show original tab' keepTextWhilePending
-				onClick = { () => originalTab.waitFor(async () => { await browser.tabs.update(launch.sourceTabId, { active: true }) }) }
-			/>
-			<button type = 'button' class = 'btn btn--outline' disabled = { controller.retryDisabled.value } onClick = { () => { controller.retry() } }>Retry connection</button>
-		</div>
-		{ originalTab.value.value.state === 'rejected' ? <ErrorComponent text = { `The original tab is unavailable: ${ originalTab.value.value.error.message }` } /> : <></> }
+	return <section style = { { position: 'fixed', inset: 0, margin: 0, padding: 0, color: 'var(--text-color)' } }>
 		<iframe key = { view.frameGeneration } ref = { element => { frame.current = element ?? undefined } } data-host-generation = { view.frameGeneration } title = 'Gnosis Safe App' src = { view.frameUrl } hidden = { view.frameHidden }
+			onLoad = { event => {
+				const current = controller.view.peek()
+				if (current.frameHidden || event.currentTarget.getAttribute('data-host-generation') !== String(current.frameGeneration)) return
+				event.currentTarget.setAttribute('data-host-loaded', 'true')
+				connection.frameLoaded()
+				void controller.refresh()
+			} }
 			sandbox = 'allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads'
-			style = { { width: '100%', minHeight: '72vh', flex: '1', border: '1px solid var(--border-color)', borderRadius: '8px' } }
+			style = { { width: '100%', height: '100%', display: 'block', border: 0, margin: 0, padding: 0 } }
 		/>
+		<details data-gnosis-safe-controls open = { view.connectionError === true } style = { { position: 'fixed', right: '8px', bottom: '8px', maxWidth: 'min(440px, calc(100vw - 16px))', background: 'var(--bg-color)', borderRadius: '4px', padding: '6px 10px', zIndex: 1 } }>
+			<summary style = { { color: 'inherit', cursor: 'pointer' } }>Gnosis Safe connection</summary>
+			<p class = 'paragraph' role = 'status' data-last-context-change = { view.lastContextChange }>{ view.status }</p>
+			{ view.connectionError ? <p class = 'paragraph'>Check the selected Gnosis Safe, wallet and network in Interceptor. Enable your wallet for this app, then retry; if embedding is blocked, open the website directly.</p> : <></> }
+			<button type = 'button' class = 'btn btn--outline' disabled = { controller.retryDisabled.value } onClick = { () => { controller.retry() } }>Retry connection</button>
+			<button type = 'button' class = 'btn btn--outline' disabled = { controller.retryDisabled.value } onClick = { () => { if (!controller.retryDisabled.peek()) location.assign(launch.appUrl.href) } }>Open website directly</button>
+		</details>
 	</section>
 }

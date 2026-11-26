@@ -1717,6 +1717,41 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(replies.map(reply => isRecord(reply) ? [reply.walletSwitchRequestId, reply.accept] : undefined), [['current', true], ['expired', true]])
 	})
 
+
+	test('native Gnosis Safe App signer callbacks do not require a website outstanding request and refuse stale wallet generations', async () => {
+		for (const stale of [false, true]) {
+			const signerRequests: SignerRequest[] = []
+			let signerReply: unknown
+			let signerProviderGeneration: number | undefined
+			const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+				handleRequest: (request, respond) => {
+					if (request.method === 'connected_to_signer') {
+						const generation = request.params?.[2]
+						if (typeof generation === 'number') signerProviderGeneration = generation
+						return false
+					}
+					if (request.method !== 'signer_reply') return false
+					signerReply = request.params?.[0]
+					respond({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: 'signer_reply', result: '0x' })
+					return true
+				},
+				handleSignerRequest: (request) => { signerRequests.push(request); return '0xsigned' },
+			})
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?native-host-signer-${ stale }`, async () => {
+				await waitFor(() => signerProviderGeneration !== undefined)
+				if (signerProviderGeneration === undefined) throw new Error('Missing signer generation')
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_native_gnosis_safe_app', result: { token: 'private-native-host-request', signerProviderGeneration: signerProviderGeneration + (stale ? 1 : 0), request: { method: 'personal_sign', params: ['0x1234', '0x1111111111111111111111111111111111111111'] } } })
+				await waitFor(() => signerReply !== undefined)
+			})
+			const signed = signerRequests.filter(({ method }) => method === 'personal_sign')
+			assert.equal(signed.length, stale ? 0 : 1)
+			if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest)) throw new Error('Missing native signer result')
+			assert.equal(signerReply.success, !stale)
+			assert.equal(signerReply.forwardRequest.method, 'interceptor_native_gnosis_safe_app_signer')
+			assert.deepEqual(signerReply.forwardRequest.params, { token: 'private-native-host-request' })
+		}
+	})
+
 	test('forwards an approved watch-asset dialog action to the selected signer', async () => {
 		const signerRequests: SignerRequest[] = []
 		let signerReply: unknown

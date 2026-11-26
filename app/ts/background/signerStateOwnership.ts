@@ -136,7 +136,7 @@ export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	connection: TabConnection['connections'][string],
-	isTopFrame: boolean,
+	mayOwnSignerState: boolean,
 ) {
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		let tabConnection = websiteTabConnections.get(socket.tabId)
@@ -145,14 +145,14 @@ export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
 			tabConnection = { connections: {} }
 			websiteTabConnections.set(socket.tabId, tabConnection)
 		}
-		const previousSignerStateToken = isTopFrame ? getConfirmedSignerStateToken(websiteTabConnections, socket.tabId) : undefined
+		const previousSignerStateToken = mayOwnSignerState ? getConfirmedSignerStateToken(websiteTabConnections, socket.tabId) : undefined
 		tabConnection.connections[websiteSocketToString(socket)] = connection
-		if (isTopFrame) {
+		if (mayOwnSignerState) {
 			provisionallyClaimSignerStateOwnerWithinOperation(tabConnection, socket)
 			settleSignerRequestsForReplacedState(previousSignerStateToken)
 			await updateTabState(socket.tabId, clearSignerDerivedTabState)
 		}
-		return { createdTabConnection, provisionallyClaimedSignerState: isTopFrame }
+		return { createdTabConnection, provisionallyClaimedSignerState: mayOwnSignerState }
 	})
 }
 

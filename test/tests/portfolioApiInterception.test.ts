@@ -231,3 +231,24 @@ test('simulated multichain rows discard live position changes in grouped and com
 		if (withFlat) for (const key of Object.keys(performance)) assert.equal(key in data.portfolio.balances[0], false, key)
 	}
 })
+
+
+test('new selected-chain holdings join existing token groups on other chains', async () => {
+	const untouched = { chainId: 137, address: wrapped.toUpperCase().replace('0X', '0x'), decimals: 18, amount: { raw: '1000000000000000000', amount: 1 }, valueUsd: 2000 }
+	const group = { name: 'Wrapped Ether', symbol: 'WETH', priceUsd: 2000, totalAmount: untouched.amount, totalValueUsd: 2000, chainBalances: [untouched] }
+	for (const withFlat of [false, true]) {
+		const otherWrapped = { token: { ...token, chainId: 137, address: wrapped }, amount: untouched.amount, valueUsd: 2000 }
+		const h = harness({ portfolio: { multichainBalances: [group], ...withFlat ? { balances: [otherWrapped] } : {}, totalValueUsd: 2000 } })
+		const data = await (await h.fetch({ ...body, multichain: true })).json()
+		const wrappedGroups = data.portfolio.multichainBalances.filter((candidate: { symbol: string }) => candidate.symbol === 'WETH')
+		assert.equal(wrappedGroups.length, 1, 'the new chain must not create another group for the same token')
+		const updated = wrappedGroups[0]
+		assert.deepEqual(updated.chainBalances[0], untouched)
+		assert.equal(updated.chainBalances.length, 2)
+		assert.equal(updated.chainBalances[1].chainId, 1)
+		assert.equal(updated.chainBalances[1].amount.raw, '500000000000000000')
+		assert.deepEqual(updated.totalAmount, { raw: '1500000000000000000', amount: 1.5 })
+		assert.equal(updated.totalValueUsd, 3000)
+		assert.equal(data.portfolio.totalValueUsd, 3000)
+	}
+})

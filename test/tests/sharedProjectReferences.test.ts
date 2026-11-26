@@ -67,7 +67,7 @@ test('both build graphs reference the shared owner while source-only checking ne
 	assert.ok(shared.options.tsBuildInfoFile?.startsWith(path.resolve('app/shared/js')))
 	const sourceFiles = new Set(shared.fileNames)
 	const consumers = [
-		{ config: 'tsconfig-inpage.json', build: 'tsconfig-inpage-build.json', sources: ['app/inpage/ts/inpage.ts', 'app/inpage/ts/nativeGnosisSafeAppsSourceBridge.ts', 'app/inpage/ts/listenContentScript.ts'] },
+		{ config: 'tsconfig-inpage.json', build: 'tsconfig-inpage-build.json', sources: ['app/inpage/ts/inpage.ts', 'app/inpage/ts/listenContentScript.ts'] },
 		{ config: 'tsconfig.json', build: 'tsconfig-app-build.json', sources: ['app/ts/background/accountRequestMethods.ts', 'app/ts/utils/nativeGnosisSafeAppsHost.ts'] },
 	]
 	for (const consumer of consumers) {
