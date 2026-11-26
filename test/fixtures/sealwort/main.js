@@ -53,13 +53,13 @@ async function connect() {
 				params: [{ to: account, data }, 'latest'],
 			})),
 		])
-		if (singletonStorage !== expectedState.singletonStorage) throw new Error('Unexpected Safe singleton storage')
+		if (singletonStorage !== expectedState.singletonStorage) throw new Error('Unexpected Gnosis Safe singleton storage')
 		for (const [index, result] of safeCallResults.entries()) {
-			if (result !== expectedState.calls[index]?.result) throw new Error('Unexpected Safe state response')
+			if (result !== expectedState.calls[index]?.result) throw new Error('Unexpected Gnosis Safe state response')
 		}
 		const singletonCode = await globalThis.ethereum.request({ method: 'eth_getCode', params: [expectedState.singletonAddress, 'latest'] })
-		if (singletonCode === '0x') throw new Error('The Safe singleton has no code')
-		statusOutput.textContent = 'Safe account inspection complete.'
+		if (singletonCode === '0x') throw new Error('The Gnosis Safe singleton has no code')
+		statusOutput.textContent = 'Gnosis Safe account inspection complete.'
 	} catch (error) {
 		statusOutput.textContent = error instanceof Error ? error.message : String(error)
 	}
@@ -83,10 +83,10 @@ async function verify() {
 			method: 'eth_call',
 			params: [{ to: address(stack.safeAddress), data }, 'latest'],
 		})
-		if (result !== expectedResult) throw new Error(`Unexpected Safe response for ${ data }`)
+		if (result !== expectedResult) throw new Error(`Unexpected Gnosis Safe response for ${ data }`)
 	}
 	signButton.disabled = false
-	statusOutput.textContent = 'Verified 1 Safe transaction(s) against current on-chain state.'
+	statusOutput.textContent = 'Verified 1 Gnosis Safe transaction(s) against current on-chain state.'
 }
 
 async function sign() {
@@ -110,7 +110,7 @@ function download() {
 	link.download = 'interceptor-safe-stack.json'
 	link.click()
 	URL.revokeObjectURL(objectUrl)
-	statusOutput.textContent = 'Updated Safe stack downloaded.'
+	statusOutput.textContent = 'Updated Gnosis Safe stack downloaded.'
 }
 
 connectButton.addEventListener('click', connect)
