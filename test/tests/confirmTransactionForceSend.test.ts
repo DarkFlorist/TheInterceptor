@@ -1,11 +1,11 @@
 import * as assert from 'node:assert'
 import { beforeEach, test } from 'bun:test'
 import { createRecordingPort, getPopupReviewedResultId, isRecord, modules, pendingTransaction, resetConfirmTransactionTestState, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
-import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import type { BackgroundPendingTransactionOrSignableMessage, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { TransactionConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 const { setGasLimitForTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
-const { shouldDisableConfirm } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+const { shouldDisableConfirm, getConfirmationReviewRefusal } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
 beforeEach(resetConfirmTransactionTestState)
 
@@ -132,4 +132,34 @@ test('two concurrent accepts forward the request to the wallet only once', async
 	])
 	assert.deepEqual([...results].sort(), [false, true])
 	assert.equal(postedMessages.filter(message => isRecord(message) && message.type === 'forwardToSigner').length, 1)
+})
+
+
+test('a completed stale confirmation is explained only for the same waiting background request', () => {
+	const before: BackgroundPendingTransactionOrSignableMessage = { ...simulatedPending, source: 'background', reviewedResultId: 'before' }
+	const attempt = { ...before, forceSend: false }
+	const after = { ...before, reviewedResultId: 'after' }
+	assert.equal(getConfirmationReviewRefusal(after, attempt), 'reviewChanged')
+	assert.equal(getConfirmationReviewRefusal(before, attempt), undefined)
+	assert.equal(getConfirmationReviewRefusal(undefined, attempt), undefined)
+	assert.equal(getConfirmationReviewRefusal(after, undefined), undefined)
+	assert.equal(getConfirmationReviewRefusal({ ...after, source: 'storage' }, attempt), undefined)
+	assert.equal(getConfirmationReviewRefusal({ ...after, instanceId: 'replacement' }, attempt), undefined)
+	assert.equal(getConfirmationReviewRefusal({ ...after, uniqueRequestIdentifier: { ...after.uniqueRequestIdentifier, requestId: after.uniqueRequestIdentifier.requestId + 1 } }, attempt), undefined)
+	assert.equal(getConfirmationReviewRefusal({ ...after, approvalStatus: { status: 'WaitingForSigner' } }, attempt), undefined)
+})
+
+test('confirmation explanations use shared acceptance rules for unsimulated gas, unavailable results and send-anyway consent', () => {
+	const before: BackgroundPendingTransactionOrSignableMessage = { ...simulatedPending, source: 'background', reviewedResultId: 'review' }
+	const attempt = { ...before, forceSend: false }
+	assert.equal(getConfirmationReviewRefusal({ ...before, transactionOrMessageCreationStatus: 'Simulating' }, attempt), 'notSimulated')
+	const gasEdited: BackgroundPendingTransactionOrSignableMessage = { ...editedPending, source: 'background', reviewedResultId: 'review' }
+	assert.equal(getConfirmationReviewRefusal(gasEdited, attempt), 'gasLimitChanged')
+	assert.equal(getConfirmationReviewRefusal(gasEdited, { ...attempt, forceSend: true }), undefined)
+	const rejectOnly: BackgroundPendingTransactionOrSignableMessage = { ...before, popupVisualisation: { statusCode: 'failed', data: { ...before.popupVisualisation.data, error: { code: -32000, message: 'No reviewable result', decodedErrorMessage: 'No reviewable result' } } } }
+	assert.equal(getConfirmationReviewRefusal(rejectOnly, { ...attempt, forceSend: true }), 'rejectOnly')
+	const quarantined = withSimulatedTransactionResult(pendingTransaction, { transactionStatus: 'Transaction Succeeded' }, true)
+	const shown: BackgroundPendingTransactionOrSignableMessage = { ...quarantined, source: 'background', reviewedResultId: 'review' }
+	assert.equal(getConfirmationReviewRefusal(shown, attempt), 'sendAnywayRequired')
+	assert.equal(getConfirmationReviewRefusal(shown, { ...attempt, forceSend: true }), undefined)
 })

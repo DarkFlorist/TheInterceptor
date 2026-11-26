@@ -23,7 +23,7 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
 - If Chrome or Chromium is installed outside the standard paths, set `CHROME_BIN=/path/to/chrome` when running `bun run test:chrome-communication` or `bun run benchmark:popup-lifecycle`.
 
 - After browser injection, messaging or manifest changes, also run `bun run test:browsers`. It builds and tests Chrome MV3 and Firefox MV2 sequentially and restores the original generated manifest. Install test executables once with `bun run install-chrome` and `bun run install-firefox`.
-- The paired checks run in `.github/workflows/browser-tests.yml`. Both browsers cover provider injection, CSP fallback, RPC permission replies and reloads.
+- The paired checks run in `.github/workflows/browser-tests.yml`. Both browsers cover provider injection, CSP fallback, wallet approval/signing/rejection, RPC permission replies and reloads.
 
 ## Final Review Gate
 

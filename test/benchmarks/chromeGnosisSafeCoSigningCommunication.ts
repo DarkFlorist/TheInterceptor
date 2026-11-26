@@ -1,19 +1,18 @@
+import { createBrowserSimulationRpc, type JsonRpcRequest } from '../fixtures/browserSimulationRpc.js'
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { GNOSIS_SAFE_ABI, createGnosisSafeTx, gnosisSafeTxToTypedDataJson } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
-import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { GnosisSafeStackExport, GnosisSafeTransactionStacks } from '../../app/ts/types/gnosisSafeTypes.js'
 import { InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
-import { EthereumBlockHeader, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGnosisSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { createGnosisSafeMessageTypedData, GNOSIS_SAFE_MESSAGE_ABI } from '../../app/ts/gnosisSafe/gnosisSafeMessage.js'
 import { hashTypedData, privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
-import { encodeStorageReaderCall, STORAGE_READER_ABI } from '../../app/ts/simulation/storageReader.js'
+import { encodeStorageReaderCall } from '../../app/ts/simulation/storageReader.js'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -25,14 +24,6 @@ const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-acti
 const GNOSIS_SAFE_ADDRESS = 0x1234567890123456789012345678901234567890n
 const GNOSIS_SAFE_SINGLETON_ADDRESS = 0x41675c099f32341bf84bfc5382af534df5c7461an
 const DESTINATION_ADDRESS = 0x9876543210987654321098765432109876543210n
-const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
-const GET_CODE_ABI = [{
-	type: 'function',
-	name: 'at',
-	stateMutability: 'view',
-	inputs: [{ name: 'target', type: 'address' }],
-	outputs: [{ name: 'code', type: 'bytes' }],
-}] as const
 const OWNER_ACCOUNT = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 const OWNER_ADDRESS = BigInt(OWNER_ACCOUNT.address)
 const GNOSIS_SAFE_TX = createGnosisSafeTx(1n, GNOSIS_SAFE_ADDRESS, {
@@ -93,7 +84,6 @@ const SIGNED_MESSAGE_STACK = {
 	}],
 }
 const STORAGE_READER_CALL = dataStringWith0xStart(encodeStorageReaderCall(0n))
-const STORAGE_READER_RESULT = encodeFunctionReturn(STORAGE_READER_ABI, 'readSlot', [bytes32String(GNOSIS_SAFE_SINGLETON_ADDRESS)])
 
 function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -159,78 +149,8 @@ async function setFileInput(connection: CdpConnection, selector: string, filePat
 	await connection.send('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [filePath] })
 }
 
-function makeFakeBlock() {
-	return {
-		author: 0n,
-		difficulty: 0n,
-		extraData: new Uint8Array(),
-		gasLimit: 30_000_000n,
-		gasUsed: 21_000n,
-		hash: 0x1234n,
-		logsBloom: 0n,
-		miner: 0n,
-		mixHash: 0n,
-		nonce: 0n,
-		number: 123n,
-		parentHash: 0x1n,
-		receiptsRoot: 0n,
-		sha3Uncles: 0n,
-		stateRoot: 0n,
-		timestamp: new Date('2026-07-28T00:00:00.000Z'),
-		size: 0n,
-		totalDifficulty: 0n,
-		uncles: [],
-		baseFeePerGas: 1n,
-		transactionsRoot: 0n,
-		transactions: [],
-		withdrawals: [],
-		withdrawalsRoot: 0n,
-	}
-}
-
-function makeFakeEthSimulateResult(calls: readonly unknown[]) {
-	const balanceResult = encodeFunctionReturn(Multicall3ABI, 'getEthBalance', [0n])
-	const aggregate3Result = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
-	return {
-		number: 123n,
-		hash: 0x9876n,
-		timestamp: 0x65920080n,
-		gasLimit: 30_000_000n,
-		gasUsed: 21_000n,
-		baseFeePerGas: 1n,
-		calls: calls.map((call) => {
-			const input = isRecord(call) && typeof call.input === 'string' ? call.input : undefined
-			const to = isRecord(call) && typeof call.to === 'string' ? call.to : undefined
-			const safeResult = to !== undefined && BigInt(to) === GET_CODE_CONTRACT
-				? encodeFunctionReturn(GET_CODE_ABI, 'at', ['0x01'])
-				: input === STORAGE_READER_CALL && to !== undefined && BigInt(to) === GNOSIS_SAFE_ADDRESS
-				? STORAGE_READER_RESULT
-				: input !== undefined && to !== undefined && BigInt(to) === GNOSIS_SAFE_ADDRESS
-				? safeCallResults.get(input)
-				: undefined
-			const returnData = safeResult ?? aggregate3Result
-			return {
-				status: 'success' as const,
-				gasUsed: 21_000n,
-				logs: [],
-				returnData: Uint8Array.from(Buffer.from(returnData.slice(2), 'hex')),
-			}
-		}),
-	}
-}
-
-const safeStateReadCalls = [
-	encodeFunctionCall(GNOSIS_SAFE_ABI, 'VERSION', []),
-	encodeFunctionCall(GNOSIS_SAFE_ABI, 'nonce', []),
-	encodeFunctionCall(GNOSIS_SAFE_ABI, 'getOwners', []),
-	encodeFunctionCall(GNOSIS_SAFE_ABI, 'getThreshold', []),
-] as const
-const safeCallResults = new Map([
+const { handleRpcRequest, safeStateReadCalls, safeCallResults } = createBrowserSimulationRpc({ safeAddress: GNOSIS_SAFE_ADDRESS, singletonAddress: GNOSIS_SAFE_SINGLETON_ADDRESS, ownerAddress: OWNER_ADDRESS, extraCallResults: [
 	[encodeFunctionCall(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [GNOSIS_SAFE_MESSAGE_DATA.message.message]), encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [GNOSIS_SAFE_MESSAGE_HASH])],
-	[safeStateReadCalls[0], encodeFunctionReturn(GNOSIS_SAFE_ABI, 'VERSION', ['1.4.1'])],
-	[safeStateReadCalls[1], encodeFunctionReturn(GNOSIS_SAFE_ABI, 'nonce', [7n])],
-	[safeStateReadCalls[2], encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getOwners', [[addressString(OWNER_ADDRESS)]])],
-	[safeStateReadCalls[3], encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getThreshold', [2n])],
 	[encodeFunctionCall(GNOSIS_SAFE_ABI, 'getTransactionHash', [
 		addressString(GNOSIS_SAFE_TX.message.to),
 		GNOSIS_SAFE_TX.message.value,
@@ -243,51 +163,10 @@ const safeCallResults = new Map([
 		addressString(GNOSIS_SAFE_TX.message.refundReceiver),
 		GNOSIS_SAFE_TX.message.nonce,
 	]), encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getTransactionHash', [bytes32String(GNOSIS_SAFE_TX_HASH)])],
-])
-
-type JsonRpcRequest = {
-	readonly id: number
-	readonly method: string
-	readonly params?: readonly unknown[]
-}
+] })
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-async function handleRpcRequest(request: JsonRpcRequest) {
-	switch (request.method) {
-		case 'eth_blockNumber': return serialize(EthereumQuantity, 123n)
-		case 'eth_getBlockByNumber': return serialize(EthereumBlockHeader, makeFakeBlock())
-		case 'eth_getTransactionCount':
-		case 'eth_getBalance':
-		case 'eth_gasPrice':
-		case 'eth_maxPriorityFeePerGas': return serialize(EthereumQuantity, 0n)
-		case 'eth_getCode': {
-			const [address] = request.params ?? []
-			const isSafeContract = typeof address === 'string' && (BigInt(address) === GNOSIS_SAFE_ADDRESS || BigInt(address) === GNOSIS_SAFE_SINGLETON_ADDRESS)
-			return isSafeContract ? '0x01' : '0x'
-		}
-		case 'eth_getStorageAt': {
-			const [address, slot] = request.params ?? []
-			if (typeof address !== 'string' || BigInt(address) !== GNOSIS_SAFE_ADDRESS || typeof slot !== 'string' || BigInt(slot) !== 0n) throw new Error('Unexpected Gnosis Safe singleton storage request')
-			return bytes32String(GNOSIS_SAFE_SINGLETON_ADDRESS)
-		}
-		case 'eth_call': {
-			const [call] = request.params ?? []
-			if (!isRecord(call) || typeof call.data !== 'string') throw new Error('Malformed eth_call')
-			return safeCallResults.get(call.data) ?? '0x'
-		}
-		case 'eth_getLogs': return []
-		case 'eth_simulateV1': {
-			const [payload] = request.params ?? []
-			const blockStateCalls = isRecord(payload) && Array.isArray(payload.blockStateCalls) ? payload.blockStateCalls : []
-			return serialize(EthSimulateV1Result, blockStateCalls.map((blockStateCall) =>
-				makeFakeEthSimulateResult(isRecord(blockStateCall) && Array.isArray(blockStateCall.calls) ? blockStateCall.calls : [])
-			))
-		}
-		default: throw new Error(`Unsupported test RPC method: ${ request.method }`)
-	}
 }
 
 const communicationPageHtml = await readFile(new URL('./chromeCommunicationPage.html', import.meta.url), 'utf8')

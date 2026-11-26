@@ -1,4 +1,4 @@
-import { getUnsimulatedGasLimitEdit, isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
+import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { GnosisSafeMessage } from '../../gnosisSafe/gnosisSafeMessage.js'
@@ -16,8 +16,8 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../type
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
-import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
+import { isSamePendingRequestInstance, type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
@@ -51,7 +51,7 @@ import { getCreatedGnosisSafeProposal, getGnosisSafePendingFlow, getGnosisSafeTr
 import { persistUnsignedGnosisSafeTransaction, resolveGnosisSafeSignerReply } from '../gnosisSafeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createGnosisSafeSignerErrorStatus } from '../gnosisSafeSignerErrors.js'
-import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
+import { getConfirmationAcceptanceRefusal, type ConfirmationAcceptance } from '../../utils/confirmationAcceptance.js'
 import { getReviewedResultId } from '../reviewedResult.js'
 import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
 
@@ -369,22 +369,14 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// An accept authorizes only the stored request whose reviewed content the user saw. A transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
-function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { reviewedResultId: string, forceSend: boolean }) {
-	if (getReviewedResultId(pending) !== accept.reviewedResultId) return false
-	if (isRejectOnlyTransaction(pending)) return false
-	// A gas edit is stored before it is simulated again, so only the send-anyway override accepts it without results for the edited gas.
-	if (!accept.forceSend && !isPendingTransactionGasLimitCurrent(pending)) return false
-	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
-}
+// The background derives the reviewed stamp from the locked stored request; the shared policy also drives popup refusal explanations.
+const getStoredAcceptRefusal = (pending: PendingTransactionOrSignableMessage, accept: ConfirmationAcceptance) => getConfirmationAcceptanceRefusal({ ...pending, reviewedResultId: getReviewedResultId(pending) }, accept)
 
 // Checks the accept against the stored request and claims it in the same locked storage update, so a refresh committed in between cannot become the accepted request. Signing-mode requests move to WaitingForSigner; simulation-mode ones are removed once added to the simulation. Returns the accepted snapshot, or undefined when the accept no longer matches.
 async function claimAcceptedRequest(accept: Extract<TransactionConfirmation['data'], { action: 'accept' }>, expected: PendingTransactionOrSignableMessage) {
 	let acceptedPending: PendingTransactionOrSignableMessage | undefined
 	await updatePendingTransactionOrMessageInstance(expected, async (current) => {
-		if (current.transactionOrMessageCreationStatus !== 'Simulated' || !isAcceptForStoredResult(current, accept)) return undefined
-		// The reviewed-result id leaves out the approval status, so a concurrent accept that already moved the request to the wallet is refused here, inside the lock.
-		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
+		if (getStoredAcceptRefusal(current, accept) !== undefined) return undefined
 		acceptedPending = current.simulationMode ? current : modifyObject(current, { approvalStatus: { status: 'WaitingForSigner' as const } })
 		return acceptedPending
 	})
@@ -415,11 +407,12 @@ async function resolveWithContext(ethereum: EthereumClientService, tokenPriceSer
 async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, pendingTransactionOrMessage: PendingTransactionOrSignableMessage, simulationModeGuard: SimulationModeGuard, refreshedSafeSignerSelection?: RefreshedGnosisSafeSignerSelection) {
 	// A signer reply names only the request id, so it resolves only a request that was forwarded to the signer, never a newer request under a reused id that the user has not approved.
 	if (confirmation.data.action === 'signerIncluded' && pendingTransactionOrMessage.approvalStatus.status !== 'WaitingForSigner') return false
-	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
-	if (confirmation.data.action === 'accept' && !isAcceptForStoredResult(pendingTransactionOrMessage, confirmation.data)) {
-		// Keep the request pending and redraw the popup, so the user reviews the current result before accepting again.
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		return false
+	if (confirmation.data.action === 'accept') {
+		const refusal = getStoredAcceptRefusal(pendingTransactionOrMessage, confirmation.data)
+		if (refusal !== undefined) {
+			if (refusal !== 'waitingForSigner') await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
 	}
 	if (
 		confirmation.data.action === 'accept'

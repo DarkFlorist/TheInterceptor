@@ -1,3 +1,4 @@
+import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
@@ -71,6 +72,12 @@ export const getUniqueRequestIdentifierString = (uniqueRequestIdentifier: Unique
 
 export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b: UniqueRequestIdentifier) => {
 	return a.requestId === b.requestId && a.requestSocket.connectionName === b.requestSocket.connectionName && a.requestSocket.tabId === b.requestSocket.tabId
+}
+
+export type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
+
+export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
+	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
 }
 
 export async function fetchWithTimeout(resource: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) {

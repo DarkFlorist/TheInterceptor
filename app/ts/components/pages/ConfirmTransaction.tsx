@@ -1,3 +1,4 @@
+import { getConfirmationAcceptanceRefusal, type ConfirmationAcceptance, type ConfirmationAcceptanceRefusal } from '../../utils/confirmationAcceptance.js'
 import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { GnosisSafeProposalDetails, GnosisSafeProposalSigningRequestCard } from './GnosisSafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
@@ -26,7 +27,7 @@ import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js
 import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
+import { isSamePendingRequestInstance, checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
@@ -104,6 +105,25 @@ async function bootstrapConfirmTransactionDialog(
 
 // Only the background's copies carry the reviewed-result id an accept needs; requests read directly from storage for the first paint do not.
 const isBackgroundCopy = (pending: ShownPendingTransactionOrSignableMessage | undefined): pending is BackgroundPendingTransactionOrSignableMessage => pending?.source === 'background'
+
+type ConfirmationReviewRefusal = Exclude<ConfirmationAcceptanceRefusal, 'waitingForSigner'>
+
+type ConfirmReviewAttempt = Pick<BackgroundPendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'> & ConfirmationAcceptance
+
+// A completed approval attempt is explained against the current background copy using the same policy that refuses it, never the button's transport state.
+export function getConfirmationReviewRefusal(pending: ShownPendingTransactionOrSignableMessage | undefined, attempt: ConfirmReviewAttempt | undefined): ConfirmationReviewRefusal | undefined {
+	if (!isBackgroundCopy(pending) || attempt === undefined || !isSamePendingRequestInstance(pending, attempt)) return undefined
+	const refusal = getConfirmationAcceptanceRefusal(pending, attempt)
+	return refusal === 'waitingForSigner' ? undefined : refusal
+}
+
+const confirmationRefusalMessages: Record<ConfirmationReviewRefusal, string> = {
+	notSimulated: 'This request is not ready to confirm. Wait for simulation to finish.',
+	reviewChanged: 'The simulation changed while you were confirming. Review the updated details and confirm again.',
+	rejectOnly: 'This request cannot be confirmed. Review the error and reject it.',
+	gasLimitChanged: 'The gas limit changed. Wait for updated simulation details before confirming again.',
+	sendAnywayRequired: 'This result requires explicit approval to send anyway. Review the warning before confirming again.',
+}
 
 const backgroundCopy = (pending: PopupPendingTransactionOrSignableMessage): BackgroundPendingTransactionOrSignableMessage => ({ ...pending, source: 'background' })
 
@@ -682,19 +702,23 @@ function ConfirmTransactionModal({ modalState, activeAddress, rpcEntries }: {
 	</div>
 }
 
-function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction, backgroundCopyUnavailable }: {
+function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction, backgroundCopyUnavailable, reviewRefusal }: {
 	unexpectedError: CaughtError | undefined
 	clearUnexpectedError: () => Promise<void>
 	rpcConnectionStatus: ReadonlySignal<RpcConnectionStatus>
 	currentPendingTransaction: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined>
 	backgroundCopyUnavailable: ReadonlySignal<boolean>
+	reviewRefusal: ConfirmationReviewRefusal | undefined
 }) {
+	const pending = currentPendingTransaction.value
+	const changedReviewId = isBackgroundCopy(pending) ? pending.reviewedResultId : undefined
 	return <>
 		<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError }/>
 		{ backgroundCopyUnavailable.value
 			? <ErrorComponent text = { 'This request could not be loaded from the background, so it cannot be confirmed. Confirming becomes available if the background responds later.' }/>
 			: <></>
 		}
+		{ reviewRefusal !== undefined ? <div class = 'notification is-warning' role = 'status' data-confirmation-review-changed = { reviewRefusal === 'reviewChanged' ? changedReviewId : undefined }>{ confirmationRefusalMessages[reviewRefusal] }</div> : <></> }
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 		<WebsiteErrors currentPendingTransactionOrSignableMessage = { currentPendingTransaction }/>
 		<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransaction }/>
@@ -972,6 +996,7 @@ export function ConfirmTransaction() {
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		const deliveryError = await sendConfirmDialogMessage(accept)
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
+		return deliveryError === undefined
 	}
 	async function rejectTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
@@ -1002,6 +1027,8 @@ export function ConfirmTransaction() {
 	const { value: rejectButtonState, waitFor: waitForRejectTransaction, reset: resetRejectButton } = useAsyncState<void>()
 	const { value: approveButtonState, waitFor: waitForApproveTransaction, reset: resetApproveButton } = useAsyncState<void>()
 	const { value: addToSafeStackButtonState, waitFor: waitForAddToSafeStack, reset: resetAddToSafeStackButton } = useAsyncState<void>()
+	const completedReviewAttempt = useSignal<ConfirmReviewAttempt | undefined>(undefined)
+	const reviewRefusal = useComputed(() => getConfirmationReviewRefusal(currentPendingTransactionOrSignableMessage.value, completedReviewAttempt.value))
 	const reject = () => {
 		resetRejectButton()
 		waitForRejectTransaction(rejectTransaction)
@@ -1009,6 +1036,8 @@ export function ConfirmTransaction() {
 	const approve = () => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (!isBackgroundCopy(pending)) return
+		const attempt: ConfirmReviewAttempt = { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, instanceId: pending.instanceId, reviewedResultId: pending.reviewedResultId, forceSend: forceSend.value }
+		completedReviewAttempt.value = undefined
 		// Captured at click time, so results that arrive while the approval is in flight cannot change what is accepted.
 		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
@@ -1017,7 +1046,9 @@ export function ConfirmTransaction() {
 			forceSend: forceSend.value,
 		} }
 		resetApproveButton()
-		waitForApproveTransaction(async () => await approveTransaction(accept))
+		waitForApproveTransaction(async () => {
+			if (await approveTransaction(accept)) completedReviewAttempt.value = attempt
+		})
 	}
 	const addToGnosisSafeStack = () => {
 		const pending = currentPendingTransactionOrSignableMessage.value
@@ -1094,7 +1125,7 @@ export function ConfirmTransaction() {
 					<Hint>
 						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
 						<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
-							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable } reviewRefusal = { reviewRefusal.value }/>
 								<CenterToPageTextSpinner text = { loadingText }/>
 					</div>
 				</Hint>
@@ -1107,7 +1138,7 @@ export function ConfirmTransaction() {
 					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<div style = 'position: sticky; top: 0; z-index: 1;'>
-							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable } reviewRefusal = { reviewRefusal.value }/>
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'margin: 10px'>

@@ -13,19 +13,20 @@ COPY ./patches/ /workspace/patches/
 WORKDIR /workspace
 RUN bun install --frozen-lockfile
 
-COPY tsconfig.json tsconfig-inpage.json /workspace/
+COPY tsconfig.json tsconfig-inpage.json tsconfig-shared.json tsconfig-app-build.json tsconfig-inpage-build.json /workspace/
 COPY app/*.png app/*.jpg app/*.json app/*.ico /workspace/app/
 COPY app/html/ /workspace/app/html/
 COPY app/html3/ /workspace/app/html3/
 COPY app/css/ /workspace/app/css/
 COPY app/ts/ /workspace/app/ts/
+COPY app/shared/ts/ /workspace/app/shared/ts/
 COPY app/img/ /workspace/app/img/
 COPY app/inpage/ /workspace/app/inpage/
 COPY app/fonts/ /workspace/app/fonts/
 COPY contracts/ /workspace/contracts/
 COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts build/compileSolidityContracts.mts /workspace/build/
 
-COPY tsconfig-test.json /workspace/
+COPY tsconfig-test.json knip.jsonc /workspace/
 COPY test/ /workspace/test/
 COPY scripts/ /workspace/scripts/
 

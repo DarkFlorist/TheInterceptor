@@ -1,19 +1,12 @@
-const ACCOUNT_CONNECTION_METHODS = new Set<string>([
-	'eth_requestAccounts',
-	'wallet_requestPermissions',
-])
+import { ACCOUNT_CONNECTION_METHODS } from '../../shared/ts/accountRequestMethods.js'
+export { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 
 const ACCOUNT_ONLY_METHODS = new Set<string>([
 	'eth_accounts',
-	'eth_requestAccounts',
-	'wallet_requestPermissions',
+	...ACCOUNT_CONNECTION_METHODS,
 	'wallet_getPermissions',
 	'wallet_getCapabilities',
 ])
-
-export function isAccountConnectionMethod(method: string) {
-	return ACCOUNT_CONNECTION_METHODS.has(method)
-}
 
 export function isAccountOnlyMethod(method: string) {
 	return ACCOUNT_ONLY_METHODS.has(method)

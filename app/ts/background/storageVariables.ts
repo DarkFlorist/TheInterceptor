@@ -6,7 +6,7 @@ import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLoca
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
-import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
+import { type PendingRequestInstance, type UniqueRequestIdentifier, isSamePendingRequestInstance, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
@@ -79,12 +79,6 @@ export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifi
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
 	})
-}
-
-type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
-
-export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
-	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
 }
 
 // Updates only the pending request instance that was read earlier, so work that awaited in between never stores into a different request the page sent under the same request id. Returns whether that instance is still pending.

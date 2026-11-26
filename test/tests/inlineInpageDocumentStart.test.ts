@@ -4,6 +4,7 @@ import * as ts from 'typescript'
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker } from '../../scripts/content-script-injection-markers.mts'
 import { generateInpageArtifacts, inlineDocumentStartPageWorldProvider, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
+import { bundlePageWorldProvider } from '../../build/bundler.mts'
 
 const compileClassicScript = async (sourcePath: string) => ts.transpileModule(await Bun.file(new URL(sourcePath, import.meta.url)).text(), {
 	compilerOptions: {
@@ -12,7 +13,17 @@ const compileClassicScript = async (sourcePath: string) => ts.transpileModule(aw
 	},
 }).outputText
 
-const generateArtifactsFromSources = async () => generateInpageArtifacts(await compileClassicScript('../../app/inpage/ts/document_start.ts'), await compileClassicScript('../../app/inpage/ts/inpage.ts'))
+// Bundle each compatibility mode's provider with its shared policies exactly as the build does.
+const bundleProviderFromSource = async (metamaskCompatibilityMode: boolean) => await bundlePageWorldProvider(new URL('../../app/inpage/ts/inpage.ts', import.meta.url).pathname, metamaskCompatibilityMode)
+
+const generateArtifactsFromSources = async () => {
+	const pageWorldProviders = new Map([[false, await bundleProviderFromSource(false)], [true, await bundleProviderFromSource(true)]])
+	return generateInpageArtifacts(await compileClassicScript('../../app/inpage/ts/document_start.ts'), (metamaskCompatibilityMode) => {
+		const source = pageWorldProviders.get(metamaskCompatibilityMode)
+		if (source === undefined) throw new Error('Missing bundled page-world provider')
+		return source
+	})
+}
 
 const getArtifact = (artifacts: Awaited<ReturnType<typeof generateArtifactsFromSources>>, path: string) => {
 	const artifact = artifacts.find((candidate) => candidate.path === path)
@@ -35,7 +46,10 @@ const createFakeScriptElement = (): FakeScriptElement => {
 
 // Runs a generated MV2 document-start script against a fake page. Like a browser, inserting an inline script runs it synchronously in the page world, unless the page CSP blocks inline scripts; an external script is only queued, because a browser loads it asynchronously.
 function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScripts }: { readonly pageCspBlocksInlineScripts: boolean }) {
-	const pageWindow = Object.assign(new EventTarget(), { postMessage: () => undefined })
+	// The provider's Gnosis Safe Apps bridge schedules its request deadlines with the page window's timers.
+	const pageWindow = Object.assign(new EventTarget(), { postMessage: () => undefined, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout })
+	Reflect.set(pageWindow, 'parent', pageWindow)
+	Reflect.set(pageWindow, 'top', pageWindow)
 	const pageDocument: { currentScript: FakeScriptElement | undefined } = { currentScript: undefined }
 	const insertedScripts: { readonly external: boolean, readonly ranSynchronously: boolean, readonly src: string }[] = []
 	const scriptContainer = {
@@ -81,8 +95,8 @@ test('MV2 document-start defines window.ethereum synchronously before its bootst
 		assert.deepEqual(insertedScripts, [{ external: false, ranSynchronously: true, src: '' }])
 		assert.equal(contentScriptGlobal.interceptorInjected, true)
 		assert.deepEqual(errors, [])
-		assert.equal(documentStart.source.includes(`const metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
-		assert.equal(documentStart.source.includes(`const metamaskCompatibilityModeAtPageLoad = ${ !metamaskCompatibilityMode }`), false)
+		assert.equal(documentStart.source.includes(`metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
+		assert.equal(documentStart.source.includes(`metamaskCompatibilityModeAtPageLoad = ${ !metamaskCompatibilityMode }`), false)
 	}
 })
 
@@ -107,12 +121,11 @@ test('MV2 generated document-start scripts keep no build markers', async () => {
 })
 
 test('MV3 page-world provider artifacts are the compatibility-mode providers, unchanged by MV2 inlining', async () => {
-	const compiledInpage = await compileClassicScript('../../app/inpage/ts/inpage.ts')
 	const artifacts = await generateArtifactsFromSources()
 	for (const metamaskCompatibilityMode of [false, true]) {
 		const providerPath = getPageWorldScriptPaths(metamaskCompatibilityMode)[0]
 		if (providerPath === undefined) throw new Error('Missing page-world provider path')
-		assert.equal(getArtifact(artifacts, providerPath).source, inlineMetamaskCompatibilityModeAtPageLoad(compiledInpage, metamaskCompatibilityMode))
+		assert.equal(getArtifact(artifacts, providerPath).source, await bundleProviderFromSource(metamaskCompatibilityMode))
 	}
 	assert.equal(artifacts.length, 4)
 })

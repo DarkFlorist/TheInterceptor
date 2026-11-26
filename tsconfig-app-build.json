@@ -1,0 +1,9 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"rootDir": "app/ts",
+		"noEmit": false,
+		"tsBuildInfoFile": "app/js/tsconfig-app-build.tsbuildinfo"
+	},
+	"references": [{ "path": "./tsconfig-shared.json" }]
+}
