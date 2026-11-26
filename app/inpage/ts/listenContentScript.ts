@@ -1,16 +1,11 @@
 import { GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST } from '../../shared/ts/gnosisSafeAppsProtocol.js'
 import { createNativeGnosisSafeAppsSourceBridge } from './nativeGnosisSafeAppsSourceBridge.js'
-
+import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
-	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
-	// Non-module counterparts of inpage.ts; startup rendezvous tests enforce the message identities.
 	const INTERCEPTOR_BRIDGE_READY_MESSAGE = 'interceptor_bridge_ready'
 	const INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE = 'interceptor_bridge_ready_request'
-	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
-	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
-	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
@@ -242,8 +237,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		const currentExtensionPort = extensionPort
 		if (currentExtensionPort === undefined) return
 		try {
-			// Non-module counterpart of INTERCEPTOR_DIAGNOSTIC_REQUEST in utils/requests.ts; contentScriptReconnect.test.ts verifies the emitted identity.
-			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
+			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, ...INTERCEPTOR_DIAGNOSTIC_REQUEST, params: [diagnostics] } })
 		} catch(reportingError: unknown) {
 			if (reportingError instanceof Error && isIgnorableContentScriptPortError(reportingError)) {
 				reconnectAfterPortFailure(currentExtensionPort, reportingError)

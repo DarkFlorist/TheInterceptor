@@ -1,3 +1,4 @@
+import { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../shared/ts/bridgeWireProtocol.js'
 import * as funtypes from 'funtypes'
 import { CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
@@ -484,7 +485,7 @@ export const GetFilterLogs = funtypes.ReadonlyObject({
 
 export type InterceptorError = funtypes.Static<typeof InterceptorError>
 export const InterceptorError = funtypes.ReadonlyObject({
-	method: funtypes.Literal('InterceptorError'),
+	method: funtypes.Literal(INTERCEPTOR_DIAGNOSTIC_REQUEST.method),
 	params: funtypes.ReadonlyTuple(funtypes.String),
 })
 

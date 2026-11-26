@@ -1,7 +1,5 @@
 import { classifyRequestId, type RawInterceptedRequest } from '../utils/requests.js'
 
-export const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
-
 export function acknowledgeAndTrackBridgeRequest(
 	latestReceivedRequestIds: Map<string, number>,
 	socketIdentifier: string,

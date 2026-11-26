@@ -1,4 +1,5 @@
 import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethods.js'
+import { INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, isGnosisSafeAppsCancellation } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import { createPageExtensions } from './pageExtensions.js'
@@ -282,10 +283,8 @@ type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly typ
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
-const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_READY_MESSAGE = 'interceptor_bridge_ready'
 const INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE = 'interceptor_bridge_ready_request'
-const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 // Account connections wait for signer ownership; reads can proceed independently. The shared account-method policy is bundled into this classic provider.
 
@@ -935,10 +934,9 @@ class InterceptorMessageListener {
 			if (this.extensionMessagePort === undefined) return
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
-				method: 'InterceptorError',
+				...INTERCEPTOR_DIAGNOSTIC_REQUEST,
 				params: [diagnostics],
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
-				requestId: -1,
 				internal: true,
 			}
 			this.extensionMessagePort.postMessage(message)

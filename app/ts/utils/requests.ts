@@ -1,11 +1,9 @@
+import { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../shared/ts/bridgeWireProtocol.js'
+export { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../shared/ts/bridgeWireProtocol.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
 import { createInterceptorInternalError, getErrorMessage, isBrowserFetchTransportError } from './caughtErrors.js'
-import type { InterceptorError } from '../types/JsonRpc-types.js'
-
-// The non-module inpage sender cannot import this descriptor; contentScriptReconnect.test.ts checks its emitted diagnostic request against it.
-export const INTERCEPTOR_DIAGNOSTIC_REQUEST = { requestId: -1, method: 'InterceptorError' } as const satisfies { readonly requestId: number, readonly method: InterceptorError['method'] }
 
 // Request identity policy: ordered page requests participate in replay deduplication; diagnostics have no reply promise and must never advance that watermark.
 export function classifyRequestId(request: { readonly requestId: number, readonly method: string }): 'ordered' | 'diagnostic' | 'invalid' {
