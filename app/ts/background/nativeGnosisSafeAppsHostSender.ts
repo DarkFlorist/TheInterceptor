@@ -1,8 +1,8 @@
 type NativeHostSender = { readonly id?: string, readonly url?: string }
 
-// Both native-host transports authorize the exact extension page before reading source-tab state; only launch query/hash data may vary.
-export function getAuthorizedNativeGnosisSafeAppsHostSenderUrl(sender: NativeHostSender | undefined, extensionId: string, hostUrls: readonly string[]) {
-	if (sender?.id !== extensionId || sender.url === undefined) return undefined
-	const pageUrl = sender.url.split(/[?#]/)[0]
-	return pageUrl !== undefined && hostUrls.includes(pageUrl) ? sender.url : undefined
+// Transports authorize the exact extension host before reading source-tab state. A child-frame transport supplies its browser-reported sender.tab.url; direct host transports use sender.url.
+export function getAuthorizedNativeGnosisSafeAppsHostSenderUrl(sender: NativeHostSender | undefined, extensionId: string, hostUrls: readonly string[], hostPageUrl = sender?.url) {
+	if (sender?.id !== extensionId || hostPageUrl === undefined) return undefined
+	const pageUrl = hostPageUrl.split(/[?#]/)[0]
+	return pageUrl !== undefined && hostUrls.includes(pageUrl) ? hostPageUrl : undefined
 }

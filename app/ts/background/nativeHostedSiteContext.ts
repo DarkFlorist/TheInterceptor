@@ -9,6 +9,7 @@ import { isGnosisSafeAppsConnectionEligible, isGnosisSafeAppsConnectionEligibleF
 import { getGnosisSafeAppsCompatibilityMode } from './settings.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { getHtmlPageUrl } from '../utils/htmlPages.js'
+import { getAuthorizedNativeGnosisSafeAppsHostSenderUrl } from './nativeGnosisSafeAppsHostSender.js'
 
 type NativeHostedSiteDependencies = {
 	readonly extensionId: string
@@ -46,9 +47,10 @@ export function getNativeHostedSiteSourceTabId(connections: WebsiteTabConnection
 	const sender = child?.port.sender
 	if (child === undefined || typeof sender?.id !== 'string' || sender.frameId === undefined || sender.frameId <= 0 || sender.tab?.id !== childSocket.tabId || sender.tab.url === undefined || sender.url === undefined || child.requestOrigin === undefined) return undefined
 	const dependencies = suppliedDependencies ?? defaultDependencies()
-	if (sender.id !== dependencies.extensionId || getHttpOrigin(sender.url) !== child.requestOrigin || !dependencies.hostUrls.includes(sender.tab.url.split(/[?#]/)[0] ?? '')) return undefined
+	const hostUrl = getAuthorizedNativeGnosisSafeAppsHostSenderUrl(sender, dependencies.extensionId, dependencies.hostUrls, sender.tab.url)
+	if (hostUrl === undefined || getHttpOrigin(sender.url) !== child.requestOrigin) return undefined
 	let launch: ReturnType<typeof parseNativeGnosisSafeAppsLaunch>
-	try { launch = parseNativeGnosisSafeAppsLaunch(new URL(sender.tab.url).searchParams) } catch (error: unknown) {
+	try { launch = parseNativeGnosisSafeAppsLaunch(new URL(hostUrl).searchParams) } catch (error: unknown) {
 		if (isNativeGnosisSafeAppsLaunchValidationError(error)) return undefined
 		throw error
 	}
