@@ -4,7 +4,7 @@ import * as fs from 'node:fs'
 import * as ts from 'typescript'
 // Intentional app-source dependency: the dependency-free path modules stay under app/ts because the extension runtime ships them, and this bundler and scripts/inline-inpage-document-start.mts import them as the single source of injected script paths.
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
-import { INPAGE_SCRIPTS } from '../app/ts/config/injectedScripts.ts'
+import { INPAGE_SCRIPTS, PAGE_WORLD_EXTENSIONS } from '../app/ts/config/injectedScripts.ts'
 import { generateInpageArtifacts, inlineMetamaskCompatibilityModeAtPageLoad } from '../scripts/inline-inpage-document-start.mts'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
@@ -374,7 +374,9 @@ function formatBunBuildLogs(logs: readonly BuildMessage[]) {
 // The compatibility-mode variants of the provider and MV2 document-start script are generated from these by buildRuntimeEntrypoints.
 const inpageProviderPath = path.join(appDirectory, getPageWorldScriptPaths(false)[0] ?? '')
 const inpageDocumentStartPath = path.join(appDirectory, getManifestV2DocumentStartScriptPath(false))
+const pageWorldExtensionEntrypoints = PAGE_WORLD_EXTENSIONS.map((scriptPath) => ({ scriptPath, entrypointPath: path.join(appDirectory, scriptPath) }))
 const inpageRuntimeEntrypointPaths = [
+	...pageWorldExtensionEntrypoints.map(({ entrypointPath }) => entrypointPath),
 	inpageDocumentStartPath,
 	inpageProviderPath,
 	...Object.values(INPAGE_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1))),
@@ -431,7 +433,7 @@ function getExistingRuntimeEntrypointPaths() {
 	return runtimeEntrypointPaths.filter((entrypointPath) => fs.existsSync(entrypointPath))
 }
 
-// Bun drops comments while bundling, so the compatibility-mode marker comment is filled in as Bun loads the provider source. Only the provider needs an isolated IIFE scope.
+// Fill the compatibility marker as Bun loads the provider source, before comments are removed from its classic IIFE bundle.
 export async function bundlePageWorldProvider(inpagePath: string, metamaskCompatibilityMode: boolean) {
 	const buildResult = await Bun.build({
 		entrypoints: [inpagePath],
@@ -461,12 +463,15 @@ type RuntimeBundleOptions = {
 	readonly outdir: string
 	readonly inpagePath: string
 	readonly documentStartPath: string
+	readonly pageWorldExtensions?: readonly { readonly scriptPath: string, readonly entrypointPath: string }[]
 }
 
 // Generated provider and MV2 document-start variants are written under outdir and copied to root at their extension paths.
 export async function buildRuntimeEntrypoints(entrypoints: readonly string[], options: RuntimeBundleOptions): Promise<RuntimeEntrypointCopy[]> {
 	// Content-script entrypoints remain classic scripts; extension pages use module bundles.
-	const moduleEntrypoints = entrypoints.filter((entrypoint) => entrypoint !== options.inpagePath)
+	const extensions = options.pageWorldExtensions ?? []
+	const extensionPaths = new Set(extensions.map(({ entrypointPath }) => entrypointPath))
+	const moduleEntrypoints = entrypoints.filter((entrypoint) => entrypoint !== options.inpagePath && !extensionPaths.has(entrypoint))
 	if (moduleEntrypoints.length > 0) {
 		const buildResult = await Bun.build({ entrypoints: moduleEntrypoints, outdir: options.outdir, root: options.root, target: 'browser', format: 'esm', splitting: false, external: [...externalRuntimeModules] })
 		if (!buildResult.success) throw new Error(`Failed to bundle runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
@@ -477,6 +482,20 @@ export async function buildRuntimeEntrypoints(entrypoints: readonly string[], op
 		if (!fs.existsSync(bundledEntrypointPath)) throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
 		return { bundledEntrypointPath, entrypointPath, requiresClassicSyntax: classicRuntimeEntrypointPaths.has(entrypointPath) }
 	})
+	const extensionScripts: { readonly source: string, readonly scriptPath: string }[] = []
+	for (const extension of extensions) {
+		if (!entrypoints.includes(extension.entrypointPath)) throw new Error(`Missing page-world extension entrypoint: ${ extension.scriptPath }`)
+		const result = await Bun.build({ entrypoints: [extension.entrypointPath], target: 'browser', format: 'iife', splitting: false, external: [...externalRuntimeModules] })
+		const [output] = result.outputs
+		if (!result.success || output === undefined) throw new Error(`Failed to bundle page-world extension: ${ formatBunBuildLogs(result.logs) }`)
+		const source = await output.text()
+		assertClassicEntrypointHasNoModuleSyntax(extension.entrypointPath, source)
+		const bundledEntrypointPath = path.join(options.outdir, extension.scriptPath)
+		ensureDirectoryExists(path.dirname(bundledEntrypointPath))
+		fs.writeFileSync(bundledEntrypointPath, source)
+		bundledEntrypoints.push({ bundledEntrypointPath, entrypointPath: extension.entrypointPath, requiresClassicSyntax: true })
+		extensionScripts.push({ source, scriptPath: extension.scriptPath })
+	}
 	const documentStart = bundledEntrypoints.find(({ entrypointPath }) => entrypointPath === options.documentStartPath)
 	const hasProvider = entrypoints.includes(options.inpagePath)
 	if (documentStart === undefined && !hasProvider) return bundledEntrypoints
@@ -488,7 +507,7 @@ export async function buildRuntimeEntrypoints(entrypoints: readonly string[], op
 		const source = pageWorldProviders.get(metamaskCompatibilityMode)
 		if (source === undefined) throw new Error('A page-world provider bundle was missing')
 		return source
-	}).map((artifact) => {
+	}, extensionScripts).map((artifact) => {
 		const bundledEntrypointPath = path.join(options.outdir, artifact.path)
 		ensureDirectoryExists(path.dirname(bundledEntrypointPath))
 		fs.writeFileSync(bundledEntrypointPath, artifact.source)
@@ -509,6 +528,7 @@ async function bundleRuntimeEntrypoints() {
 			outdir: bundledOutputDirectory,
 			inpagePath: inpageProviderPath,
 			documentStartPath: inpageDocumentStartPath,
+			pageWorldExtensions: pageWorldExtensionEntrypoints,
 		}))
 	} finally {
 		fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })

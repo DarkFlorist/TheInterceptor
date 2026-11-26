@@ -2,7 +2,7 @@ import type { OpenGnosisSafeAppReply } from '../types/interceptor-reply-messages
 import { isNativeGnosisSafeAppsLaunchValidationError, nativeGnosisSafeAppsHostUrl } from '../utils/nativeGnosisSafeAppsHost.js'
 import { getTabIfExists } from '../utils/requests.js'
 import { openExtensionTab } from './extensionTabs.js'
-import { setGnosisSafeAppsCompatibilityMode } from './settings.js'
+import { setGnosisSafeSessionCompatibilityMode } from './settings.js'
 
 // Launch preparation belongs to the background; the source provider still owns website consent, account eligibility and each request's admission.
 export async function openNativeGnosisSafeApp(sourceTabId: number): Promise<OpenGnosisSafeAppReply> {
@@ -14,7 +14,7 @@ export async function openNativeGnosisSafeApp(sourceTabId: number): Promise<Open
 		if (error instanceof Error && isNativeGnosisSafeAppsLaunchValidationError(error)) return failure(error.message)
 		throw error
 	}
-	await setGnosisSafeAppsCompatibilityMode(true)
+	await setGnosisSafeSessionCompatibilityMode(true)
 	await openExtensionTab('gnosisSafeAppsHost', new URL(url).search)
 	return { type: 'OpenGnosisSafeAppReply', ok: true }
 }

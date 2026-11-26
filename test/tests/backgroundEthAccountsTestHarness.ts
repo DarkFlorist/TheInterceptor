@@ -174,18 +174,18 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 }
 
 export async function loadModules() {
-	const safeApps = await import('../../app/ts/background/gnosisSafeAppsCompatibilityCoordinator.js')
+	const capabilities = await import('../../app/ts/background/gnosisSafeSessionCapabilitiesCoordinator.js')
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
-		...safeApps,
-		initializeGnosisSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
-			const feature = safeApps.createGnosisSafeAppsCompatibilityFeature(connections)
+		...capabilities,
+		initializeGnosisSafeSessionCapabilities: async (connections: WebsiteTabConnections) => {
+			const feature = capabilities.createGnosisSafeSessionCapabilitiesFeature(connections)
 			Object.assign(connections, { lifecycle: feature.lifecycle })
-			return await safeApps.initializeGnosisSafeAppsCompatibility(feature)
+			return await capabilities.initializeGnosisSafeSessionCapabilities(feature)
 		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),

@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
-import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker } from '../../scripts/content-script-injection-markers.mts'
+import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker, pageWorldExtensionScriptsMarker } from '../../scripts/content-script-injection-markers.mts'
 import { generateInpageArtifacts, inlineDocumentStartPageWorldProvider, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 import { bundlePageWorldProvider } from '../../build/bundler.mts'
 
@@ -16,13 +16,13 @@ const compileClassicScript = async (sourcePath: string) => ts.transpileModule(aw
 // Bundle each compatibility mode's provider with its shared policies exactly as the build does.
 const bundleProviderFromSource = async (metamaskCompatibilityMode: boolean) => await bundlePageWorldProvider(new URL('../../app/inpage/ts/inpage.ts', import.meta.url).pathname, metamaskCompatibilityMode)
 
-const generateArtifactsFromSources = async () => {
+const generateArtifactsFromSources = async (extensions: readonly { readonly source: string, readonly scriptPath: string }[] = []) => {
 	const pageWorldProviders = new Map([[false, await bundleProviderFromSource(false)], [true, await bundleProviderFromSource(true)]])
 	return generateInpageArtifacts(await compileClassicScript('../../app/inpage/ts/document_start.ts'), (metamaskCompatibilityMode) => {
 		const source = pageWorldProviders.get(metamaskCompatibilityMode)
 		if (source === undefined) throw new Error('Missing bundled page-world provider')
 		return source
-	})
+	}, extensions)
 }
 
 const getArtifact = (artifacts: Awaited<ReturnType<typeof generateArtifactsFromSources>>, path: string) => {
@@ -32,6 +32,7 @@ const getArtifact = (artifacts: Awaited<ReturnType<typeof generateArtifactsFromS
 }
 
 type FakeScriptElement = {
+	async: boolean
 	src: string
 	textContent: string
 	readonly attributes: Set<string>
@@ -41,7 +42,7 @@ type FakeScriptElement = {
 
 const createFakeScriptElement = (): FakeScriptElement => {
 	const attributes = new Set<string>()
-	return { src: '', textContent: '', attributes, setAttribute: (name) => { attributes.add(name) }, hasAttribute: (name) => attributes.has(name) }
+	return { async: true, src: '', textContent: '', attributes, setAttribute: (name) => { attributes.add(name) }, hasAttribute: (name) => attributes.has(name) }
 }
 
 // Runs a generated MV2 document-start script against a fake page. Like a browser, inserting an inline script runs it synchronously in the page world, unless the page CSP blocks inline scripts; an external script is only queued, because a browser loads it asynchronously.
@@ -52,10 +53,12 @@ function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScri
 	Reflect.set(pageWindow, 'top', pageWindow)
 	const pageDocument: { currentScript: FakeScriptElement | undefined } = { currentScript: undefined }
 	const pageErrors: unknown[] = []
+	const queuedExternalScripts: { readonly src: string, readonly async: boolean }[] = []
 	const insertedScripts: { readonly external: boolean, readonly ranSynchronously: boolean, readonly src: string }[] = []
 	const scriptContainer = {
 		children: [{}, {}],
 		insertBefore: (script: FakeScriptElement) => {
+			if (script.src !== '') queuedExternalScripts.push({ src: script.src, async: script.async })
 			const runsInline = script.src === '' && !pageCspBlocksInlineScripts
 			if (runsInline) {
 				pageDocument.currentScript = script
@@ -71,7 +74,7 @@ function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScri
 	const fakeBrowser = { runtime: { lastError: undefined, getURL: (path: string) => `moz-extension://interceptor/${ path }` } }
 	const errors: unknown[] = []
 	new Function('globalThis', 'browser', 'document', 'console', documentStartSource)(contentScriptGlobal, fakeBrowser, contentScriptDocument, { error: (...args: unknown[]) => errors.push(args) })
-	return { pageWindow, insertedScripts, contentScriptGlobal, errors, pageErrors }
+	return { pageWindow, insertedScripts, queuedExternalScripts, contentScriptGlobal, errors, pageErrors }
 }
 
 const isInterceptorProvider = (value: unknown) => typeof value === 'object' && value !== null && Reflect.get(value, 'isInterceptor') === true
@@ -146,4 +149,29 @@ test('MV2 leaves injection retryable when bootstrap prerequisites are missing', 
 
 	assert.equal(fakeGlobalThis.interceptorInjected, undefined)
 	assert.equal(errors.length, 1)
+})
+
+
+test('independent page extensions follow the core provider inline and through ordered CSP fallback', async () => {
+	const scriptPath = 'inpage/js/siteBehaviorBootstrap.js'
+	const source = 'window.extensionSawProvider = window.ethereum?.isInterceptor === true'
+	const artifacts = await generateArtifactsFromSources([{ scriptPath, source }])
+	for (const mode of [false, true]) {
+		const documentStart = getArtifact(artifacts, getManifestV2DocumentStartScriptPath(mode))
+		const inline = runDocumentStart(documentStart.source, { pageCspBlocksInlineScripts: false })
+		assert.equal(Reflect.get(inline.pageWindow, 'extensionSawProvider'), true)
+		assert.equal(inline.insertedScripts.length, 2)
+		const blocked = runDocumentStart(documentStart.source, { pageCspBlocksInlineScripts: true })
+		assert.deepEqual(blocked.queuedExternalScripts, getPageWorldScriptPaths(mode).map((file) => ({ src: `moz-extension://interceptor/${ file }`, async: false })))
+	}
+})
+
+
+test('script inlining does not reinterpret build markers contained in another script', async () => {
+	const source = inlineDocumentStartPageWorldProvider(await compileClassicScript('../../app/inpage/ts/document_start.ts'), {
+		source: `window.providerMarker = ${ JSON.stringify(pageWorldExtensionScriptsMarker) }`, scriptPath: 'inpage/js/inpage.js',
+	}, [{ source: `window.extensionMarker = ${ JSON.stringify(pageWorldProviderSourceMarker) }`, scriptPath: 'inpage/js/siteBehaviorBootstrap.js' }])
+	const result = runDocumentStart(source, { pageCspBlocksInlineScripts: false })
+	assert.equal(Reflect.get(result.pageWindow, 'providerMarker'), pageWorldExtensionScriptsMarker)
+	assert.equal(Reflect.get(result.pageWindow, 'extensionMarker'), pageWorldProviderSourceMarker)
 })

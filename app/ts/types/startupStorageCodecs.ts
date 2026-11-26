@@ -28,4 +28,5 @@ export const startupStorageCodecs = {
 }
 
 
+// The historical safeAppsCompatibilityMode wire key now represents Gnosis Safe session compatibility: SDK hosting plus simulated website reads.
 export const hostingStorageCodecs = { safeAppsCompatibilityMode: funtypes.Boolean, userAddressBookEntriesV3: AddressBookEntries }

@@ -1,3 +1,4 @@
+import { asExtensionRootPaths, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -823,9 +824,7 @@ describe('refreshHomeData', () => {
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signerAddress)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
-		assert.deepEqual(browserMock.registeredContentScripts.find((registration) => registration.id === 'inpage')?.js, [
-			'/inpage/js/inpage-metamask-compatibility.js',
-		])
+		assert.deepEqual(browserMock.registeredContentScripts.find((registration) => registration.id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
 		assert.deepEqual(browserMock.reloadedTabs, [1])
 		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
 	})

@@ -1926,6 +1926,7 @@ describe('inpage signer bridge', () => {
 				if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
 				assert.equal(error.code, -32004)
 			}
+			await assert.rejects(provider.request({ method: 'site_rpc_request', params: [] }), /Method not supported/)
 			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: null })
 			let batchCallbackCount = 0
 			const batchReply = await new Promise<unknown>((resolve, reject) => {

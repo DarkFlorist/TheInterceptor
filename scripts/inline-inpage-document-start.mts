@@ -1,10 +1,8 @@
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
-import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker } from './content-script-injection-markers.mts'
+import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker, pageWorldExtensionScriptsMarker } from './content-script-injection-markers.mts'
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const quotedMarkerPattern = (marker: string) => new RegExp(`(['"])${ escapeRegExp(marker) }\\1`)
-const pageWorldProviderSourceMarkerPattern = quotedMarkerPattern(pageWorldProviderSourceMarker)
-const pageWorldProviderScriptPathMarkerPattern = quotedMarkerPattern(pageWorldProviderScriptPathMarker)
 const metamaskCompatibilityModeAtPageLoadMarkerPattern = new RegExp(`false;?\\s*//\\s*${ escapeRegExp(metamaskCompatibilityModeAtPageLoadMarker) }`)
 
 // Bundling drops comments, so build/bundler.mts fills this marker while Bun loads the provider source, before bundling.
@@ -19,25 +17,30 @@ function getPageWorldProviderScriptPath(metamaskCompatibilityMode: boolean) {
 	return pageWorldProviderScriptPath
 }
 
-// A replacer function keeps any $ sequence in the inlined value literal instead of reading it as a replacement pattern.
-function replaceQuotedMarker(source: string, markerPattern: RegExp, markerDescription: string, value: string) {
-	if (!markerPattern.test(source)) throw new Error(`Could not find ${ markerDescription } marker in document_start.js`)
-	return source.replace(markerPattern, () => JSON.stringify(value))
-}
-
-export function inlineDocumentStartPageWorldProvider(documentStartSource: string, pageWorldProvider: { readonly source: string, readonly scriptPath: string }) {
-	// The path goes in first so the source marker search never scans inlined provider code.
-	const withProviderScriptPath = replaceQuotedMarker(documentStartSource, pageWorldProviderScriptPathMarkerPattern, 'page-world provider script path', pageWorldProvider.scriptPath)
-	return replaceQuotedMarker(withProviderScriptPath, pageWorldProviderSourceMarkerPattern, 'page-world provider source', pageWorldProvider.source)
+// Replace template markers in one pass, so marker-like text inside either independently bundled script stays literal.
+export function inlineDocumentStartPageWorldProvider(documentStartSource: string, pageWorldProvider: { readonly source: string, readonly scriptPath: string }, extensions: readonly { readonly source: string, readonly scriptPath: string }[] = []) {
+	const replacements = [
+		{ marker: pageWorldProviderSourceMarker, value: pageWorldProvider.source, description: 'page-world provider source', required: true },
+		{ marker: pageWorldProviderScriptPathMarker, value: pageWorldProvider.scriptPath, description: 'page-world provider script path', required: true },
+		{ marker: pageWorldExtensionScriptsMarker, value: JSON.stringify(extensions), description: 'page-world extension scripts', required: extensions.length > 0 },
+	]
+	for (const replacement of replacements) if (replacement.required && !quotedMarkerPattern(replacement.marker).test(documentStartSource)) throw new Error(`Could not find ${ replacement.description } marker in document_start.js`)
+	const values = new Map(replacements.map(({ marker, value }) => [marker, value]))
+	const pattern = new RegExp(`(['"])(${ replacements.map(({ marker }) => escapeRegExp(marker)).join('|') })\\1`, 'g')
+	return documentStartSource.replace(pattern, (_match: string, _quote: string, marker: string) => {
+		const value = values.get(marker)
+		if (value === undefined) throw new Error(`Unknown document-start marker: ${ marker }`)
+		return JSON.stringify(value)
+	})
 }
 
 // Every generated inpage artifact: per compatibility mode, the page-world provider that MV3 registers, and the MV2 document-start script that carries the same provider inline and by URL. getPageWorldProviderSource returns the classic provider already built for that mode.
-export function generateInpageArtifacts(documentStartSource: string, getPageWorldProviderSource: (metamaskCompatibilityMode: boolean) => string) {
+export function generateInpageArtifacts(documentStartSource: string, getPageWorldProviderSource: (metamaskCompatibilityMode: boolean) => string, extensions: readonly { readonly source: string, readonly scriptPath: string }[] = []) {
 	return [false, true].flatMap((metamaskCompatibilityMode) => {
 		const pageWorldProvider = { source: getPageWorldProviderSource(metamaskCompatibilityMode), scriptPath: getPageWorldProviderScriptPath(metamaskCompatibilityMode) }
 		return [
 			{ path: pageWorldProvider.scriptPath, metamaskCompatibilityMode, source: pageWorldProvider.source },
-			{ path: getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode), metamaskCompatibilityMode, source: inlineDocumentStartPageWorldProvider(documentStartSource, pageWorldProvider) },
+			{ path: getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode), metamaskCompatibilityMode, source: inlineDocumentStartPageWorldProvider(documentStartSource, pageWorldProvider, extensions) },
 		]
 	})
 }

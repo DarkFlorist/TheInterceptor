@@ -231,12 +231,13 @@ export const getMetamaskCompatibilityMode = async() => (await browserStorageLoca
 export const metamaskCompatibilityModeStorageWrite = (metamaskCompatibilityMode: boolean): StorageWrite => ({ metamaskCompatibilityMode })
 export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet(metamaskCompatibilityModeStorageWrite(metamaskCompatibilityMode))
 
-export const getGnosisSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
-export const gnosisSafeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
-export const setGnosisSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => {
+// This session mode enables SDK hosting and simulated website reads together. Keep the SDK-era storage/export key for existing preferences and backups.
+export const getGnosisSafeSessionCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
+export const gnosisSafeSessionCompatibilityModeStorageWrite = (enabled: boolean): StorageWrite => ({ safeAppsCompatibilityMode: enabled })
+export const setGnosisSafeSessionCompatibilityMode = async(enabled: boolean) => {
 	// Serialize comparison and write with imports so later selections win, while skipping no-op writes that Firefox announces as context changes.
 	await runSettingsStorageTransaction(async () => ({
-		writes: await getGnosisSafeAppsCompatibilityMode() === safeAppsCompatibilityMode ? [] : [gnosisSafeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode)],
+		writes: await getGnosisSafeSessionCompatibilityMode() === enabled ? [] : [gnosisSafeSessionCompatibilityModeStorageWrite(enabled)],
 		result: undefined,
 	}))
 }
@@ -257,7 +258,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 		addressBookEntries: await getUserAddressBookEntries(),
 		useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 		metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-		safeAppsCompatibilityMode: await getGnosisSafeAppsCompatibilityMode(),
+		safeAppsCompatibilityMode: await getGnosisSafeSessionCompatibilityMode(),
 	}, exportDate)
 }
 

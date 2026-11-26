@@ -6,7 +6,7 @@ import { installBrowserMock, createEthereumWithGetBlockCounter, noopPublishRpcCo
 import { openNativeGnosisSafeApp } from '../../app/ts/background/gnosisSafeAppsLaunch.js'
 import { PopupMessage } from '../../app/ts/types/interceptor-messages.js'
 import { getPopupMessageDomain, requiresExtensionPageSender } from '../../app/ts/types/popupMessageProtocol.js'
-import { getGnosisSafeAppsCompatibilityMode, getSettings, setGnosisSafeAppsCompatibilityMode } from '../../app/ts/background/settings.js'
+import { getGnosisSafeSessionCompatibilityMode, getSettings, setGnosisSafeSessionCompatibilityMode } from '../../app/ts/background/settings.js'
 import { getIdsOfOpenedTabs } from '../../app/ts/background/storageVariables.js'
 import { dispatchPopupMessage } from '../../app/ts/background/popupMessageDispatcher.js'
 
@@ -87,16 +87,16 @@ test('the compatibility setter emits storage changes only for actual mode transi
 	browser.storage.onChanged.addListener((changes, area) => {
 		if (area === 'local' && 'safeAppsCompatibilityMode' in changes) modeEvents++
 	})
-	await setGnosisSafeAppsCompatibilityMode(false)
+	await setGnosisSafeSessionCompatibilityMode(false)
 	assert.deepEqual(modeWrites, [], 'the default false value needs no write')
-	await setGnosisSafeAppsCompatibilityMode(true)
-	await setGnosisSafeAppsCompatibilityMode(true)
-	assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
+	await setGnosisSafeSessionCompatibilityMode(true)
+	await setGnosisSafeSessionCompatibilityMode(true)
+	assert.equal(await getGnosisSafeSessionCompatibilityMode(), true)
 	assert.deepEqual(modeWrites, [true])
 	assert.equal(modeEvents, 1)
-	await setGnosisSafeAppsCompatibilityMode(false)
-	await setGnosisSafeAppsCompatibilityMode(false)
-	assert.equal(await getGnosisSafeAppsCompatibilityMode(), false)
+	await setGnosisSafeSessionCompatibilityMode(false)
+	await setGnosisSafeSessionCompatibilityMode(false)
+	assert.equal(await getGnosisSafeSessionCompatibilityMode(), false)
 	assert.deepEqual(modeWrites, [true, false])
 	assert.equal(modeEvents, 2, 'genuine revocation still emits its context invalidation')
 })

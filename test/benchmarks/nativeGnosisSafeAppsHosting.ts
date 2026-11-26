@@ -14,6 +14,7 @@ import { getHtmlFile } from '../../app/ts/utils/htmlPages.js'
 
 const safeAddress = '0x1234567890123456789012345678901234567890'
 const ownerAddress = '0x0000000000000000000000000000000000000001'
+const httpInterception = process.argv.includes('--http-interception')
 const rpc = createBrowserSimulationRpc({ safeAddress: BigInt(safeAddress), singletonAddress: 0x41675c099f32341bf84bfc5382af534df5c7461an, ownerAddress: BigInt(ownerAddress) })
 const fixtureScript = `(() => {
 	if (parent === self) return;
@@ -38,6 +39,9 @@ const fixtureScript = `(() => {
 			if(method==='__setDraft')draft.value=params.value;
 			results[name]={value:draft.value};report();return;
 		}
+		if(method==='__nativeHttpBalance') {
+			void fetch('/native-site-rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:42,method:'eth_getBalance',params:[${ JSON.stringify(safeAddress) },'latest']})}).then(async response=>{results[name]={overlay:response.headers.get('x-interceptor-simulation'),value:await response.json()};report()},error=>{results[name]={error:String(error)};report()});return;
+		}
 		void request(method,params).then(reply=>{results[name]=reply;report()},error=>{results[name]={error:String(error)};report()});
 	});
 	void Promise.all([request('getSafeInfo',undefined,1000),request('getChainInfo'),request('getEnvironmentInfo')]).then(([info,chain,environment])=>{results.info=info;results.chain=chain;results.environment=environment;report()},error=>{results.error=String(error);report()});
@@ -48,6 +52,10 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
 	if (request.method === 'OPTIONS') return new Response(undefined, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'POST' } })
 	if (request.method === 'POST') {
 		const value: unknown = await request.json()
+		if (url.pathname === '/native-site-rpc') {
+			if (typeof value !== 'object' || value === null || !('method' in value) || typeof value.method !== 'string' || !('id' in value) || (typeof value.id !== 'number' && typeof value.id !== 'string')) throw new Error('Invalid native site RPC fixture request')
+			return Response.json({ jsonrpc: '2.0', id: value.id, result: value.method === 'eth_chainId' ? '0x1' : '0x2a' }, { headers: { 'Access-Control-Allow-Origin': '*' } })
+		}
 		if (typeof value !== 'object' || value === null || !('method' in value) || typeof value.method !== 'string' || !('id' in value) || typeof value.id !== 'number') throw new Error('Invalid native host test RPC request')
 		return Response.json({ jsonrpc: '2.0', id: value.id, result: await rpc.handleRpcRequest({ id: value.id, method: value.method, params: 'params' in value && Array.isArray(value.params) ? value.params : undefined }) }, { headers: { 'Access-Control-Allow-Origin': '*' } })
 	}
@@ -162,11 +170,22 @@ try {
 						assert.equal(await source.evaluate('parent===self&&top===self&&window.__interceptorSafeAppsHostEmulatedParent!==true'), true)
 						const mismatchedOrigin = await host.evaluate<{ ok: boolean }>(`browser.runtime.sendMessage({method:'popup_nativeGnosisSafeAppsRequest',data:{sourceTabId:Number(new URLSearchParams(location.search).get('sourceTabId')),origin:'https://different.example',request:{id:'wrong-origin',method:'getSafeInfo',env:{sdkVersion:'9.1.0'}}}})`)
 						assert.equal(mismatchedOrigin.ok, false, 'The host cannot borrow its source tab for another origin')
-						if (simulationMode) {
+						if (httpInterception) {
+							let probe = 0
+							await waitForBrowserCondition(async () => {
+								const name = `httpBalance${ probe++ }`
+								await command(host, name, '__nativeHttpBalance')
+								await waitForBrowserCondition(async () => await host.evaluate(`nativeHostFixture.at(-1)?.results.${ name } !== undefined`), 'native child HTTP reply')
+								const response = await host.evaluate<{ overlay?: string, value?: { result?: string } }>(`nativeHostFixture.at(-1)?.results.${ name }`)
+								return response.overlay === (simulationMode ? 'true' : null) && response.value?.result === (simulationMode ? '0x0' : '0x2a')
+							}, 'origin-verified native iframe HTTP simulation overlay')
+							console.warn(`${ session.browser } native iframe HTTP read passed: ${ simulationMode ? 'simulation' : 'signing' }`)
+						}
+						if (!httpInterception && simulationMode) {
 							stage = 'preserving the native app through metadata refresh failure and recovery'
 							await verifyMetadataRefreshPreservesApp(session, host)
 						}
-						if (simulationMode && !process.argv.includes('--skip-transactions')) {
+						if (!httpInterception && simulationMode && !process.argv.includes('--skip-transactions')) {
 							stage = 'approving two simulation transactions'
 							for (let index = 0; index < 2; index++) {
 								stage = `approving simulation transaction ${ index }`
@@ -251,7 +270,7 @@ try {
 					} finally { await host.close() }
 				} finally { await source.close() }
 				await settings.evaluate(`browser.storage.local.set({websiteAccess:${ JSON.stringify(grants) }})`)
-				for (const path of ['/strict-parent', '/denied-frame']) {
+				for (const path of httpInterception ? [] : ['/strict-parent', '/denied-frame']) {
 					const unsupportedUrl = `${ server.url.origin }${ path }?${ new URLSearchParams({ parentOrigin: extensionOrigin }) }`
 					const source = await session.openPage(unsupportedUrl)
 					try {

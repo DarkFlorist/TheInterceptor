@@ -5,3 +5,6 @@ export const INPAGE_SCRIPTS = {
 } as const
 
 export const INJECTABLE_SITES_WILDCARD = ['file://*/*', 'http://*/*', 'https://*/*']
+
+// Separate MAIN-world feature bundles, registered after the core provider in both browsers.
+export const PAGE_WORLD_EXTENSIONS = ['inpage/js/siteBehaviorBootstrap.js'] as const

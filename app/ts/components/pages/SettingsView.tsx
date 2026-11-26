@@ -146,7 +146,7 @@ function ImportExport() {
 export function SettingsView() {
 	const useTabsInsteadOfPopup = useSignal<boolean>(false)
 	const metamaskCompatibilityMode = useSignal<boolean>(false)
-	const safeAppsCompatibilityMode = useSignal<boolean>(false)
+	const gnosisSafeSessionCompatibilityMode = useSignal<boolean>(false)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -159,7 +159,7 @@ export function SettingsView() {
 			}
 			if (parsed.method !== 'popup_requestSettingsReply') return false
 			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
-			safeAppsCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
+			gnosisSafeSessionCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
@@ -180,7 +180,7 @@ export function SettingsView() {
 			data: { metamaskCompatibilityMode: checked }
 		})
 	}
-	async function requestToGnosisSafeAppsCompatibilityMode(checked: boolean) {
+	async function requestToGnosisSafeSessionCompatibilityMode(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
 			data: { safeAppsCompatibilityMode: checked }
@@ -217,9 +217,9 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Enable Gnosis Safe Apps hosting in a real iframe (experimental).' }
-							checked = { safeAppsCompatibilityMode.value }
-							onInput = { requestToGnosisSafeAppsCompatibilityMode }
+							text = { 'Enable Gnosis Safe App hosting and simulated website reads (experimental).' }
+							checked = { gnosisSafeSessionCompatibilityMode.value }
+							onInput = { requestToGnosisSafeSessionCompatibilityMode }
 						/>
 						<GnosisSafeAppsHostingSettings />
 					</li>

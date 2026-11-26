@@ -6,7 +6,7 @@ import { resolveConfiguredGnosisSafeForMode, getConfiguredGnosisSafeEntryForMode
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { getGnosisSafeAppsCompatibilityMode, getSettings } from './settings.js'
+import { getSettings } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
@@ -38,6 +38,8 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 		return sent
 	}
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
+		const candidate = getWebsiteSocketConnection(websiteTabConnections, socket)
+		if (candidate === undefined) return
 		const { socketIdentifier, token } = beginPublication(socket)
 		if (!active) return
 		const settings = await getSettings()
@@ -90,6 +92,7 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 			void refreshPort(websiteTabConnections, socket, false).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
 		connectionDisconnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+			if (!publicationTokens.has(websiteSocketToString(socket))) return
 			beginPublication(socket)
 			publishGnosisSafeAppsCompatibility(websiteTabConnections, socket, false)
 			publicationTokens.delete(websiteSocketToString(socket))
@@ -113,7 +116,7 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 			const sends: Promise<void>[] = []
 			for (const tabConnection of websiteTabConnections.values()) {
 				for (const connection of Object.values(tabConnection.connections)) {
-					if (connection === undefined || (!includeUnapproved && !connection.approved)) continue
+					if (connection === undefined || !isTopFramePort(connection.port) || (!includeUnapproved && !connection.approved)) continue
 					sends.push(refreshPort(websiteTabConnections, connection.socket, false))
 				}
 			}
@@ -139,23 +142,4 @@ export function createGnosisSafeAppsCompatibilityFeature(connections: WebsiteTab
 		void coordinator?.refreshPorts(connections, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	}
 	return { lifecycle, setEnabled, dispose: () => setEnabled(false) }
-}
-
-export async function initializeGnosisSafeAppsCompatibility(feature: ReturnType<typeof createGnosisSafeAppsCompatibilityFeature>) {
-	let changedDuringInitialization = false
-	const onChanged = (changes: { readonly safeAppsCompatibilityMode?: browser.storage.StorageChange }, area: string) => {
-		if (area !== 'local' || !('safeAppsCompatibilityMode' in changes)) return
-		changedDuringInitialization = true
-		feature.setEnabled(changes.safeAppsCompatibilityMode?.newValue === true)
-	}
-	browser.storage.onChanged.addListener(onChanged)
-	try {
-		const enabled = await getGnosisSafeAppsCompatibilityMode()
-		if (!changedDuringInitialization) feature.setEnabled(enabled)
-	} catch (error) {
-		browser.storage.onChanged.removeListener(onChanged)
-		feature.dispose()
-		throw error
-	}
-	return () => { browser.storage.onChanged.removeListener(onChanged); feature.dispose() }
 }

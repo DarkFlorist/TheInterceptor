@@ -1,3 +1,4 @@
+import { SIMULATED_SITE_RPC_METHODS } from '../../app/ts/utils/siteBehaviors.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -63,17 +64,43 @@ describe('background eth_accounts', () => {
 		}
 	})
 
+	test('an unapproved child bridge announces passive readiness without approving access or claiming signer ownership', async () => {
+		installBrowserMock()
+		const { connectedToSigner } = await import('../../app/ts/background/providerMessageHandlers.js')
+		const { websiteSocketToString } = await loadModules()
+		const socket = { tabId: 8, connectionName: 2n }
+		const { port } = createPort(socket.tabId, undefined, 7, socket.connectionName)
+		const connection = { port, socket, websiteOrigin: 'child.example', approved: false, wantsToConnect: false }
+		const ready: typeof socket[] = []
+		let signerNotifications = 0
+		const connections: WebsiteTabConnections = Object.assign(new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]]), { lifecycle: {
+			connectionReady: (readySocket: typeof socket) => { ready.push(readySocket) },
+			signerConnected: () => { signerNotifications++ },
+		} })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await connectedToSigner(simulationServicesOwner, connections, port, { method: 'connected_to_signer', params: [true, 'MetaMask', 1], interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }, 'hasAccess', undefined)
+		assert.deepEqual(ready, [socket])
+		assert.equal(connection.approved, false)
+		assert.equal(connection.wantsToConnect, false)
+		assert.equal(connections.get(socket.tabId)?.signerStateOwner, undefined)
+		assert.equal(signerNotifications, 0)
+		connections.delete(socket.tabId)
+		await connectedToSigner(simulationServicesOwner, connections, port, { method: 'connected_to_signer', params: [true, 'MetaMask', 1], interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 2, requestSocket: socket } }, 'hasAccess', undefined)
+		assert.equal(ready.length, 1, 'A removed child connection must not announce readiness again')
+	})
+
 	test('disabled Gnosis Safe Apps has no lifecycle work, reads, or port traffic', async () => {
 		installBrowserMock()
-		const { initializeGnosisSafeAppsCompatibility, websiteSocketToString } = await loadModules()
+		const { initializeGnosisSafeSessionCapabilities, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
 		} }]])
-		const dispose = await initializeGnosisSafeAppsCompatibility(connections)
+		const dispose = await initializeGnosisSafeSessionCapabilities(connections)
 		const read = spyOn(browser.storage.local, 'get')
 		try {
+			notifyWebsiteLifecycle(lifecycle(connections)?.connectionReady, socket)
 			notifyWebsiteLifecycle(lifecycle(connections)?.approvalChanged, socket, true)
 			notifyWebsiteLifecycle(lifecycle(connections)?.signerConnected, socket, true)
 			notifyWebsiteLifecycle(lifecycle(connections)?.signerAccountsChanged, socket)
@@ -88,18 +115,18 @@ describe('background eth_accounts', () => {
 
 	test('Gnosis Safe Apps settings activate and dispose the coordinator for existing ports', async () => {
 		installBrowserMock()
-		const { initializeGnosisSafeAppsCompatibility, setGnosisSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
+		const { initializeGnosisSafeSessionCapabilities, setGnosisSafeSessionCompatibilityMode, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'app.example', approved: false, wantsToConnect: false },
 		} }]])
-		const dispose = await initializeGnosisSafeAppsCompatibility(connections)
+		const dispose = await initializeGnosisSafeSessionCapabilities(connections)
 		try {
 			assert.deepEqual(messages, [])
-			await setGnosisSafeAppsCompatibilityMode(true)
+			await setGnosisSafeSessionCompatibilityMode(true)
 			await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
-			await setGnosisSafeAppsCompatibilityMode(false)
+			await setGnosisSafeSessionCompatibilityMode(false)
 			assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').length, 2)
 			const read = spyOn(browser.storage.local, 'get')
 			try {
@@ -109,7 +136,7 @@ describe('background eth_accounts', () => {
 				assert.equal(read.mock.calls.length, 0)
 				assert.equal(messages.length, 2)
 			} finally { read.mockRestore() }
-			await setGnosisSafeAppsCompatibilityMode(true)
+			await setGnosisSafeSessionCompatibilityMode(true)
 			await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
 		} finally { dispose() }
 	})
@@ -866,8 +893,8 @@ describe('background eth_accounts', () => {
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
-			setGnosisSafeAppsCompatibilityMode,
-			initializeGnosisSafeAppsCompatibility,
+			setGnosisSafeSessionCompatibilityMode,
+			initializeGnosisSafeSessionCapabilities,
 			updateWebsiteAccess,
 			updateTabState,
 		} = await loadModules()
@@ -876,7 +903,7 @@ describe('background eth_accounts', () => {
 		const account = 0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4bn
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setGnosisSafeAppsCompatibilityMode(true)
+		await setGnosisSafeSessionCompatibilityMode(true)
 		await updateWebsiteAccess(() => [])
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -886,7 +913,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
-		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeSessionCapabilities(websiteTabConnections)
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
@@ -942,8 +969,8 @@ describe('background eth_accounts', () => {
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
-			setGnosisSafeAppsCompatibilityMode,
-			initializeGnosisSafeAppsCompatibility,
+			setGnosisSafeSessionCompatibilityMode,
+			initializeGnosisSafeSessionCapabilities,
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
@@ -954,7 +981,7 @@ describe('background eth_accounts', () => {
 		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setGnosisSafeAppsCompatibilityMode(true)
+		await setGnosisSafeSessionCompatibilityMode(true)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -963,7 +990,7 @@ describe('background eth_accounts', () => {
 		const connectionKey = websiteSocketToString(socket)
 		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [connectionKey]: connection } }]])
-		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeSessionCapabilities(websiteTabConnections)
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
@@ -988,7 +1015,7 @@ describe('background eth_accounts', () => {
 		const { port: childPort, messages: childMessages } = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
 		const childConnection = { port: childPort, socket: childSocket, websiteOrigin, approved: false, wantsToConnect: false }
 		const childConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(childSocket), connections: { [websiteSocketToString(childSocket)]: childConnection } }]])
-		await initializeGnosisSafeAppsCompatibility(childConnections)
+		await initializeGnosisSafeSessionCapabilities(childConnections)
 		await updateTabState(childSocket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 		await handleInterceptedRequest(childPort, websiteOrigin, website, simulationServicesOwner, childSocket, {
 			...request,
@@ -1013,8 +1040,8 @@ describe('background eth_accounts', () => {
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
-			setGnosisSafeAppsCompatibilityMode,
-			initializeGnosisSafeAppsCompatibility,
+			setGnosisSafeSessionCompatibilityMode,
+			initializeGnosisSafeSessionCapabilities,
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
@@ -1025,7 +1052,7 @@ describe('background eth_accounts', () => {
 		const account = 0x6666666666666666666666666666666666666666n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setGnosisSafeAppsCompatibilityMode(true)
+		await setGnosisSafeSessionCompatibilityMode(true)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -1034,7 +1061,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeSessionCapabilities(websiteTabConnections)
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const connectedRequest = {
 			interceptorRequest: true,
@@ -1067,8 +1094,8 @@ describe('background eth_accounts', () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			setGnosisSafeAppsCompatibilityMode,
-			initializeGnosisSafeAppsCompatibility,
+			setGnosisSafeSessionCompatibilityMode,
+			initializeGnosisSafeSessionCapabilities,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1086,7 +1113,7 @@ describe('background eth_accounts', () => {
 			activeSigningSafeAddress: configuredSafeAddress,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await setGnosisSafeAppsCompatibilityMode(true)
+		await setGnosisSafeSessionCompatibilityMode(true)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
 			name: 'Configured Gnosis Safe',
@@ -1117,7 +1144,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeSessionCapabilities(websiteTabConnections)
 
 		await refreshGnosisSafeAppsPorts(websiteTabConnections)
 
@@ -1139,8 +1166,8 @@ describe('background eth_accounts', () => {
 				getTabState,
 				rememberSigningAddressPreference,
 				handleInterceptedRequest,
-				setGnosisSafeAppsCompatibilityMode,
-				initializeGnosisSafeAppsCompatibility,
+				setGnosisSafeSessionCompatibilityMode,
+				initializeGnosisSafeSessionCapabilities,
 				setUseSignersAddressAsActiveAddress,
 				updateTabState,
 				updateUserAddressBookEntries,
@@ -1153,7 +1180,7 @@ describe('background eth_accounts', () => {
 			const configuredSafeAddress = 0x7373737373737373737373737373737373737373n
 			await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: safeOwner, activeSigningSafeAddress: configuredSafeAddress })
 			await setUseSignersAddressAsActiveAddress(false)
-			await setGnosisSafeAppsCompatibilityMode(featureEnabled)
+			await setGnosisSafeSessionCompatibilityMode(featureEnabled)
 			await updateUserAddressBookEntries(() => [{
 				type: 'safe',
 				name: 'Configured Gnosis Safe',
@@ -1184,7 +1211,7 @@ describe('background eth_accounts', () => {
 			const websiteTabConnections = new Map([[socket.tabId, { signerStateOwner: { ...confirmedSignerOwnership(socket).signerStateOwner, confirmed: !coldStart }, connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: !coldStart, wantsToConnect: !coldStart },
 			} }]])
-			await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
+			await initializeGnosisSafeSessionCapabilities(websiteTabConnections)
 			const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			await updateTabState(socket.tabId, (previousState) => ({
 				...previousState,
@@ -1224,8 +1251,8 @@ describe('background eth_accounts', () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			setGnosisSafeAppsCompatibilityMode,
-			initializeGnosisSafeAppsCompatibility,
+			setGnosisSafeSessionCompatibilityMode,
+			initializeGnosisSafeSessionCapabilities,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1238,7 +1265,7 @@ describe('background eth_accounts', () => {
 		const configuredSafeAddress = 0x7070707070707070707070707070707070707070n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: signerAddress, activeSigningSafeAddress: configuredSafeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await setGnosisSafeAppsCompatibilityMode(true)
+		await setGnosisSafeSessionCompatibilityMode(true)
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
 			name: 'Configured Gnosis Safe',
@@ -1262,7 +1289,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		await initializeGnosisSafeAppsCompatibility(websiteTabConnections)
+		await initializeGnosisSafeSessionCapabilities(websiteTabConnections)
 		const delayedReadStarted = createDeferredValue<undefined>()
 		const releaseDelayedRead = createDeferredValue<undefined>()
 		const originalStorageGet = browser.storage.local.get
@@ -1282,7 +1309,7 @@ describe('background eth_accounts', () => {
 
 		const olderEnablePublication = refreshGnosisSafeAppsPorts(websiteTabConnections)
 		await delayedReadStarted.promise
-		await setGnosisSafeAppsCompatibilityMode(false)
+		await setGnosisSafeSessionCompatibilityMode(false)
 		await refreshGnosisSafeAppsPorts(websiteTabConnections)
 		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false])
 
@@ -3225,17 +3252,17 @@ describe('background eth_accounts', () => {
 
 test('an approved simulated Gnosis Safe advertises Gnosis Safe Apps without signer ownership and revokes on address change', async () => {
 	installBrowserMock()
-	const { changeSimulationMode, setGnosisSafeAppsCompatibilityMode, initializeGnosisSafeAppsCompatibility, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+	const { changeSimulationMode, setGnosisSafeSessionCompatibilityMode, initializeGnosisSafeSessionCapabilities, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 	const address = 0x6868686868686868686868686868686868686868n
 	const website = { websiteOrigin: 'simulation-safe.example', title: undefined, icon: undefined }
 	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
-	await setGnosisSafeAppsCompatibilityMode(true)
+	await setGnosisSafeSessionCompatibilityMode(true)
 	await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Simulated Gnosis Safe', address, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
 	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }] }])
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port, messages } = createPort(socket.tabId, undefined, 0)
 	const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
-	const dispose = await initializeGnosisSafeAppsCompatibility(connections)
+	const dispose = await initializeGnosisSafeSessionCapabilities(connections)
 	try {
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.enabled, true)
@@ -3243,5 +3270,34 @@ test('an approved simulated Gnosis Safe advertises Gnosis Safe Apps without sign
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined })
 		await refreshGnosisSafeAppsPorts(connections)
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').at(-1)?.result?.enabled, false)
+	} finally { dispose() }
+})
+
+test('only an approved Aave Gnosis Safe simulation session advertises matching-chain RPC interception', async () => {
+	installBrowserMock()
+	const { changeSimulationMode, setGnosisSafeSessionCompatibilityMode, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+	const address = 0x6868686868686868686868686868686868686868n
+	const website = { websiteOrigin: 'app.aave.com', title: undefined, icon: undefined }
+	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
+	await setGnosisSafeSessionCompatibilityMode(true)
+	await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Simulated Gnosis Safe', address, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
+	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }] }])
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId, undefined, 0)
+	const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, requestOrigin: 'https://app.aave.com', approved: true, wantsToConnect: true } } }]])
+	const { createGnosisSafeSessionCapabilitiesFeature, initializeGnosisSafeSessionCapabilities: initializeFeature } = await import('../../app/ts/background/gnosisSafeSessionCapabilitiesCoordinator.js')
+	const feature = createGnosisSafeSessionCapabilitiesFeature(connections)
+	Object.assign(connections, { lifecycle: feature.lifecycle })
+	const dispose = await initializeFeature(feature)
+	try {
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.enabled, true)
+		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.rpcInterception, undefined, 'Gnosis Safe Apps contract stays independent of site behaviors')
+		assert.deepEqual(messages.find((message) => message.method === 'site_behavior')?.result?.rpcInterception, { origin: 'https://app.aave.com', chainId: '0x1', methods: SIMULATED_SITE_RPC_METHODS, chainRoutedProxyPaths: ['/api/rpc-proxy'], address: addressString(address) })
+		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined })
+		await refreshGnosisSafeAppsPorts(connections)
+		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').at(-1)?.result?.enabled, false)
+		assert.equal(messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception, undefined)
 	} finally { dispose() }
 })

@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
-import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { asExtensionRootPaths, getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
 type RuntimeMessage = {
@@ -49,7 +49,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 	const executedScriptCode: string[] = []
 	const reloadedTabs: number[] = []
 	const defaultScriptFilesById = new Map<string, readonly string[]>([
-		['inpage', ['/inpage/js/inpage.js']],
+		['inpage', asExtensionRootPaths(getPageWorldScriptPaths(false))],
 		['inpage2', ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js']],
 	])
 	const registeredContentScripts = new Map((initialRegisteredContentScripts ?? registeredContentScriptIds.map((id) => ({ id, js: defaultScriptFilesById.get(id) }))).map((registration) => [registration.id, registration]))
@@ -309,7 +309,7 @@ describe('content script injection strategy', () => {
 
 			assert.deepEqual(getReloadedTabs(), [42])
 			if (manifestVersion === 2) assert.equal(typeof getCommittedListener(), 'function')
-			else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+			else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
 
 			const scriptingOperationsAfterChange = getScriptingOperations()
 			await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true)
@@ -331,7 +331,7 @@ describe('content script injection strategy', () => {
 		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true))
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(false)))
 		assert.deepEqual(getReloadedTabs(), [])
 		assert.equal((await getLatestUnexpectedError())?.data.code, 'page_world_provider_bootstrap_refresh_failed')
 	})
@@ -379,7 +379,7 @@ describe('content script injection strategy', () => {
 		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true))
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
 		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'update'])
 		assert.deepEqual(getReloadedTabs(), [])
 	})
@@ -441,7 +441,7 @@ describe('content script injection strategy', () => {
 		await Promise.all([enableCompatibility, disableCompatibility])
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, false)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(false)))
 		assert.deepEqual(getReloadedTabs(), [42, 42])
 	})
 
@@ -468,7 +468,7 @@ describe('content script injection strategy', () => {
 		await Promise.all([startupRefresh, compatibilityUpdate])
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
 	})
 
 	test('settings import remains saved when its best-effort registration refresh fails', async () => {
@@ -499,7 +499,7 @@ describe('content script injection strategy', () => {
 		})
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(false)))
 	})
 
 	test('queued disabled-site update reconciles registration after a best-effort import refresh failure', async () => {
@@ -764,7 +764,7 @@ describe('content script injection strategy', () => {
 			await updateContentScriptInjectionStrategyManifestV3()
 
 			const mainWorldRegistration = getRegisteredContentScripts().find((registration) => registration.id === 'inpage')
-			assert.deepEqual(mainWorldRegistration?.js, [metamaskCompatibilityMode ? '/inpage/js/inpage-metamask-compatibility.js' : '/inpage/js/inpage.js'])
+			assert.deepEqual(mainWorldRegistration?.js, asExtensionRootPaths(getPageWorldScriptPaths(metamaskCompatibilityMode)))
 		}
 	})
 
@@ -783,7 +783,7 @@ describe('content script injection strategy', () => {
 
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['inpage']])
 		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'update'])
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
 	})
 
 	test('restores the previous main-world registration and skips tab reload when replacement fails', async () => {

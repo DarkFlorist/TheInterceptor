@@ -42,7 +42,7 @@ for (const simulationMode of [true, false]) test(`admitted Gnosis Safe requests 
 	const settings = { ...await modules.getSettings(), simulationMode, activeSimulationAddress: safeB.address, activeSigningSafeAddress: safeB.address, websiteAccess: [{ website, access: true, addressAccess: [{ address: safeA, access: true }] }] }
 	const admitted = { activeAddress: safeB, safeSigningMode: !simulationMode }
 	assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, settings, admitted), false, 'a grant for Safe A cannot authorize newly selected Safe B during asynchronous reconciliation')
-	await modules.setGnosisSafeAppsCompatibilityMode(true)
+	await modules.setGnosisSafeSessionCompatibilityMode(true)
 	const { prepareGnosisSafeAppsRequest } = await import('../../app/ts/background/gnosisSafeAppsRequestHandler.js')
 	const blockReads = { count: 0 }
 	const services = createEthereumWithGetBlockCounter(blockReads).simulationServicesOwner.getCurrent()

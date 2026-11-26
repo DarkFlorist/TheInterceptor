@@ -48,7 +48,7 @@ test('the Gnosis Safe Apps response version matches the independent wire fixture
 	assert.equal(GNOSIS_SAFE_APPS_RESPONSE_VERSION, GNOSIS_SAFE_APPS_TEST_SDK_VERSION)
 })
 
-test('page-injected sources import sibling modules or the dependency-free shared protocol source', () => {
+test('page-injected sources import sibling modules or dependency-free shared protocol and site policy sources', () => {
 	const inpageSourceDirectory = 'app/inpage/ts'
 	const moduleSpecifierPattern = /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(?\s*['"]([^'"]+)['"]/g
 	const sourceFiles = fs.readdirSync(inpageSourceDirectory).filter((file) => file.endsWith('.ts'))
@@ -57,9 +57,11 @@ test('page-injected sources import sibling modules or the dependency-free shared
 		const source = fs.readFileSync(path.join(inpageSourceDirectory, file), 'utf8')
 		for (const match of source.matchAll(moduleSpecifierPattern)) {
 			const specifier = match[1] ?? match[2]
-			assert.match(specifier ?? '', /^(?:\.\/[\w-]+|\.\.\/\.\.\/shared\/ts\/(?:gnosisSafeApps(?:Protocol|BridgeProtocol|RequestQueue|Transport)|accountRequestMethods))\.js$/, `${ file } imports ${ specifier ?? 'an unknown module' } outside its inpage/shared protocol boundary`)
+			assert.match(specifier ?? '', /^(?:\.\/[\w-]+|\.\.\/\.\.\/shared\/ts\/(?:gnosisSafeApps(?:Protocol|BridgeProtocol|RequestQueue|Transport)|siteBehaviorPolicy|accountRequestMethods|internalProviderMethods))\.js$/, `${ file } imports ${ specifier ?? 'an unknown module' } outside its inpage/shared boundary`)
 		}
 	}
+	const policySource = fs.readFileSync('app/shared/ts/siteBehaviorPolicy.ts', 'utf8')
+	assert.deepEqual([...policySource.matchAll(moduleSpecifierPattern)], [], 'Shared HTTP policy must remain dependency-free')
 })
 
 test('canonical SDK envelopes never include internal correlation metadata', () => {

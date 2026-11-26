@@ -146,3 +146,9 @@ The provider scenario additionally checks extension-page sender authorization an
 The original website tab must stay open. Native frame policies and SDK parent-origin restrictions remain enforced; unsupported websites are accepted. Parent, referrer and page timers are not emulated. See [the native-host design, live-site observations and limitations](../../docs/testing/native-gnosis-safe-host.md) for current compatibility. Older discovery-emulation results are historical.
 
 Website-owned HTTP reads retain their native transport in this layer. The separate HTTP simulation-read PR adds its own paired scenarios.
+
+## HTTP simulation reads
+
+The HTTP child PR adds shared generic JSON-RPC, Aave/Lido RPC and native-host HTTP scenarios. Each runs on Chrome and Firefox, with signing/simulation and compatibility settings exercised by the local fixtures. Unit tests also cover indexed portfolio balances and transaction-status overlays.
+
+A native iframe's HTTP simulation context is authorized through the original source tab's current permissions, account and chain. Signing and other-chain reads retain their native responses. These local fixtures verify interception behavior; native framing and SDK origin restrictions still apply to live websites.

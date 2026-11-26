@@ -8,6 +8,7 @@ const WebsiteMetadataInfo = funtypes.Intersect(
 	funtypes.Partial({
 		message: funtypes.Union(funtypes.Undefined, funtypes.String),
 		externalRpc: funtypes.Boolean,
+		simulationSupportNote: funtypes.String,
 		usesSubGraph: funtypes.Boolean,
 		suggestedAlternative: funtypes.Union(funtypes.Undefined, funtypes.String),
 	})
@@ -21,7 +22,7 @@ export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: 
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
 	if (simulationMode === false) return undefined
-	if (data.externalRpc) return { message: `${ data.name } relies on a centralized RPC connection which causes The Interceptor's Simulation Mode to not work properly with this site.`, suggestedAlternative: data.suggestedAlternative }
+	if (data.externalRpc) return { message: `${ data.name } relies on a centralized RPC connection which causes The Interceptor's Simulation Mode to not work properly with this site.${ data.simulationSupportNote === undefined ? '' : ` ${ data.simulationSupportNote }` }`, suggestedAlternative: data.suggestedAlternative }
 	if (data.usesSubGraph) return { message: `${ data.name } relies on the centralized The Graph Protocol which causes The Interceptor's Simulation Mode to not work properly with this site.`, suggestedAlternative: data.suggestedAlternative }
 	return undefined
 }
@@ -40,10 +41,12 @@ const websiteMetaData: WebsiteMetaData = {
 	'app.aave.com': {
 		name: 'Aave',
 		externalRpc: true,
+		simulationSupportNote: 'With Gnosis Safe session compatibility enabled for an approved Gnosis Safe, supported Aave browser RPC reads use the simulation. Other networks and external services may still show live data.',
 	},
 	'stake.lido.fi': {
 		name: 'Lido',
 		externalRpc: true,
+		simulationSupportNote: 'With Gnosis Safe session compatibility enabled for an approved Gnosis Safe, supported Lido browser RPC reads, including ether and token balances, use the simulation. External services may still show live data.',
 	},
 	'app.compound.finance': {
 		name: 'Compound',
