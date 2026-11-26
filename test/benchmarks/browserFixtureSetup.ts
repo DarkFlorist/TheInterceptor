@@ -1,7 +1,8 @@
 import { withSessionViewport, type ViewportDriverSession } from './browserViewport.js'
 import type { BrowserPage, BrowserSession } from './browserTypes.js'
 
-const isWebsiteDocument = (url: string) => url !== 'about:blank' && !/^(?:chrome|moz)-extension:/.test(url)
+// Browser start pages and transient empty targets are controls, not website fixtures.
+const isWebsiteDocument = (url: string) => /^(?:https?|file):/i.test(url.trimStart())
 
 // Own session configuration together: enumeration is pure, while page use and any explicit or implicit viewport change finalize fixture setup for affected website documents.
 export function withBrowserFixtureSetup(driver: ViewportDriverSession): BrowserSession {

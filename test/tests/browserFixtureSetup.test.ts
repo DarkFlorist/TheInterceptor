@@ -5,23 +5,50 @@ import { waitForExtensionPage } from '../benchmarks/browserHarness.js'
 import type { BrowserEngine } from '../benchmarks/browserTypes.js'
 import type { ViewportDriverPage, ViewportDriverSession } from '../benchmarks/browserViewport.js'
 
-function createSession(browser: BrowserEngine, discoveredWebsite = false) {
+function createSession(browser: BrowserEngine, hasDiscoveredDocument = false, documentUrl = 'https://fixture.test/') {
 	const calls: string[] = []
 	const page = (id: string, url: string): ViewportDriverPage => ({
 		id, url, navigate: async () => undefined, evaluate: async () => undefined,
 		reload: async () => undefined, setViewport: async () => { calls.push('viewport') }, captureScreenshot: async () => '', close: async () => undefined,
 	})
 	const control = page('control', `${ browser === 'chrome' ? 'chrome' : 'moz' }-extension://test/html/settingsView.html`)
-	const website = page('website', 'https://fixture.test/')
+	const discoveredPage = page('website', documentUrl)
 	const underlying: ViewportDriverSession = {
 		browser, browserVersion: 'test', openPage: async (url, _wait, prepare) => { const opened = page('opened', url); await prepare(opened); return opened }, openExtensionPage: async (_path, prepare) => { await prepare(control); return control },
-		pages: async () => discoveredWebsite ? [control, website] : [control], close: async () => undefined,
+		pages: async () => hasDiscoveredDocument ? [control, discoveredPage] : [control], close: async () => undefined,
 		addPreloadScript: async () => { calls.push('preload') }, routeResponses: async () => { calls.push('routes') },
 	}
 	return { session: withBrowserFixtureSetup(underlying), calls }
 }
 
 for (const browser of ['chrome', 'firefox'] as const) {
+	test(`${ browser } internal and empty targets leave fixtures configurable across explicit and implicit resizing`, async () => {
+		for (const url of ['', '   ', 'about:blank', 'about:blank#fixture', 'about:newtab', 'about:home', 'about:sessionrestore', 'chrome://newtab/', 'edge://newtab/']) {
+			const { session } = createSession(browser, true, url)
+			await session.setViewport(800, 600)
+			await session.addPreloadScript('after browser controls resize')
+			await session.routeResponses([])
+			const control = await session.openPage(url.trim() === '' ? 'about:blank' : url)
+			await control.evaluate('document.title')
+			await control.reload()
+			await control.captureScreenshot()
+			await session.addPreloadScript('after implicit resize and control use')
+			await session.routeResponses([])
+			await control.navigate('https://fixture.test/')
+			await assert.rejects(session.addPreloadScript('late'), /before using website documents/, url)
+			await assert.rejects(session.routeResponses([]), /before using website documents/, url)
+		}
+	})
+
+	test(`${ browser } resizing an HTTP, HTTPS or file document still finalizes fixture setup`, async () => {
+		for (const url of ['http://fixture.test/', 'https://fixture.test/', 'file:///tmp/fixture.html', ' HTTPS://fixture.test/']) {
+			const { session } = createSession(browser, true, url)
+			await session.setViewport(800, 600)
+			await assert.rejects(session.addPreloadScript('late'), /before using website documents/, url)
+			await assert.rejects(session.routeResponses([]), /before using website documents/, url)
+		}
+	})
+
 	test(`${ browser } extension-page discovery, waiting and control use leave fixture setup available`, async () => {
 		const { session, calls } = createSession(browser)
 		await session.openExtensionPage('html/settingsView.html')

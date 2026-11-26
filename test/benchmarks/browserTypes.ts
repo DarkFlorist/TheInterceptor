@@ -19,7 +19,7 @@ export type BrowserSession = {
 	openPage: (url: string, wait?: 'complete' | 'interactive') => Promise<BrowserPage>
 	openExtensionPage: (path: string) => Promise<BrowserPage>
 	pages: () => Promise<BrowserPage[]>
-	// Configure fixtures before using website documents; extension controls and page enumeration remain available during setup.
+	// Configure fixtures before using HTTP(S) or file documents; browser-internal and extension controls and page enumeration remain available during setup.
 	addPreloadScript: (source: string) => Promise<void>
 	// Replace the document route table during setup; an empty list clears interception.
 	routeResponses: (routes: readonly DocumentRoute[]) => Promise<void>
