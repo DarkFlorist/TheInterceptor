@@ -84,6 +84,9 @@ function normalizeGnosisSafeTransactionOptions(value: unknown) {
 	// Firefox preserves omitted optional SDK fields during structured cloning; Chrome's JSON messaging omits them. Normalize only the known SDK option, retaining strict validation for every other undefined/non-JSON value.
 	if (options === undefined) return { ...value, params: transactionParams }
 	if (!isRecord(options) || Array.isArray(options)) return value
+	// A plain record's prototype is either absent or the realm's root object prototype; structured-cloneable Date/Map/Set/RegExp instances must not become empty options.
+	const prototype = Object.getPrototypeOf(options)
+	if (prototype !== null && Object.getPrototypeOf(prototype) !== null) throw gnosisSafeAppsPolicyError('Gnosis Safe Apps request params must be JSON-compatible.')
 	const definedOptions = Object.fromEntries(Object.entries(options).filter(([key, field]) => field !== undefined || !gnosisSafeTransactionOptionKeys.has(key)))
 	return { ...value, params: { ...transactionParams, params: definedOptions } }
 }

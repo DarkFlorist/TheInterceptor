@@ -3,6 +3,7 @@ import { getGnosisSafeAppsExecution } from '../../app/ts/gnosisSafe/gnosisSafeAp
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { runInNewContext } from 'node:vm'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { type GnosisSafeAppsRequestServices, getGnosisSafeAppsChainInfo, getGnosisSafeAppsRequestCommand, isGnosisSafeAppsRequestPolicyError } from '../../app/ts/background/gnosisSafeAppsRequestPolicy.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
@@ -194,6 +195,23 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 			{ txs: [transaction], params: { safeTxGas: undefined, unknown: undefined } },
 			{ txs: [transaction], params: { safeTxGas: NaN } },
 		]) await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), /JSON-compatible/)
+	})
+
+	test('rejects structured-cloned non-JSON transaction option objects instead of erasing them', async () => {
+		const transaction = { to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }
+		for (const options of [new Date(0), new Map(), new Set(), /safe/]) {
+			const request = structuredClone({ method: 'sendTransactions', params: { txs: [transaction], params: options } })
+			await assert.rejects(getGnosisSafeAppsRequestCommand(request, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), (error: unknown) => isGnosisSafeAppsRequestPolicyError(error) && error.message === 'Gnosis Safe Apps request params must be JSON-compatible.')
+		}
+	})
+
+	test('normalizes plain transaction options from local, null-prototype and foreign realms', async () => {
+		const transaction = { to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }
+		const nullPrototypeOptions = { safeTxGas: 21000 }
+		Object.setPrototypeOf(nullPrototypeOptions, null)
+		const foreignOptions: unknown = runInNewContext('({ safeTxGas: 21000 })')
+		const expected = await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction], params: { safeTxGas: 21000 } } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices())
+		for (const options of [{ safeTxGas: 21000 }, nullPrototypeOptions, foreignOptions]) assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction], params: options } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), expected)
 	})
 
 	test('rejects malformed Gnosis Safe Apps shapes at the shared runtype boundaries', async () => {

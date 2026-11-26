@@ -4,12 +4,11 @@ import { createGnosisSafeAppsRequestQueue } from '../../app/shared/ts/gnosisSafe
 import { GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT, GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS } from '../../app/shared/ts/gnosisSafeAppsProtocol.js'
 
 type Request = { readonly id: string, readonly method: string }
-function createQueueHarness(replaceOldestSafeInfo = false, scheduled = true, expires?: (request: Request) => boolean) {
+function createQueueHarness(scheduled = true, expires?: (request: Request) => boolean) {
 	const callbacks: (() => void)[] = []
 	const active = new Set<number>()
 	const rejected: { readonly id: string, readonly error: string, readonly reason: string }[] = []
 	const queue = createGnosisSafeAppsRequestQueue<Request>({
-		replaceOldestSafeInfo,
 		...(expires === undefined ? {} : { expires }),
 		onRejected: ({ id }, error, reason) => rejected.push({ id, error, reason }),
 		...(scheduled ? { timers: {
@@ -27,8 +26,8 @@ function createQueueHarness(replaceOldestSafeInfo = false, scheduled = true, exp
 
 for (const scheduled of [true, false]) {
 	test(`Gnosis Safe Apps queue bounds requests and preserves the original duplicate ID (${ scheduled ? 'scheduled' : 'lazy' } expiry)`, () => {
-		const { queue, active, rejected } = createQueueHarness(false, scheduled)
-		const first = { id: '0', method: 'getChainInfo' }
+		const { queue, active, rejected } = createQueueHarness(scheduled)
+		const first = { id: '0', method: 'getSafeInfo' }
 		assert.equal(queue.add(first), true)
 		assert.equal(queue.add({ id: '0', method: 'sendTransactions' }), false)
 		for (let index = 1; index < GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT; index++) assert.equal(queue.add({ id: `${ index }`, method: 'getChainInfo' }), true)
@@ -41,19 +40,6 @@ for (const scheduled of [true, false]) {
 		assert.equal(active.size, 0)
 	})
 }
-
-test('Gnosis Safe Apps queue replaces only the oldest Gnosis Safe info probe and never an operation', () => {
-	const { queue, rejected, active } = createQueueHarness(true)
-	for (let index = 0; index < GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT; index++) queue.add({ id: `${ index }`, method: index === 1 || index === 2 ? 'getSafeInfo' : 'sendTransactions' })
-	assert.equal(queue.add({ id: 'new-operation', method: 'signMessage' }), true)
-	assert.deepEqual(rejected.map(({ id, reason }) => [id, reason]), [['1', 'superseded']])
-	assert.equal(active.has(2), false)
-	assert.equal(queue.add({ id: 'new-probe', method: 'getSafeInfo' }), true)
-	assert.equal(queue.take('new-probe')?.method, 'getSafeInfo')
-	queue.add({ id: 'fill', method: 'sendTransactions' })
-	assert.equal(queue.add({ id: 'overflow', method: 'getSafeInfo' }), false)
-	assert.deepEqual(rejected.map(({ id, reason }) => [id, reason]), [['1', 'superseded'], ['2', 'superseded'], ['overflow', 'capacity']])
-})
 
 test('Gnosis Safe Apps queue releases timers on cancellation and ignores old callbacks after ID reuse', () => {
 	const { queue, callbacks, rejected, active } = createQueueHarness()
@@ -76,7 +62,7 @@ test('Gnosis Safe Apps queue lazy expiry uses the same deadline and rejection as
 	let now = 0
 	Date.now = () => now
 	try {
-		const { queue, rejected } = createQueueHarness(false, false)
+		const { queue, rejected } = createQueueHarness(false)
 		queue.add({ id: 'expired', method: 'getSafeInfo' })
 		now = GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS - 1
 		queue.expire()
@@ -93,7 +79,7 @@ test('Gnosis Safe Apps queue never expires requests its caller marks as non-expi
 	let now = 0
 	Date.now = () => now
 	try {
-		const { queue, callbacks, active, rejected } = createQueueHarness(false, true, ({ method }) => method === 'getSafeInfo')
+		const { queue, callbacks, active, rejected } = createQueueHarness(true, ({ method }) => method === 'getSafeInfo')
 		queue.add({ id: 'operation', method: 'sendTransactions' })
 		queue.add({ id: 'discovery', method: 'getSafeInfo' })
 		assert.equal(callbacks.length, 1)
