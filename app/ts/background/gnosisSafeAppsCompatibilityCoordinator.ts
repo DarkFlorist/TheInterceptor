@@ -1,3 +1,4 @@
+import { createPublicationGenerations } from './publicationGenerations.js'
 import { initializeFeaturePreference } from './featurePreference.js'
 import { verifyAccess } from './accessManagement.js'
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
@@ -16,16 +17,8 @@ import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { isGnosisSafeAppsConnectionEligible } from './gnosisSafeAppsConnectionEligibility.js'
 
 function createGnosisSafeAppsCompatibilityCoordinator() {
-	let active = true
-	const publicationTokens = new Map<string, object>()
+	const publications = createPublicationGenerations<string>(true)
 	const signerAccountDiscoveryTabs = new Set<number>()
-	const beginPublication = (socket: WebsiteSocket) => {
-		const socketIdentifier = websiteSocketToString(socket)
-		const token = {}
-		publicationTokens.set(socketIdentifier, token)
-		return { socketIdentifier, token }
-	}
-	const isCurrentPublication = (socketIdentifier: string, token: object) => active && publicationTokens.get(socketIdentifier) === token
 	const publishGnosisSafeAppsCompatibility = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, canRequestAccess = false) => {
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled, canRequestAccess } })
 	}
@@ -41,19 +34,19 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const candidate = getWebsiteSocketConnection(websiteTabConnections, socket)
 		if (candidate === undefined) return
-		const { socketIdentifier, token } = beginPublication(socket)
-		if (!active) return
+		const current = publications.begin(websiteSocketToString(socket))
+		if (!current()) return
 		const settings = await getSettings()
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
 		const safe = resolveConfiguredGnosisSafeForMode(settings, await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId), tabState.signerAccounts)
-		if (!isCurrentPublication(socketIdentifier, token)) return
+		if (!current()) return
 		// Reconcile cached Gnosis Safe consent within the publication generation so any newer refresh also retries it.
 		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (safe !== undefined && connection !== undefined && !connection.approved && isTopFramePort(connection.port) && (settings.simulationMode || signer?.socket.connectionName === socket.connectionName)) {
 			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
 		}
-		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
+		const shouldDiscoverSignerAccounts = current()
 			&& connection?.approved === true
 			&& isTopFramePort(connection.port)
 			&& !settings.simulationMode
@@ -63,12 +56,12 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 			&& !signerAccountsKnown
 		if (shouldDiscoverSignerAccounts && requestSignerAccountDiscovery(websiteTabConnections, socket)) return
 		const eligible = await isGnosisSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
-		if (!isCurrentPublication(socketIdentifier, token)) return
+		if (!current()) return
 		// Re-read persisted state after async eligibility work; a newer publication invalidates this token while state transitions are being applied.
 		const latestSettings = await getSettings()
-		const latestEnabled = active
+		const latestEnabled = publications.getEnabled() === true
 		const latestEligible = latestEnabled && await isGnosisSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
-		if (!isCurrentPublication(socketIdentifier, token)) return
+		if (!current()) return
 		const latestConnection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const entries = latestEnabled ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(latestSettings.activeRpcNetwork.chainId) : []
 		const configuredSafe = getConfiguredGnosisSafeEntryForMode(latestSettings, entries)
@@ -77,30 +70,27 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 		const safeAccess = latestConnection === undefined ? 'noAccess' : configuredSafe === undefined ? 'askAccess' : hasAddressAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin, configuredSafe)
 		const canRequestAccess = latestEnabled && (!latestSettings.simulationMode || configuredSafe !== undefined) && latestConnection !== undefined && isTopFramePort(latestConnection.port)
 			&& siteAccess !== 'noAccess' && siteAccess !== 'interceptorDisabled' && safeAccess !== 'noAccess' && safeAccess !== 'interceptorDisabled'
-		if (!isCurrentPublication(socketIdentifier, token)) return
+		if (!current()) return
 		publishGnosisSafeAppsCompatibility(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)
 	}
 	return {
 		dispose(connections: WebsiteTabConnections) {
-			active = false
+			const invalidated = publications.setEnabled(false)
 			for (const tab of connections.values()) for (const connection of Object.values(tab.connections)) {
-				if (connection !== undefined && publicationTokens.has(websiteSocketToString(connection.socket))) publishGnosisSafeAppsCompatibility(connections, connection.socket, false)
+				if (connection !== undefined && invalidated?.has(websiteSocketToString(connection.socket))) publishGnosisSafeAppsCompatibility(connections, connection.socket, false)
 			}
-			publicationTokens.clear()
 			signerAccountDiscoveryTabs.clear()
 		},
 		connectionApproved(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 			void refreshPort(websiteTabConnections, socket, false).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
 		connectionDisconnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-			if (!publicationTokens.has(websiteSocketToString(socket))) return
-			beginPublication(socket)
+			if (!publications.retract(websiteSocketToString(socket))) return
 			publishGnosisSafeAppsCompatibility(websiteTabConnections, socket, false)
-			publicationTokens.delete(websiteSocketToString(socket))
 			signerAccountDiscoveryTabs.delete(socket.tabId)
 		},
 		connectionRemoved(socket: WebsiteSocket) {
-			publicationTokens.delete(websiteSocketToString(socket))
+			publications.retract(websiteSocketToString(socket))
 			signerAccountDiscoveryTabs.delete(socket.tabId)
 		},
 		signerConnectionChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, accountsRequested = false) {

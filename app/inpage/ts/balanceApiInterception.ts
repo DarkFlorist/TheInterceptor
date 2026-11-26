@@ -1,3 +1,4 @@
+import { createSiteSimulationTokenRequest } from '../../shared/ts/siteSimulationTokenProtocol.js'
 import { nextSiteHttpApiRequestId } from './siteHttpApiRequestId.js'
 import { SIMULATION_NATIVE_TOKEN_ADDRESS, type SiteHttpApiRouteMatch } from '../../shared/ts/siteBehaviorPolicy.js'
 import type { ApplyPreparedSiteHttpApiInterception, SiteHttpApiContext } from './siteHttpApiInterception.js'
@@ -30,7 +31,7 @@ export async function prepareBalanceApiInterception(request: Request, context: S
 			if (!isAddress(token) || !isBalance(value)) return response
 			balances[token.toLowerCase()] = value
 		}
-		const simulatedTokens = await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method: 'interceptor_getSimulationTokens' })
+		const simulatedTokens = await requestRpc(context.chainId, createSiteSimulationTokenRequest('addresses', nextSiteHttpApiRequestId()))
 		if (!isAddressList(simulatedTokens)) throw new Error('Invalid simulated token list.')
 		for (const token of simulatedTokens) balances[token.toLowerCase()] ??= { balance: '0', allowance: '0' }
 		balances[SIMULATION_NATIVE_TOKEN_ADDRESS] ??= { balance: '0', allowance: (2n ** 256n - 1n).toString() }

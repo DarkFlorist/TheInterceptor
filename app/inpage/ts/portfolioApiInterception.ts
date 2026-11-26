@@ -1,3 +1,4 @@
+import { createSiteSimulationTokenRequest } from '../../shared/ts/siteSimulationTokenProtocol.js'
 import { aggregatePortfolioGroup, applyPortfolioValueDelta, portfolioQuantityAmount, portfolioQuantityValue, portfolioValueDelta, type PortfolioValueContribution } from './portfolioAggregation.js'
 import { nextSiteHttpApiRequestId } from './siteHttpApiRequestId.js'
 import { SIMULATION_NATIVE_TOKEN_ADDRESS, type SiteHttpApiRouteMatch } from '../../shared/ts/siteBehaviorPolicy.js'
@@ -71,7 +72,7 @@ export async function preparePortfolioApiInterception(request: Request, context:
 		const groupedBalances = parseBalances(groupedRows)
 		if ([...flatBalances ?? [], ...groupedBalances ?? []].some((row) => row === undefined || row.token.chainId === chainId && !address(row.token.address))) return response
 		const parsed = flatBalances !== undefined && (flatBalances.length > 0 || groups === undefined) ? flatBalances : groupedBalances ?? []
-		const metadata = await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method: 'interceptor_getSimulationTokenMetadata' })
+		const metadata = await requestRpc(context.chainId, createSiteSimulationTokenRequest('metadata', nextSiteHttpApiRequestId()))
 		if (!isMetadataList(metadata)) throw new Error('Invalid simulated portfolio token metadata.')
 		const newTokens = metadata.filter((token) => !parsed.some((row) => row?.token.chainId === chainId && apiAddress(row.token.address) === apiAddress(token.address)))
 		const prices = new Map<string, number>()

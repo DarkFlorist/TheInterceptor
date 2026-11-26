@@ -1,3 +1,4 @@
+import { SITE_SIMULATION_TOKEN_METHODS, isSiteSimulationTokenMethod, isSiteSimulationTokenRequest, type SiteSimulationTokenRequest } from '../../shared/ts/siteSimulationTokenProtocol.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
@@ -19,7 +20,8 @@ import type { AddressedRequestAccessContext } from './requestAccessContext.js'
 
 const simulationNativeToken = ETHEREUM_LOGS_LOGGER_ADDRESS
 
-const SiteRpcEnvelope = funtypes.ReadonlyObject({ chainId: EthereumQuantity, request: funtypes.Union(EthereumJsonRpcRequest, funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationTokens') }), funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationTokenMetadata') })) })
+const SiteSimulationTokenRequestSchema: funtypes.Runtype<SiteSimulationTokenRequest> = funtypes.ReadonlyObject({ method: funtypes.String.withGuard(isSiteSimulationTokenMethod) })
+const SiteRpcEnvelope = funtypes.ReadonlyObject({ chainId: EthereumQuantity, request: funtypes.Union(EthereumJsonRpcRequest, SiteSimulationTokenRequestSchema) })
 const rejected = (message: string) => ({ kind: 'rejected' as const, message })
 
 export type SiteRpcExecution =
@@ -35,7 +37,7 @@ export function getSiteRpcExecution(request: InterceptedRequest, origin: string 
 	const parsed = SiteRpcEnvelope.safeParse('params' in request ? request.params?.[0] : undefined)
 	if (!parsed.success) return rejected('Invalid site read-only RPC request.')
 	if (parsed.value.chainId !== chainId) return rejected('The site RPC chain changed before the simulated read.')
-	if (parsed.value.request.method === 'interceptor_getSimulationTokens' || parsed.value.request.method === 'interceptor_getSimulationTokenMetadata') return { kind: 'tokens', request, includeTokenMetadata: parsed.value.request.method === 'interceptor_getSimulationTokenMetadata' }
+	if (isSiteSimulationTokenRequest(parsed.value.request)) return { kind: 'tokens', request, includeTokenMetadata: parsed.value.request.method === SITE_SIMULATION_TOKEN_METHODS.metadata }
 	if (!behavior.rpcReads.methods.some((method) => method === parsed.value.request.method)) return rejected('Invalid site read-only RPC request.')
 	const rpc = serialize(EthereumJsonRpcRequest, parsed.value.request)
 	const params = 'params' in rpc ? rpc.params ?? [] : []

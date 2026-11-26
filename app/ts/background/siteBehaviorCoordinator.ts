@@ -1,3 +1,4 @@
+import { createPublicationGenerations } from './publicationGenerations.js'
 import { initializeFeaturePreference } from './featurePreference.js'
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -13,25 +14,18 @@ import { getSettings, getSiteRpcInterceptionEnabled } from './settings.js'
 
 // Site HTTP capability publication owns its generations and native-child relationships; it never publishes Gnosis Safe Apps discovery replies or grants a connection approval.
 export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
-	let active: boolean | undefined
-	const tokens = new Map<string, object>()
+	const publications = createPublicationGenerations<string>()
 	const nativeChildren = createNativeHostedSiteChildIndex()
-	const begin = (socket: WebsiteSocket) => {
-		const key = websiteSocketToString(socket)
-		const token = {}
-		tokens.set(key, token)
-		return () => active === true && tokens.get(key) === token
-	}
 	const isRelevant = (socket: WebsiteSocket) => {
 		const connection = getWebsiteSocketConnection(connections, socket)
 		return connection !== undefined && (isTopFramePort(connection.port) ? connection.approved : getNativeHostedSiteSourceTabId(connections, socket) !== undefined)
 	}
 	const refresh = async (socket: WebsiteSocket) => {
-		if (active === undefined) return
-		if (!active) { retract(socket); return }
+		if (publications.getEnabled() === undefined) return
+		if (!publications.getEnabled()) { retract(socket); return }
 		nativeChildren.track(connections, socket)
 		if (!isRelevant(socket)) { retract(socket); return }
-		const current = begin(socket)
+		const current = publications.begin(websiteSocketToString(socket))
 		const settings = await getSettings()
 		const connection = getWebsiteSocketConnection(connections, socket)
 		if (!current() || connection === undefined) return
@@ -56,13 +50,13 @@ export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
 	}
 	const queueRefresh = (socket: WebsiteSocket) => { void refresh(socket).catch(async (error: unknown) => { await reportUnexpectedError(error) }) }
 	const refreshChildren = (sourceTabId: number) => { for (const child of nativeChildren.getChildren(sourceTabId)) queueRefresh(child) }
-	const retract = (socket: WebsiteSocket) => {
+	const retract = (socket: WebsiteSocket, invalidated = false) => {
 		const key = websiteSocketToString(socket)
-		const published = tokens.delete(key)
-		if (published || isRelevant(socket)) publishSiteBehaviors(connections, socket)
+		const published = publications.retract(key)
+		if (published || invalidated || isRelevant(socket)) publishSiteBehaviors(connections, socket)
 	}
 	const refreshAll = async () => {
-		if (!active) return
+		if (publications.getEnabled() !== true) return
 		const refreshes: Promise<void>[] = []
 		for (const tab of connections.values()) for (const connection of Object.values(tab.connections)) {
 			if (connection === undefined) continue
@@ -80,7 +74,7 @@ export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
 		},
 		connectionRemoved: (socket) => {
 			nativeChildren.remove(socket)
-			tokens.delete(websiteSocketToString(socket))
+			publications.retract(websiteSocketToString(socket))
 			refreshChildren(socket.tabId)
 		},
 		signerConnected: (socket) => { queueRefresh(socket); refreshChildren(socket.tabId) },
@@ -88,11 +82,10 @@ export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
 		accessReconciled: () => { void refreshAll().catch(async (error: unknown) => { await reportUnexpectedError(error) }) },
 	}
 	const setEnabled = (enabled: boolean) => {
-		if (active === enabled) return
-		active = enabled
+		const invalidated = publications.setEnabled(enabled)
+		if (invalidated === undefined) return
 		if (enabled) { void refreshAll().catch(async (error: unknown) => { await reportUnexpectedError(error) }); return }
-		for (const tab of connections.values()) for (const connection of Object.values(tab.connections)) if (connection !== undefined) retract(connection.socket)
-		tokens.clear()
+		for (const tab of connections.values()) for (const connection of Object.values(tab.connections)) if (connection !== undefined) retract(connection.socket, invalidated.has(websiteSocketToString(connection.socket)))
 		nativeChildren.clear()
 	}
 	return { lifecycle, setEnabled, dispose: () => setEnabled(false) }
