@@ -1,3 +1,4 @@
+import { getConfirmationAcceptanceRefusal } from '../../app/ts/utils/confirmationAcceptance.js'
 import * as assert from 'node:assert'
 import { beforeEach, test } from 'bun:test'
 import { createRecordingPort, getPopupReviewedResultId, isRecord, modules, pendingTransaction, resetConfirmTransactionTestState, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
@@ -162,4 +163,27 @@ test('confirmation explanations use shared acceptance rules for unsimulated gas,
 	const shown: BackgroundPendingTransactionOrSignableMessage = { ...quarantined, source: 'background', reviewedResultId: 'review' }
 	assert.equal(getConfirmationReviewRefusal(shown, attempt), 'sendAnywayRequired')
 	assert.equal(getConfirmationReviewRefusal(shown, { ...attempt, forceSend: true }), undefined)
+})
+
+
+const ordinary: BackgroundPendingTransactionOrSignableMessage = { ...simulatedPending, source: 'background', reviewedResultId: 'current' }
+const noResult: BackgroundPendingTransactionOrSignableMessage = { ...ordinary, popupVisualisation: { statusCode: 'failed', data: { ...ordinary.popupVisualisation.data, error: { code: -32000, message: 'Unavailable', decodedErrorMessage: 'Unavailable' } } } }
+const quarantinedResult = withSimulatedTransactionResult(pendingTransaction, { transactionStatus: 'Transaction Succeeded' }, true)
+
+for (const forceSend of [false, true]) test.each([
+	{ name: 'ordinary result', pending: ordinary, refusal: undefined },
+	{ name: 'signer retry', pending: { ...ordinary, approvalStatus: { status: 'SignerError', code: -32603, message: 'Signer failed' } }, refusal: undefined },
+	{ name: 'wallet pending', pending: { ...ordinary, approvalStatus: { status: 'WaitingForSigner' } }, refusal: 'waitingForSigner' },
+	{ name: 'still simulating', pending: { ...ordinary, transactionOrMessageCreationStatus: 'Simulating' }, refusal: 'notSimulated' },
+	{ name: 'missing result', pending: noResult, refusal: 'rejectOnly' },
+	{ name: 'gas edit', pending: { ...editedPending, source: 'background', reviewedResultId: 'current' }, refusal: forceSend ? undefined : 'gasLimitChanged' },
+	{ name: 'quarantined result', pending: { ...quarantinedResult, source: 'background', reviewedResultId: 'current' }, refusal: forceSend ? undefined : 'sendAnywayRequired' },
+] as const)('confirm button and background acceptance policy agree for $name (force-send '+forceSend+')', ({ pending, refusal }) => {
+	assert.equal(getConfirmationAcceptanceRefusal(pending, { reviewedResultId: pending.reviewedResultId, forceSend }), refusal)
+	assert.equal(shouldDisableConfirm(pending, forceSend), refusal !== undefined)
+})
+
+test('confirmation buttons remain disabled until the background supplies the reviewed copy', () => {
+	assert.equal(shouldDisableConfirm(undefined, true), true)
+	assert.equal(shouldDisableConfirm({ ...ordinary, source: 'storage' }, true), true)
 })

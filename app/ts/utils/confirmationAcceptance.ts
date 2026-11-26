@@ -16,3 +16,8 @@ export function getConfirmationAcceptanceRefusal(pending: ReviewedPending, accep
 	if (!accept.forceSend && getSendAnywayOverrideReason(pending) !== undefined) return 'sendAnywayRequired'
 	return undefined
 }
+
+// A successful policy decision also proves the result is simulated, so presentation code need not repeat that rule just to narrow its union.
+export function canAcceptConfirmation<Pending extends ReviewedPending>(pending: Pending, accept: ConfirmationAcceptance): pending is Pending & { readonly transactionOrMessageCreationStatus: 'Simulated' } {
+	return getConfirmationAcceptanceRefusal(pending, accept) === undefined
+}

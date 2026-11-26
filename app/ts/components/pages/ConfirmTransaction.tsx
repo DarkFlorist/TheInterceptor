@@ -1,5 +1,5 @@
-import { getConfirmationAcceptanceRefusal, type ConfirmationAcceptance, type ConfirmationAcceptanceRefusal } from '../../utils/confirmationAcceptance.js'
-import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
+import { isSamePendingRequestInstance } from '../../utils/pendingRequestIdentity.js'
+import { canAcceptConfirmation, getConfirmationAcceptanceRefusal, type ConfirmationAcceptance, type ConfirmationAcceptanceRefusal } from '../../utils/confirmationAcceptance.js'
 import { GnosisSafeProposalDetails, GnosisSafeProposalSigningRequestCard } from './GnosisSafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -27,12 +27,12 @@ import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js
 import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { isSamePendingRequestInstance, checkAndThrowRuntimeLastError } from '../../utils/requests.js'
+import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
-import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
+import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
 import { getResultsForTransaction, getVisualizedTransactionResult } from '../../utils/visualizedTransactionResult.js'
 import { isPossibleToSignMessage } from '../../utils/personalSignRequest.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
@@ -155,11 +155,7 @@ export function shouldDisableSignableMessageConfirm(params: {
 // Confirming needs the background's copy, a reviewable result and, for a failing or quarantined result or a gas edit not yet simulated, the send-anyway override; it never bypasses creation or signer blockers.
 export function shouldDisableConfirm(pending: ShownPendingTransactionOrSignableMessage | undefined, forceSendEnabled: boolean) {
 	if (!isBackgroundCopy(pending)) return true
-	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
-	if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
-	if (isRejectOnlyTransaction(pending)) return true
-	if (getSendAnywayOverrideReason(pending) !== undefined && !forceSendEnabled) return true
-	if (!isPendingTransactionGasLimitCurrent(pending) && !forceSendEnabled) return true
+	if (!canAcceptConfirmation(pending, { reviewedResultId: pending.reviewedResultId, forceSend: forceSendEnabled })) return true
 	if (pending.type !== 'Transaction') {
 		return shouldDisableSignableMessageConfirm({
 			isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
@@ -816,7 +812,6 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 	</div>
 }
 
-export const shouldDisableConfirmForApprovalStatus = (approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToGnosisSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
@@ -1077,11 +1072,8 @@ export function ConfirmTransaction() {
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getGnosisSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
-		if (!isPendingTransactionGasLimitCurrent(pending)) return true
-		if (pending.approvalStatus.status === 'WaitingForSigner') return true
-		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
-		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.
-		return isRejectOnlyTransaction(pending) || getSendAnywayOverrideReason(pending) !== undefined
+		// Adding to the Gnosis Safe stack has no send-anyway override and requires the same background-reviewed result.
+		return shouldDisableConfirm(pending, false)
 	})
 
 	function getCurrentAddressBookEntries() {
