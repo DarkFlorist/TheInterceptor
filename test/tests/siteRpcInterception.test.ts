@@ -375,3 +375,29 @@ test('a disabled site admission returns a terminal error reply without throwing 
 	const result = await prepareSiteRpcRequest(ethereum, new Map(), request, await getSettings(), { activeAddress: createGnosisSafeAddressBookEntry(), accessSocket: uniqueRequestIdentifier.requestSocket, accessOrigin: 'https://app.aave.com', requireAddressAccess: true, isCurrent: async () => true })
 	assert.deepEqual(result, { kind: 'reply', reply: { type: 'result', method: 'site_rpc_request', uniqueRequestIdentifier, error: { code: -32602, message: 'Site RPC interception is not enabled for this connection.' } } })
 })
+
+
+test('final hook disposal rejects late context publications and keeps retained references native', async () => {
+	const h = harness()
+	h.hook.setContext(context)
+	const retained = h.windowObject.fetch
+	h.hook.dispose()
+	assert.equal(h.hook.setContext(context), false)
+	assert.equal(h.windowObject.fetch, h.original)
+	assert.equal((await (await retained(input(read))).json()).result, 'live')
+	assert.equal(h.rpcRequests.length, 0)
+})
+
+test('a page reassigning a retired hook does not transfer ownership of its fetch slot back to Interceptor', async () => {
+	const h = harness()
+	h.hook.setContext(context)
+	const retained = h.windowObject.fetch
+	h.hook.setContext(undefined)
+	assert.equal(h.windowObject.fetch, h.original)
+	h.windowObject.fetch = retained
+	h.hook.setContext(context)
+	assert.equal((await (await h.windowObject.fetch(input(read))).json()).result, 'simulated')
+	h.hook.dispose()
+	assert.equal(h.windowObject.fetch, retained, 'disposal must preserve the page-owned assignment even when it uses our previous function')
+	assert.equal((await (await retained(input(read))).json()).result, 'live')
+})

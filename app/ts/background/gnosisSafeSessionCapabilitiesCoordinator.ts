@@ -7,7 +7,8 @@ import { createSiteBehaviorFeature, initializeSiteBehavior } from './siteBehavio
 export function createGnosisSafeSessionCapabilitiesFeature(connections: WebsiteTabConnections) {
 	const sdk = createGnosisSafeAppsCompatibilityFeature(connections)
 	const site = createSiteBehaviorFeature(connections)
-	const lifecycle: WebsiteLifecycleCallbacks = {
+	// The fan-out must cover every event even though individual observers may implement only a subset.
+	const lifecycle: Required<WebsiteLifecycleCallbacks> = {
 		connectionReady: async (socket) => { await Promise.all([sdk.lifecycle.connectionReady?.(socket), site.lifecycle.connectionReady?.(socket)]) },
 		approvalChanged: async (socket, approved) => { await Promise.all([sdk.lifecycle.approvalChanged?.(socket, approved), site.lifecycle.approvalChanged?.(socket, approved)]) },
 		connectionRemoved: async (socket) => { await Promise.all([sdk.lifecycle.connectionRemoved?.(socket), site.lifecycle.connectionRemoved?.(socket)]) },

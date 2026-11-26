@@ -43,6 +43,8 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 // Only an approved simulation session publishes a site behavior context. Every intercepted read is also admitted in the background against live permissions, mode, chain and a read-only method policy.
 export function installRpcReadInterception(windowObject: FetchWindow, requestRpc: (chainId: string, request: RpcRead) => Promise<unknown>, captureBeforeContext = false) {
 	let context: InterceptionContext | undefined
+	let installedByUs = false
+	let disposed = false
 	let initialContextPending = captureBeforeContext
 	const initialContextWaiters = new Set<() => void>()
 	const resolveInitialContext = () => {
@@ -59,7 +61,7 @@ export function installRpcReadInterception(windowObject: FetchWindow, requestRpc
 		})
 	}
 	const nativeFetch = windowObject.fetch
-	const active = typeof nativeFetch === 'function'
+	const hasFetch = typeof nativeFetch === 'function'
 	const send: typeof fetch = (input, init) => nativeFetch.call(windowObject, input, init)
 	const endpoints = new Map<string, { readonly expires: number, readonly chain: Promise<string | undefined> }>()
 	const getEndpointChain = async (request: Request) => {
@@ -143,12 +145,24 @@ export function installRpcReadInterception(windowObject: FetchWindow, requestRpc
 		return response
 	}
 	// Approved document-start hosting can capture fetch before SDK clients retain it. Context remains the sole authority to overlay a read, including through retained references.
-	if (active && captureBeforeContext) windowObject.fetch = interceptedFetch
+	const installFetchHook = () => {
+		if (disposed || !hasFetch || installedByUs || windowObject.fetch !== nativeFetch) return
+		windowObject.fetch = interceptedFetch
+		installedByUs = true
+	}
+	// Local ownership tracks our assignment; the identity check only protects later page instrumentation from being overwritten.
+	const restoreFetchHook = () => {
+		if (!installedByUs) return
+		if (windowObject.fetch === interceptedFetch) windowObject.fetch = nativeFetch
+		installedByUs = false
+	}
+	if (captureBeforeContext) installFetchHook()
 	return {
 		setContext(value: unknown) {
+			if (disposed) return false
 			resolveInitialContext()
 			const address = isRpcObject(value) && typeof value.address === 'string' && /^0x[0-9a-f]{40}$/i.test(value.address) ? value.address.toLowerCase() : undefined
-			const next = active && isRpcObject(value) && value.origin === windowObject.location.origin && typeof value.origin === 'string' && Array.isArray(value.chainRoutedProxyPaths) && value.chainRoutedProxyPaths.every((path) => typeof path === 'string' && path.startsWith('/')) && isChainId(value.chainId) && Array.isArray(value.methods) && value.methods.every((method) => typeof method === 'string') ? { origin: value.origin, chainId: normalizeChainId(value.chainId), methods: value.methods, chainRoutedProxyPaths: value.chainRoutedProxyPaths, address } : undefined
+			const next = hasFetch && isRpcObject(value) && value.origin === windowObject.location.origin && typeof value.origin === 'string' && Array.isArray(value.chainRoutedProxyPaths) && value.chainRoutedProxyPaths.every((path) => typeof path === 'string' && path.startsWith('/')) && isChainId(value.chainId) && Array.isArray(value.methods) && value.methods.every((method) => typeof method === 'string') ? { origin: value.origin, chainId: normalizeChainId(value.chainId), methods: value.methods, chainRoutedProxyPaths: value.chainRoutedProxyPaths, address } : undefined
 			if (next?.chainId === context?.chainId && JSON.stringify([next?.methods, next?.chainRoutedProxyPaths, next?.address]) === JSON.stringify([context?.methods, context?.chainRoutedProxyPaths, context?.address])) {
 				// A provisional inactive context must not remove the early passthrough hook before SDK clients capture it.
 				return context !== undefined
@@ -157,10 +171,10 @@ export function installRpcReadInterception(windowObject: FetchWindow, requestRpc
 			context = next
 			endpoints.clear()
 			// Reuse retained hooks without replacing page instrumentation layered above them. Reinstall only when our original transport is still exposed.
-			if (next !== undefined && !wasActive && windowObject.fetch === nativeFetch) windowObject.fetch = interceptedFetch
-			else if (next === undefined && wasActive && windowObject.fetch === interceptedFetch) windowObject.fetch = nativeFetch
+			if (next !== undefined && !wasActive) installFetchHook()
+			else if (next === undefined && wasActive) restoreFetchHook()
 			return context !== undefined
 		},
-		dispose() { context = undefined; resolveInitialContext(); endpoints.clear(); if (active && windowObject.fetch === interceptedFetch) windowObject.fetch = nativeFetch },
+		dispose() { disposed = true; context = undefined; resolveInitialContext(); endpoints.clear(); restoreFetchHook() },
 	}
 }
