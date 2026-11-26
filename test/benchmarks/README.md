@@ -1,5 +1,17 @@
 # Popup Benchmark Setup
 
+## Shared browser fixture setup
+
+Configure `BrowserSession.addPreloadScript` and `routeResponses` before opening or using a website document. Both engine launchers enforce this rule; start a fresh session to change fixtures after website use. Opening, waiting for, enumerating, and using extension control pages without resizing existing websites keeps setup available, for example to inspect the extension origin or configure settings. `pages()` only enumerates pages and never finalizes setup by itself. Each `routeResponses` call replaces the route table; pass an empty list to clear interception.
+
+Resizing a session containing a website also finalizes setup, including an otherwise unused website discovered alongside an extension control. Opening a website, navigating a returned page to a website, or reading/reloading an existing website finalizes setup. Preloads and routes apply before later driver-controlled navigations and reloads, including pages discovered by `pages()` and extension controls subsequently navigated to a website. They cannot retroactively change an already loaded document. Firefox's broader session-global hooks are an engine detail, not an additional shared guarantee.
+
+`BrowserSession.setViewport(width, height)` sets exact content dimensions for every current page and the default for future pages. Screenshots remain page operations. Driver-opened pages receive the default dimensions before navigation, so their first scripts observe the requested geometry. `pages()` remains pure: newly discovered pages receive the default before their next evaluation, navigation, reload or screenshot. Independently opened popups can run their first scripts before the harness sees them; this API does not promise popup startup geometry. Firefox uses user-context emulation, including privileged extension pages and narrow 220px viewports; Chrome applies the same session contract through page emulation. An implicit resize also finalizes fixture setup if it affects any existing website document.
+
+The dedicated `browser-harness-contract` scenario verifies this lifecycle against real Chrome and Firefox, including extension-page discovery, route replacement/clearing, preloads, and discovered-page reloads. Run both engines with `bun run test:browsers --scenario=browser-harness-contract`; provider-injection checks remain a separate product scenario.
+
+`BrowserPage.evaluate` accepts one JavaScript expression, awaits it, and returns its JSON-serialized value (or `undefined`) on both engines. Use an IIFE for statements. Top-level statement scripts and non-JSON values such as `BigInt` reject; CDP-specific remote values are outside this shared API. The lower-level Chrome diagnostic connection remains a separate interface.
+
 ## Firefox denied-request CPU reproduction
 
 ```bash
@@ -28,7 +40,7 @@ The real-Chrome popup benchmark needs a browser binary. On Debian 12 in this wor
 bun run install-chrome
 ```
 
-That command installs Chromium plus the small display helpers the benchmark uses in headless environments (`xauth` and `xvfb`). The benchmark will then discover `/usr/bin/chromium` automatically.
+That command installs missing display helpers (`xauth` and `xvfb`) even when `CHROME_BIN` or `GOOGLE_CHROME_BIN` selects an existing browser. Without an installed browser, it also installs Chromium, which the benchmark discovers at `/usr/bin/chromium`.
 
 If you already have Chrome installed elsewhere, point the benchmark at it directly:
 
@@ -115,6 +127,12 @@ The wallet-response deadline and a later dapp request on the same signer connect
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.
 
-## Firefox provider injection check
+## Combined Chrome and Firefox tests
 
-`bun run test:firefox-provider-injection` loads the Firefox build (`bun run setup-firefox` first) through geckodriver and opens local pages with and without a CSP that blocks inline scripts. On a page without such a CSP, the provider must already be defined when the page observes its inline script element being added. On a page with that CSP, the inline provider must be blocked and the extension-URL fallback must still install the provider. The MV2 injection starts after a `webNavigation` round trip to the background, so on a page that loads this fast it can land after the page's first script; the check accepts either order. Set `FIREFOX_BIN` or `GECKODRIVER_BIN` to use other binaries.
+Run `bun run test:browsers` after installing browser executables with `bun run install-chrome` and `bun run install-firefox`. The same provider injection/CSP and RPC permission/reload scenarios run on Chrome MV3 and Firefox MV2.
+
+Add product scenarios to the shared registry in `scripts/test-browsers.mts`. Use `bun run test:browsers --scenario=provider-injection` to select a scenario on both browsers. The explicit Chrome-only communication check exercises MV3 MAIN/ISOLATED registration and service-worker startup, APIs that Firefox MV2 does not use.
+
+The runner builds each browser sequentially, attempts both even after a failure, reports failure if either engine fails and restores the original generated manifest. The paired suite runs through `.github/workflows/browser-tests.yml`. No additional browser-framework dependencies are required. Existing browser-specific aliases select the shared scenario for diagnosis.
+
+The provider check opens local pages with and without a CSP blocking inline scripts. An allowed inline provider must be available when its script is observed; a blocked inline provider must load through the extension-URL fallback. MV2 starts after a background navigation round trip, so either arrival before the first page script or the observed injection sequence is accepted. Set `CHROME_BIN`, `FIREFOX_BIN` or `GECKODRIVER_BIN` to select other executables.

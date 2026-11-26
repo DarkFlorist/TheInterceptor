@@ -1,16 +1,15 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { launchFirefoxSession } from './firefoxHarness.js'
+import { launchBrowserSession, selectedBrowser } from './browserHarness.js'
 
-// Checks the Firefox MV2 provider injection in a real browser. The page's first script records whether the provider existed when it ran, each script element the extension adds with whether the provider existed when the page observed it, and any CSP violation.
+// Checks provider injection in either browser with the same page observations. The page's first script records whether the provider existed when it ran, each script element the extension adds with whether the provider existed when the page observed it, and any CSP violation.
 const firstPageScript = [
 	'window.injectionObservations = { providerAtFirstPageScript: window.ethereum?.isInterceptor === true, addedScripts: [], cspViolations: 0 }',
 	'new MutationObserver((mutations) => { for (const mutation of mutations) for (const node of mutation.addedNodes) if (node instanceof HTMLScriptElement && node !== document.currentScript) window.injectionObservations.addedScripts.push({ external: node.src !== "", providerDefined: window.ethereum?.isInterceptor === true }) }).observe(document, { childList: true, subtree: true })',
 	'addEventListener("securitypolicyviolation", () => { window.injectionObservations.cspViolations += 1 })',
 ].join('\n')
 const firstPageScriptHash = createHash('sha256').update(firstPageScript).digest('base64')
-const pageHtml = `<!doctype html><html><head><script>${ firstPageScript }</script></head><body>Interceptor Firefox provider injection check</body></html>`
-
+const pageHtml = `<!doctype html><html><head><script>${ firstPageScript }</script></head><body>Interceptor provider injection check</body></html>`
 // The strict policy allows only the page's own first script, so the injected inline provider is blocked and the extension URL fallback has to load it.
 const strictCspPath = '/strict-csp'
 const pagePaths = ['/no-csp', strictCspPath]
@@ -61,7 +60,7 @@ async function startPageServer() {
 		server.listen(0, '127.0.0.1', () => resolve())
 	})
 	const address = server.address()
-	if (address === null || typeof address === 'string') throw new Error('Could not start the Firefox provider injection page server')
+	if (address === null || typeof address === 'string') throw new Error('Could not start the provider injection page server')
 	return {
 		baseUrl: `http://127.0.0.1:${ address.port }`,
 		close: async () => await new Promise<void>((resolve) => server.close(() => resolve())),
@@ -70,34 +69,35 @@ async function startPageServer() {
 
 async function main() {
 	const pageServer = await startPageServer()
-	const session = await launchFirefoxSession()
 	const results: PageResult[] = []
+	let browserVersion: string | undefined
 	try {
-		// The MV2 background registers its webNavigation injector during startup, so wait until a page is injected at all before measuring.
-		const warmupPage = await session.openPage(`${ pageServer.baseUrl }/no-csp?warmup`)
-		const warmupInjected = await warmupPage.evaluate<boolean>(waitForInterceptorProvider)
-		await warmupPage.close()
-		if (warmupInjected !== true) throw new Error('The Interceptor never injected its provider into a test page.')
-		for (const path of pagePaths) {
-			for (let load = 0; load < pageLoadsPerPath; load += 1) {
-				const page = await session.openPage(`${ pageServer.baseUrl }${ path }?load=${ load }`)
-				const providerArrived = await page.evaluate<boolean>(waitForInterceptorProvider)
-				const observations = await page.evaluate<string>('JSON.stringify(window.injectionObservations)')
-				results.push({ path, load, providerArrived, observations: observations === undefined ? undefined : JSON.parse(observations) })
-				await page.close()
+		const session = await launchBrowserSession(selectedBrowser())
+		browserVersion = `${ session.browser }: ${ session.browserVersion }`
+		try {
+			// The MV2 background registers its webNavigation injector during startup, so wait until a page is injected at all before measuring.
+			const warmupPage = await session.openPage(`${ pageServer.baseUrl }/no-csp?warmup`)
+			const warmupInjected = await warmupPage.evaluate<boolean>(waitForInterceptorProvider)
+			await warmupPage.close()
+			if (warmupInjected !== true) throw new Error('The Interceptor never injected its provider into a test page.')
+			for (const path of pagePaths) {
+				for (let load = 0; load < pageLoadsPerPath; load += 1) {
+					const page = await session.openPage(`${ pageServer.baseUrl }${ path }?load=${ load }`)
+					const providerArrived = await page.evaluate<boolean>(waitForInterceptorProvider)
+					const observations = await page.evaluate<string>('JSON.stringify(window.injectionObservations)')
+					results.push({ path, load, providerArrived, observations: observations === undefined ? undefined : JSON.parse(observations) })
+					await page.close()
+				}
 			}
-		}
-	} finally {
-		await session.close()
-		await pageServer.close()
-	}
+		} finally { await session.close() }
+	} finally { await pageServer.close() }
 	const failures = results.flatMap((result) => {
 		const failure = getFailure(result)
 		return failure === undefined ? [] : [`${ result.path } load ${ result.load }: ${ failure }`]
 	})
-	console.warn(JSON.stringify({ ok: failures.length === 0, browserVersion: session.browserVersion, failures, results }, undefined, 2))
-	if (failures.length > 0) throw new Error(`The Firefox provider injection check failed on ${ failures.length } of ${ results.length } page loads.`)
-	console.warn('Interceptor Firefox provider injection check passed.')
+	console.warn(JSON.stringify({ ok: failures.length === 0, browserVersion, failures, results }, undefined, 2))
+	if (failures.length > 0) throw new Error(`The provider injection check failed on ${ failures.length } of ${ results.length } page loads.`)
+	console.warn('Interceptor shared provider injection check passed.')
 }
 
 main().catch((error: unknown) => {

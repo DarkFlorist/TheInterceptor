@@ -123,7 +123,7 @@ describe('package scripts', () => {
 	test('provides the browser-level Firefox provider injection check', () => {
 		const scripts = getPackageScripts()
 
-		assert.equal(getScript(scripts, 'test:firefox-provider-injection'), 'bun ./test/benchmarks/firefoxProviderInjection.ts')
+		assert.equal(getScript(scripts, 'test:firefox-provider-injection'), 'bun ./test/benchmarks/providerInjection.ts --browser=firefox')
 	})
 
 	test('typescript is new enough for micro-eth-signer declarations', () => {

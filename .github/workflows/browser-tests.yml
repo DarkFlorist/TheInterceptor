@@ -1,0 +1,31 @@
+name: Browser tests
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  browser-tests:
+    name: Chrome MV3 and Firefox MV2
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v2.4.2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --frozen-lockfile
+      # Branded Chrome disables --load-extension; use the official testing build.
+      - name: Download Chrome for Testing
+        run: |
+          download_url=$(curl --fail --silent --show-error https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json | jq -er '.channels.Stable.downloads.chrome[] | select(.platform == "linux64") | .url')
+          curl --fail --location --output "$RUNNER_TEMP/chrome.zip" "$download_url"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP"
+          echo "CHROME_BIN=$RUNNER_TEMP/chrome-linux64/chrome" >> "$GITHUB_ENV"
+      - name: Install browser test executables
+        run: |
+          bun run install-chrome
+          bun run install-firefox
+      - name: Build and test both manifest versions
+        run: bun run test:browsers

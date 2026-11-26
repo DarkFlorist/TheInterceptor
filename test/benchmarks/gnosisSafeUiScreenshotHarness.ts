@@ -3,20 +3,20 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker } from './chromeHarness.js'
+import { launchChromeBrowserSession } from './chromeHarness.js'
 import { launchFirefoxSession } from './firefoxHarness.js'
 
 export type GnosisSafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'settingsView'
 
 export type GnosisSafeUiScreenshotPage = {
 	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
-	setViewport: (width: number, height: number) => Promise<void>
 	captureScreenshot: () => Promise<string>
 	close: () => Promise<void>
 }
 
 export type GnosisSafeUiScreenshotBrowser = {
 	name: 'Chromium' | 'Firefox'
+	setViewport: (width: number, height: number) => Promise<void>
 	version?: string
 	openPage: (pageName: GnosisSafeUiPageName, initializationExpression?: string) => Promise<GnosisSafeUiScreenshotPage>
 	close: () => Promise<void>
@@ -26,35 +26,15 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const DEFAULT_EXTENSION_DIRECTORY = path.join(REPO_ROOT, 'app')
 
 async function launchChromiumScreenshotBrowser(extensionDirectory: string | undefined): Promise<GnosisSafeUiScreenshotBrowser> {
-	const session = extensionDirectory === undefined ? await launchChromeSession() : await launchChromeSession(extensionDirectory)
-	const workerTarget = await waitForInterceptorExtensionServiceWorker(session.browserDebugPort)
-	const extensionId = new URL(workerTarget.url).host
+	const session = await launchChromeBrowserSession(extensionDirectory)
 	return {
 		name: 'Chromium',
+		version: session.browserVersion,
+		setViewport: session.setViewport,
 		openPage: async (pageName, initializationExpression) => {
-			const pageUrl = `chrome-extension://${ extensionId }/html3/${ pageName }V3.html`
-			const targetId = await createTargetPage(session.browserConnection, pageUrl)
-			const connection = await connectTarget(session.browserDebugPort, targetId)
-			if (initializationExpression !== undefined) await connection.evaluate(initializationExpression)
-			return {
-				evaluate: async <T = unknown>(expression: string) => await connection.evaluate<T>(expression),
-				setViewport: async (width: number, height: number) => {
-					await connection.send('Page.enable')
-					await connection.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
-				},
-				captureScreenshot: async () => {
-					const screenshot = await connection.send<{ data: string }>('Page.captureScreenshot', {
-						format: 'png',
-						captureBeyondViewport: true,
-						fromSurface: true,
-					})
-					return screenshot.data
-				},
-				close: async () => {
-					connection.close()
-					await closeTarget(session.browserConnection, targetId)
-				},
-			}
+			const page = await session.openExtensionPage(path.posix.join('html3', `${ pageName }V3.html`))
+			if (initializationExpression !== undefined) await page.evaluate(initializationExpression)
+			return page
 		},
 		close: session.close,
 	}
@@ -80,8 +60,15 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 	})
 	let staticSession: Awaited<ReturnType<typeof launchFirefoxSession>> | undefined
 	const browserVersion = session.browserVersion
+	// Preserve the requested size across intentional profile replacement; each live session delegates geometry to the shared viewport owner.
+	let viewport: { width: number, height: number } | undefined
 	return {
 		name: 'Firefox',
+		setViewport: async (width, height) => {
+			viewport = { width, height }
+			await session?.setViewport(width, height)
+			await staticSession?.setViewport(width, height)
+		},
 		version: browserVersion,
 		openPage: async (pageName, initializationExpression) => {
 			if (pageName === 'confirmTransaction') {
@@ -89,6 +76,7 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 				session = undefined
 				await staticSession?.close()
 				staticSession = await launchFirefoxSession(staticExtensionDirectory)
+				if (viewport !== undefined) await staticSession.setViewport(viewport.width, viewport.height)
 				if (initializationExpression !== undefined) {
 					const bootstrapPage = await staticSession.openExtensionPage('html/popup.html')
 					await bootstrapPage.evaluate(initializationExpression)
@@ -100,6 +88,7 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 				await staticSession?.close()
 				staticSession = undefined
 				session = await launchFirefoxSession(sourceExtensionDirectory)
+				if (viewport !== undefined) await session.setViewport(viewport.width, viewport.height)
 			}
 			const page = await session.openExtensionPage(path.posix.join('html', `${ pageName }.html`))
 			if (initializationExpression !== undefined) await page.evaluate(initializationExpression)

@@ -1,9 +1,7 @@
 import * as assert from 'node:assert/strict'
-import * as path from 'node:path'
-import { launchFirefoxSession } from './firefoxHarness.js'
+import { launchBrowserSession, selectedBrowser } from './browserHarness.js'
 
 // Exercise the screenshot's handleInterceptedRequest -> refuseAccess -> reply serializer path in a real Firefox extension.
-const extensionDirectory = process.env.RPC_REJECTION_EXTENSION_DIR ?? path.resolve('app')
 function integerOption(name: string, defaultValue: number, minimum: number, maximum: number) {
 	const value = Number(process.env[name] ?? defaultValue)
 	if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`${ name } must be an integer between ${ minimum } and ${ maximum }.`)
@@ -16,7 +14,7 @@ const idleMs = integerOption('RPC_REJECTION_IDLE_MS', 0, 0, 60_000)
 const mixed = process.env.RPC_REJECTION_MIXED === 'true'
 const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('<!doctype html><title>Denied RPC request regression</title>', { headers: { 'content-type': 'text/html' } }) })
 try {
-	const session = await launchFirefoxSession(extensionDirectory)
+	const session = await launchBrowserSession(selectedBrowser(), process.env.RPC_REJECTION_EXTENSION_DIR)
 	try {
 		const settingsPage = await session.openExtensionPage('html/popup.html')
 		try {
@@ -33,13 +31,14 @@ try {
 					await new Promise(resolve => setTimeout(resolve, 20));
 				}
 			})()`)
+			// Preserve the configured idle interval, with transport headroom beyond the page-owned wait.
 			const idle = async (phase: string) => {
 				if (idleMs === 0) return
 				await page.evaluate(`(async () => {
 					performance.mark('interceptor:rpc-load:idle-${ phase }-start');
 					await new Promise(resolve => setTimeout(resolve, ${ idleMs }));
 					performance.mark('interceptor:rpc-load:idle-${ phase }-end');
-				})()`)
+				})()`, idleMs + 30_000)
 			}
 			await waitForProvider()
 			await idle('before')
@@ -49,6 +48,7 @@ try {
 					await waitForProvider()
 				}
 
+				// Let the page's 60-second workload deadline report its own diagnostic before the transport expires.
 				const encodedResult = await page.evaluate<string>(`(async () => {
 					let rejected = 0;
 					let successful = 0;
@@ -80,7 +80,7 @@ try {
 						await Promise.race([workload, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Denied requests did not settle within 60 seconds')), 60000); })]);
 						return JSON.stringify({ rejected, successful, durationMs: performance.now() - started });
 					} finally { clearTimeout(timeout); }
-				})()`)
+				})()`, 90_000)
 				assert.ok(encodedResult !== undefined)
 				const result = JSON.parse(encodedResult)
 				assert.equal(result.rejected, requestCount, 'Every denied request must settle with code 4100')

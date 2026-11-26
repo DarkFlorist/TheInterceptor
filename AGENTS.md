@@ -22,6 +22,9 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
 - `bun run test:chrome-communication` launches Chrome through the repo CDP harness, waits for the MV3 content scripts to register, opens a local HTTP page, approves the real Interceptor access popup, and verifies the page reaches `access-granted`.
 - If Chrome or Chromium is installed outside the standard paths, set `CHROME_BIN=/path/to/chrome` when running `bun run test:chrome-communication` or `bun run benchmark:popup-lifecycle`.
 
+- After browser injection, messaging or manifest changes, also run `bun run test:browsers`. It builds and tests Chrome MV3 and Firefox MV2 sequentially and restores the original generated manifest. Install test executables once with `bun run install-chrome` and `bun run install-firefox`.
+- The paired checks run in `.github/workflows/browser-tests.yml`. Both browsers cover provider injection, CSP fallback, RPC permission replies and reloads.
+
 ## Final Review Gate
 
 For any task that changes code, tests, configuration, tooling, or repository instructions, after the required validation passes, the main agent must spawn the project-scoped `reviewer` custom agent defined in `.codex/agents/reviewer.toml` and wait for it to complete before responding to the user. Start the reviewer from a clear task summary instead of relying on inherited conversation context.
