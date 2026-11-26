@@ -55,14 +55,15 @@
 		"lint:fetch-error-messages": "bun ./scripts/check-raw-fetch-error-messages.mts",
 		"lint:signals": "bun ./scripts/check-signal-comparisons.mts",
 		"lint:units": "bun ./scripts/check-si-units.mts",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:imports && bun run lint:comments && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals && bun run lint:units",
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:imports && bun run lint:comments && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals && bun run lint:units && bun run lint:inpage-boundaries",
 		"test:browser:wallet-signing": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 bun ./test/benchmarks/walletSigning.ts",
 		"test:browser:harness-contract": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 bun ./test/benchmarks/browserHarnessContract.ts",
 		"test:browser:provider-injection": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 bun ./test/benchmarks/providerInjection.ts",
 		"test:browser:rpc-communication": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 RPC_REJECTION_REQUEST_COUNT=20 RPC_REJECTION_ROUNDS=2 RPC_REJECTION_MIXED=true RPC_REJECTION_RELOAD_EVERY=1 bun ./test/benchmarks/rpcRejection.ts",
 		"test:firefox-rpc-communication": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 RPC_REJECTION_REQUEST_COUNT=20 RPC_REJECTION_ROUNDS=2 RPC_REJECTION_MIXED=true RPC_REJECTION_RELOAD_EVERY=1 bun ./test/benchmarks/rpcRejection.ts --browser=firefox",
 		"test:browsers": "bun ./scripts/test-browsers.mts",
-		"compile-shared": "bun ./scripts/compile-shared.mts"
+		"compile-shared": "bun ./scripts/compile-shared.mts",
+		"lint:inpage-boundaries": "bun ./scripts/check-inpage-import-boundaries.mts"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",

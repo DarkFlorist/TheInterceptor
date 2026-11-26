@@ -99,6 +99,8 @@ In the final response to the user, summarize the reviewer feedback received, rep
 - All dependency versions in `package.json` must be exact, with no `^` or `~` ranges.
 - Express ether amounts with SI prefixes (`ether`, `nanoeth`, `attoeth`) in UI text, comments, and identifiers; never use `wei` or `gwei`. `bun run lint:units` enforces this through `bun run lint`.
 
+- Inpage sources may import inpage siblings and dependency-free shared sources only. `bun run lint:inpage-boundaries` validates resolved imports and the shared dependency graph before bundling can hide dependency direction.
+
 ## Generated Output
 
 - Do not manually edit generated JavaScript under `app/js` or `app/inpage/js`. Change the corresponding TypeScript under `app/ts` or `app/inpage/ts`, then let the setup/build scripts regenerate output.
