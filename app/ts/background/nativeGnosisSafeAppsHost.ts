@@ -1,3 +1,4 @@
+import { getAuthorizedNativeGnosisSafeAppsHostSenderUrl } from './nativeGnosisSafeAppsHostSender.js'
 import { isNativeGnosisSafeAppsSourceDisconnected } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import type { NativeGnosisSafeAppsRelayReply } from '../types/interceptor-reply-messages.js'
 import { GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST, parseNativeGnosisSafeAppsRequest, parseNativeGnosisSafeAppsResponse } from '../utils/nativeGnosisSafeAppsHost.js'
@@ -13,7 +14,7 @@ type HostRelayDependencies = {
 // Only the extension-owned host delegates to the original website's provider. Its existing connection owns website consent, signer selection and transaction approvals.
 export async function relayNativeGnosisSafeAppsRequest(message: unknown, sender: browser.runtime.MessageSender, dependencies: HostRelayDependencies): Promise<NativeGnosisSafeAppsRelayReply> {
 	const failure = (message: string): NativeGnosisSafeAppsRelayReply => ({ type: 'NativeGnosisSafeAppsRelayReply', ok: false, message })
-	if (sender.id !== dependencies.extensionId || sender.url === undefined || !dependencies.hostUrls.some((url) => sender.url?.split(/[?#]/)[0] === url)) return failure('Gnosis Safe App requests require the extension-owned host.')
+	if (getAuthorizedNativeGnosisSafeAppsHostSenderUrl(sender, dependencies.extensionId, dependencies.hostUrls) === undefined) return failure('Gnosis Safe App requests require the extension-owned host.')
 	if (typeof message !== 'object' || message === null || !('data' in message) || typeof message.data !== 'object' || message.data === null) return failure('Invalid Gnosis Safe App host request.')
 	const data = message.data
 	if (!('sourceTabId' in data) || typeof data.sourceTabId !== 'number' || !Number.isSafeInteger(data.sourceTabId) || data.sourceTabId < 0 || !('origin' in data) || typeof data.origin !== 'string' || !('request' in data)) return failure('Invalid Gnosis Safe App source.')

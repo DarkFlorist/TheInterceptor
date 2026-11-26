@@ -1,3 +1,4 @@
+import { getAuthorizedNativeGnosisSafeAppsHostSenderUrl } from './nativeGnosisSafeAppsHostSender.js'
 import { NATIVE_GNOSIS_SAFE_APPS_HOST_CONTEXT_PORT, NativeGnosisSafeAppsHostContextChange } from '../types/nativeGnosisSafeAppsHostContext.js'
 import { getHtmlPageUrl } from '../utils/htmlPages.js'
 import { isNativeGnosisSafeAppsLaunchValidationError, parseNativeGnosisSafeAppsLaunch } from '../utils/nativeGnosisSafeAppsHost.js'
@@ -18,10 +19,10 @@ type HostContextPort = {
 // The background owns context invalidation. Host pages only consume scoped notifications and never decode storage or observe tabs.
 export function attachNativeGnosisSafeAppsHostContext(port: HostContextPort) {
 	if (port.name !== NATIVE_GNOSIS_SAFE_APPS_HOST_CONTEXT_PORT) return false
-	const sender = port.sender
-	if (sender?.id !== browser.runtime.id || sender.url?.split(/[?#]/)[0] !== getHtmlPageUrl('gnosisSafeAppsHost')) { port.disconnect(); return true }
+	const senderUrl = getAuthorizedNativeGnosisSafeAppsHostSenderUrl(port.sender, browser.runtime.id, [getHtmlPageUrl('gnosisSafeAppsHost')])
+	if (senderUrl === undefined) { port.disconnect(); return true }
 	const launch = (() => {
-		try { return parseNativeGnosisSafeAppsLaunch(new URL(sender.url).searchParams) } catch (error: unknown) {
+		try { return parseNativeGnosisSafeAppsLaunch(new URL(senderUrl).searchParams) } catch (error: unknown) {
 			if (isNativeGnosisSafeAppsLaunchValidationError(error)) return undefined
 			throw error
 		}

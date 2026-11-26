@@ -1,17 +1,14 @@
 import { GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT, GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS, type GnosisSafeAppsRequest } from './gnosisSafeAppsProtocol.js'
 
-type QueueRejection = 'duplicate' | 'capacity' | 'expired' | 'superseded'
+type QueueRejection = 'duplicate' | 'capacity' | 'expired'
 const rejectionMessages = {
 	duplicate: 'Duplicate Gnosis Safe Apps request ID.',
 	capacity: 'Too many pending Gnosis Safe Apps requests.',
 	expired: 'Gnosis Safe Apps request timed out.',
-	superseded: 'Gnosis Safe discovery was superseded by a newer request.',
 }
 type QueueOptions<T> = {
 	readonly timeoutMs?: number
 	readonly onRejected: (request: T, error: string, reason: QueueRejection) => void
-	// Optional metadata-probe replacement at capacity never supersedes an operation.
-	readonly replaceOldestSafeInfo?: boolean
 	// Without a scheduler, callers expire entries on messages and eligibility changes.
 	readonly timers?: { readonly setTimeout: (callback: () => void, delay: number) => number, readonly clearTimeout: (id: number) => void }
 	// Defaults to expiring every entry. Return false for requests that may still complete after the deadline, so they stay pending until answered or taken.
@@ -43,10 +40,6 @@ export function createGnosisSafeAppsRequestQueue<T extends Pick<GnosisSafeAppsRe
 			if (entries.has(request.id)) {
 				options.onRejected(request, rejectionMessages.duplicate, 'duplicate')
 				return false
-			}
-			if (entries.size >= GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT && options.replaceOldestSafeInfo === true) {
-				const oldestDiscovery = [...entries.values()].find(({ request }) => request.method === 'getSafeInfo')
-				if (oldestDiscovery !== undefined) reject(oldestDiscovery.request.id, 'superseded')
 			}
 			if (entries.size >= GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT) {
 				options.onRejected(request, rejectionMessages.capacity, 'capacity')

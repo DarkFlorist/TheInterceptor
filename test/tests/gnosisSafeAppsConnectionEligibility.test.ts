@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import type { GnosisSafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import { createPort, createEthereumWithGetBlockCounter, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createPort, createEthereumWithGetBlockCounter, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 
 test('discovery resolves a configured simulation account while admitted execution keeps and checks that account', async () => {
 	installBrowserMock()
@@ -64,4 +64,32 @@ for (const simulationMode of [true, false]) test(`admitted Gnosis Safe requests 
 		assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, { ...settings, websiteAccess }, admitted), false)
 		assert.equal(connection.approved, true, 'the persisted address decision must not wait for connection reconciliation')
 	}
+})
+
+
+test('signing discovery feeds its resolved ownership into the same admitted configuration and consent rule', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { isGnosisSafeAppsConnectionEligible, isGnosisSafeAppsConnectionEligibleForAdmittedAddress } = await import('../../app/ts/background/gnosisSafeAppsConnectionEligibility.js')
+	const owner = 0x1111111111111111111111111111111111111111n
+	const activeAddress: GnosisSafeEntry = { type: 'safe', name: 'Selected signing Gnosis Safe', address: 0x6868686868686868686868686868686868686868n, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [owner] }
+	const website = { websiteOrigin: 'signing-safe.example', title: undefined, icon: undefined }
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port } = createPort(socket.tabId, undefined, 0)
+	const connection = { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	await modules.changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: activeAddress.address })
+	await modules.updateUserAddressBookEntries(() => [activeAddress])
+	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [owner], activeSigningAddress: owner }))
+	await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: activeAddress.address, access: true }] }])
+	const settings = await modules.getSettings()
+	const admitted = { activeAddress, safeSigningMode: true }
+	assert.equal(await isGnosisSafeAppsConnectionEligible(connections, socket, settings), true)
+	assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, settings, admitted), true)
+	for (const changed of [{ ...settings, activeSigningSafeAddress: 1n }, { ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, chainId: 10n } }, { ...settings, websiteAccess: [] }]) {
+		assert.equal(await isGnosisSafeAppsConnectionEligible(connections, socket, changed), false)
+		assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, changed, admitted), false)
+	}
+	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [2n], activeSigningAddress: 2n }))
+	assert.equal(await isGnosisSafeAppsConnectionEligible(connections, socket, settings), false, 'discovery still resolves live signer ownership')
 })
