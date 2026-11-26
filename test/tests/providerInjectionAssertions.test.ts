@@ -49,3 +49,12 @@ test('single-script providers remain valid when no feature entrypoints are confi
 	assert.equal(getProviderInjectionFailure(observe([inline]), false, paths), undefined)
 	assert.equal(getProviderInjectionFailure(observe([{ ...inline, providerDefined: false }, { external: true, src: `moz-extension://fixture/${ paths[0] }`, providerDefined: false }], 1), true, paths), undefined)
 })
+
+
+test('CSP fallback checks exact extension paths rather than suffixes', () => {
+	const paths = ['inpage/js/fixture-provider.js']
+	for (const src of ['moz-extension://fixture/unexpected-prefix/inpage/js/fixture-provider.js', 'https://fixture/inpage/js/fixture-provider.js', 'not-an-absolute-url']) {
+		const result = observe([{ ...inline, providerDefined: false }, { external: true, src, providerDefined: false }], 1)
+		assert.match(getProviderInjectionFailure(result, true, paths) ?? '', /provider-before-feature order/)
+	}
+})

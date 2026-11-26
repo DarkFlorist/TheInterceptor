@@ -4,6 +4,15 @@ type AddedScript = { readonly external: boolean, readonly src: string, readonly 
 export type InjectionObservations = { readonly providerAtFirstPageScript: boolean, readonly addedScripts: readonly AddedScript[], readonly cspViolations: number }
 export type ProviderInjectionResult = { readonly providerArrived: boolean | undefined, readonly observations: InjectionObservations | undefined }
 
+function hasExpectedExtensionPath(source: string, paths: readonly (string | undefined)[]) {
+	let url: URL
+	try { url = new URL(source) } catch (error: unknown) {
+		if (error instanceof TypeError) return false
+		throw error
+	}
+	return (url.protocol === 'chrome-extension:' || url.protocol === 'moz-extension:') && paths.some((path) => path !== undefined && url.pathname === `/${ path }`)
+}
+
 // MAIN-world native injection can precede page observation. For MV2's observed injection, every configured classic script must be inline or have its own ordered CSP fallback.
 export function getProviderInjectionFailure({ providerArrived, observations }: ProviderInjectionResult, inlineBlocked: boolean, scripts: readonly string[] = getPageWorldScriptPaths(false)) {
 	if (providerArrived !== true) return 'the provider never arrived'
@@ -24,7 +33,7 @@ export function getProviderInjectionFailure({ providerArrived, observations }: P
 		const external = observations.addedScripts[index * 2 + 1]
 		if (inline?.external !== false || external?.external !== true) return 'CSP fallback scripts were not queued in inline/external pairs'
 		const paths = index === 0 ? [scriptPath, getPageWorldScriptPaths(true)[0]] : [scriptPath]
-		if (!/^(?:chrome|moz)-extension:\/\//.test(external.src) || !paths.some((path) => path !== undefined && external.src.endsWith(`/${ path }`))) return 'CSP fallback script paths were not in provider-before-feature order'
+		if (!hasExpectedExtensionPath(external.src, paths)) return 'CSP fallback script paths were not in provider-before-feature order'
 	}
 	return undefined
 }
