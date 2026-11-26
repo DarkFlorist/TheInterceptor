@@ -401,3 +401,14 @@ test('a page reassigning a retired hook does not transfer ownership of its fetch
 	assert.equal(h.windowObject.fetch, retained, 'disposal must preserve the page-owned assignment even when it uses our previous function')
 	assert.equal((await (await retained(input(read))).json()).result, 'live')
 })
+
+
+test('browser-like network errors from simulated reads never fall back to live transport', async () => {
+	for (const message of ['Failed to fetch', 'NetworkError when attempting to fetch resource.', 'Load failed']) {
+		const failure = new TypeError(message)
+		const h = harness({ rpc: async () => { throw failure } })
+		h.hook.setContext(context)
+		await assert.rejects(h.windowObject.fetch(input(read)), (error: unknown) => error === failure)
+		assert.equal(h.nativeRequests.length, 1, 'only the successful identification probe reached native transport')
+	}
+})
