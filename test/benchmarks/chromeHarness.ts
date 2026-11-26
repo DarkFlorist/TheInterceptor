@@ -1,3 +1,4 @@
+import { chromeEvaluationFailure } from './chromeEvaluationFailure.js'
 import type { ViewportDriverPage, ViewportDriverSession } from './browserViewport.js'
 import { browserEvaluationExpression, parseBrowserEvaluationValue } from './browserEvaluation.js'
 import { prepareDocumentResponse } from './documentRoutes.js'
@@ -108,7 +109,7 @@ export class CdpConnection {
 					const pending = this.pending
 					this.pending = new Map()
 					for (const { reject: rejectPending } of pending.values()) {
-						rejectPending(new Error(`CDP websocket closed for ${ this.url }`))
+						rejectPending(chromeEvaluationFailure(new Error(`CDP websocket closed for ${ this.url }`)))
 					}
 					this.socket = undefined
 				}
@@ -128,7 +129,7 @@ export class CdpConnection {
 			if (pending === undefined) return
 			this.pending.delete(message.id)
 			if (message.error !== undefined) {
-				pending.reject(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`))
+				pending.reject(chromeEvaluationFailure(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`)))
 				return
 			}
 			pending.resolve(message.result)
@@ -611,7 +612,7 @@ export async function launchChromeBrowserSession(extensionDirectory?: string): P
 			return await wrapPage(id, url)
 		}
 		return withBrowserFixtureSetup({ browser: 'chrome', browserVersion: version.product, openPage, openExtensionPage: (path, prepare) => openPage(`${ extensionOrigin }/${ path }`, 'complete', prepare), pages: async () => await connectStillOpenChromePages((await waitForBrowserTargets(chrome.browserDebugPort)).filter((target) => target.type === 'page'), async (target) => await wrapPage(target.id, target.url), async (id) => (await waitForBrowserTargets(chrome.browserDebugPort)).some((target) => target.id === id)), addPreloadScript: async (source) => { preloads.push(source) }, routeResponses: async (value) => {
-			// HTTPS fixture pages call loopback RPC servers. New Chromium versions require explicit local-network permission even with CORS headers.
+			// setPermission takes Permissions API descriptor names, unlike grantPermissions and its camelCase PermissionType enum. HTTPS fixtures need these grants for loopback RPC.
 			for (const origin of new Set(value.map(({ url }) => new URL(url).origin))) for (const name of ['local-network-access', 'loopback-network']) await chrome.browserConnection.send('Browser.setPermission', { permission: { name }, setting: 'granted', origin })
 			routes = value
 			if (routes.length === 0) for (const connection of activeInterceptions) await disableInterception(connection)

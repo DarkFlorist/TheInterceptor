@@ -1,3 +1,5 @@
+import { chromeEvaluationFailure } from '../benchmarks/chromeEvaluationFailure.js'
+import { firefoxEvaluationFailure } from '../benchmarks/firefoxEvaluationFailure.js'
 import * as assert from 'node:assert/strict'
 import { test } from 'bun:test'
 import { evaluateBrowserTask } from '../benchmarks/browserEvaluationTask.js'
@@ -6,7 +8,7 @@ import { waitForBrowserCondition } from '../benchmarks/browserHarnessUtils.js'
 const page = { id: 'page', url: 'about:blank', evaluate: async () => undefined, navigate: async () => undefined, reload: async () => undefined, captureScreenshot: async () => '', close: async () => undefined }
 
 for (const message of ['Execution context was destroyed', 'Cannot find context with specified id', 'Cannot find default execution context', 'no such frame', 'Firefox BiDi script.evaluate: Browsing context has been discarded', 'Firefox BiDi script.evaluate: Evaluation was abandoned']) test(`observations retry known navigation loss: ${ message }`, async () => {
-	const failure = new Error(message)
+	const failure = message.startsWith('Firefox BiDi ') ? firefoxEvaluationFailure(new Error(message)) : chromeEvaluationFailure(new Error(message))
 	let calls = 0
 	await waitForBrowserCondition(async () => {
 		if (++calls === 1) throw failure
@@ -19,12 +21,12 @@ for (const message of ['Execution context was destroyed', 'Cannot find context w
 })
 
 test('recognized navigation loss reaches the normal condition deadline rather than completing the wait', async () => {
-	await assert.rejects(waitForBrowserCondition(async () => { throw new Error('Cannot find context with specified id') }, 'reloaded page', 0), /Timed out waiting for reloaded page/)
+	await assert.rejects(waitForBrowserCondition(async () => { throw chromeEvaluationFailure(new Error('Cannot find context with specified id')) }, 'reloaded page', 0), /Timed out waiting for reloaded page/)
 })
 
 test('terminal target loss requires explicit page enumeration and is never retried as navigation', async () => {
 	for (const message of ['CDP websocket closed for ws://127.0.0.1/devtools/page/1', 'Target closed.', 'Session closed']) {
-		const failure = new Error(message)
+		const failure = message.startsWith('Firefox BiDi ') ? firefoxEvaluationFailure(new Error(message)) : chromeEvaluationFailure(new Error(message))
 		let enumerations = 0
 		assert.deepEqual(await evaluateBrowserTask(async () => { throw failure }, { kind: 'page-close', session: { pages: async () => { enumerations++; return [] } }, pageId: page.id }), { kind: 'closed' })
 		assert.equal(enumerations, 1)
@@ -34,7 +36,7 @@ test('terminal target loss requires explicit page enumeration and is never retri
 })
 
 test('Firefox missing browsing context after an approval requires verified closure and never replays the evaluation', async () => {
-	const failure = new Error('Firefox BiDi script.evaluate: Browsing Context with id e9bd1bbf-ead2-4fbc-a266-84c4d39f8da9 not found')
+	const failure = firefoxEvaluationFailure(new Error('Firefox BiDi script.evaluate: Browsing Context with id e9bd1bbf-ead2-4fbc-a266-84c4d39f8da9 not found'))
 	let evaluations = 0
 	let enumerations = 0
 	const evaluate = async () => { evaluations++; throw failure }
@@ -63,10 +65,19 @@ test('business errors mentioning closed, frame, context or abandoned remain fail
 
 test('page enumeration failures propagate instead of pretending that an approval page closed', async () => {
 	const failure = new Error('Cannot enumerate browser pages')
-	await assert.rejects(evaluateBrowserTask(async () => { throw new Error('Execution context was destroyed') }, { kind: 'page-close', session: { pages: async () => { throw failure } }, pageId: page.id }), failure)
+	await assert.rejects(evaluateBrowserTask(async () => { throw chromeEvaluationFailure(new Error('Execution context was destroyed')) }, { kind: 'page-close', session: { pages: async () => { throw failure } }, pageId: page.id }), failure)
 })
 
 test('successful evaluations preserve both values and undefined', async () => {
 	assert.deepEqual(await evaluateBrowserTask(async () => false, { kind: 'navigation' }), { kind: 'value', value: false })
 	assert.deepEqual(await evaluateBrowserTask(async () => undefined, { kind: 'page-close', session: { pages: async () => [] }, pageId: page.id }), { kind: 'value', value: undefined })
+})
+
+
+test('unmarked page exceptions that imitate protocol failures are never retried', async () => {
+	for (const message of ['Execution context was destroyed', 'Target closed.', 'Firefox BiDi script.evaluate: Evaluation was abandoned']) {
+		const failure = new Error(message)
+		await assert.rejects(evaluateBrowserTask(async () => { throw failure }, { kind: 'navigation' }), failure)
+		await assert.rejects(evaluateBrowserTask(async () => { throw failure }, { kind: 'page-close', session: { pages: async () => [] }, pageId: page.id }), failure)
+	}
 })

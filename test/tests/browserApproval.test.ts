@@ -1,3 +1,4 @@
+import { chromeEvaluationFailure } from '../benchmarks/chromeEvaluationFailure.js'
 import * as assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
 import { test } from 'bun:test'
@@ -42,12 +43,12 @@ test('approval waits through missing and disabled buttons and clicks the newly e
 test('approval accepts a lost evaluation reply when the popup closed itself', async () => {
 	await approveBrowserRequest({ pages: async () => [] }, {
 		id: 'approval',
-		evaluate: async () => { throw new Error('Execution context was destroyed') },
+		evaluate: async () => { throw chromeEvaluationFailure(new Error('Execution context was destroyed')) },
 	}, 'button')
 })
 
 test('approval propagates a closed-context error while the popup is still open', async () => {
-	const failure = new Error('Execution context was destroyed')
+	const failure = chromeEvaluationFailure(new Error('Execution context was destroyed'))
 	const page = {
 		id: 'approval', url: 'about:blank',
 		evaluate: async () => { throw failure },

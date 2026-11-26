@@ -1,3 +1,4 @@
+import { firefoxEvaluationFailure } from './firefoxEvaluationFailure.js'
 import type { ViewportDriverPage, ViewportDriverSession } from './browserViewport.js'
 import { setFirefoxViewport } from './firefoxViewport.js'
 import { browserEvaluationExpression, parseBrowserEvaluationValue } from './browserEvaluation.js'
@@ -164,7 +165,7 @@ async function connectBidi(webSocketUrl: string) {
 			pendingCommands.delete(id)
 			const type = readStringProperty(message, 'type')
 			if (type === 'error') {
-				pendingCommand.reject(new Error(`Firefox BiDi ${ pendingCommand.method }: ${ protocolErrorMessage(message) ?? `command ${ id } failed` }`))
+				pendingCommand.reject(firefoxEvaluationFailure(new Error(`Firefox BiDi ${ pendingCommand.method }: ${ protocolErrorMessage(message) ?? `command ${ id } failed` }`)))
 				return
 			}
 			pendingCommand.resolve(readProperty(message, 'result'))
