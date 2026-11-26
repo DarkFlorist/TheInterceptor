@@ -26,7 +26,10 @@ export function createNativeGnosisSafeAppsSourceBridge(windowObject: GnosisSafeA
 		timers,
 		expires: (request) => isGnosisSafeAppsDiscoveryMethod(request.method),
 		onRejected: (request, error, reason) => {
-			if (reason === 'expired') transport.post(createGnosisSafeAppsBridgeMessage(createGnosisSafeAppsCancellation(request.id), request.bridgeToken))
+			if (reason === 'expired') {
+				const cancellationMessage = createGnosisSafeAppsBridgeMessage(createGnosisSafeAppsCancellation(request.id), request.bridgeToken)
+				transport.post(cancellationMessage)
+			}
 			request.reject(new Error(error))
 			stopIfIdle()
 		},
@@ -55,7 +58,10 @@ export function createNativeGnosisSafeAppsSourceBridge(windowObject: GnosisSafeA
 			return new Promise((resolve, reject) => {
 				if (!pending.add({ id, method: sdkRequest.method, originalId: sdkRequest.id, bridgeToken, resolve, reject })) return
 				subscribe()
-				try { transport.post(createGnosisSafeAppsBridgeMessage({ ...sdkRequest, id }, bridgeToken)) } catch (error: unknown) {
+				try {
+					const requestMessage = createGnosisSafeAppsBridgeMessage({ ...sdkRequest, id }, bridgeToken)
+					transport.post(requestMessage)
+				} catch (error: unknown) {
 					pending.take(id)
 					stopIfIdle()
 					reject(error)

@@ -1,3 +1,4 @@
+import { NATIVE_GNOSIS_SAFE_APPS_REQUEST } from './popupMessageProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList } from './popupSettingsRequests.js'
 import type { popupSettingsOperations, DirectPopupSettingsMethod } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
@@ -300,6 +301,7 @@ type PopupSettingsRepliesMap = {
 }
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
+	[NATIVE_GNOSIS_SAFE_APPS_REQUEST]: typeof NativeGnosisSafeAppsRelayReply
 	popup_openGnosisSafeApp: typeof OpenGnosisSafeAppReply
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
@@ -324,6 +326,7 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 }
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
+	[NATIVE_GNOSIS_SAFE_APPS_REQUEST]: NativeGnosisSafeAppsRelayReply,
 	popup_openGnosisSafeApp: OpenGnosisSafeAppReply,
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
@@ -363,6 +366,7 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 }).asReadonly()
 
 export const PopupMessageReplyRequests = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal(NATIVE_GNOSIS_SAFE_APPS_REQUEST) }).And(funtypes.ReadonlyPartial({ data: funtypes.Unknown })),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openGnosisSafeApp'), data: funtypes.ReadonlyObject({ sourceTabId: funtypes.Number.withConstraint((value) => Number.isSafeInteger(value) && value >= 0) }) }),
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,

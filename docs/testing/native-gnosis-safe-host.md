@@ -25,7 +25,7 @@ sequenceDiagram
 
 ## Lifecycle and limits
 
-- Public Gnosis Safe metadata is prepared before loading the iframe, refreshed every five seconds and cached for at most ten seconds. Permission, account, mode, chain and meaningful Gnosis Safe configuration changes invalidate it. Routine website titles/icons and address metadata enrichment do not interrupt an app session.
+- Public Gnosis Safe metadata is prepared before loading the iframe, refreshed periodically with a bounded cache lifetime; both intervals and the SDK-handshake warning deadline follow the [native host timing policy](../../app/ts/utils/nativeGnosisSafeAppsHostTiming.ts). Permission, account, mode, chain and meaningful Gnosis Safe configuration changes invalidate it. Routine website titles/icons and address metadata enrichment do not interrupt an app session.
 - A temporary metadata refresh failure shows an error while preserving the existing iframe and unfinished app input; recovery does not reload it or extend the metadata cache lifetime.
 - The popup sends an extension-only launch command. The background validates the current source URL, enables compatibility, and focuses an identical tracked host without navigation or opens another tab for a different launch, preserving existing app sessions.
 - Context changes during a pending operation preserve its original frame for the terminal reply and block new requests until reconnection. Retry is disabled while operations remain pending. Transactions and signatures are never automatically replayed.

@@ -10,11 +10,15 @@ function sourceBridge() {
 	const timers = new Map<number, { callback: () => void, delay: number }>()
 	let nextId = 0
 	let nextTimer = 0
+	const origin = 'https://app.example'
 	const windowObject = {
-		location: { origin: 'https://app.example' },
+		location: { origin },
 		addEventListener: (_name: 'message', listener: (event: Event) => void) => { listeners.add(listener) },
 		removeEventListener: (_name: 'message', listener: (event: Event) => void) => { listeners.delete(listener) },
-		postMessage: (value: unknown) => { posted.push(value) },
+		postMessage: (value: unknown, targetOrigin: string) => {
+			assert.equal(targetOrigin, origin, 'Private correlation tokens belong inside the message wrapper, never in targetOrigin')
+			posted.push(value)
+		},
 	}
 	const bridge = createNativeGnosisSafeAppsSourceBridge(windowObject, () => `private-${ ++nextId }`, {
 		setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id },

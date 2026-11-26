@@ -1,3 +1,4 @@
+import { sendPopupMessageWithReply } from '../../app/ts/background/backgroundUtils.js'
 import { createNativeGnosisSafeAppsSourceDisconnected } from '../../app/shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -118,4 +119,30 @@ test('native host recognizes a serialized source-disconnection reply by discrimi
 test('native host propagates unexpected source errors instead of classifying application error wording', async () => {
 	const error = new Error('The original Gnosis Safe App tab navigated or closed.')
 	await assert.rejects(relayNativeGnosisSafeAppsRequest(message, sender, { ...dependencies, sendToSource: async () => { throw error } }), (caught) => caught === error)
+})
+
+
+for (const manifestVersion of [2, 3] as const) test(`MV${ manifestVersion } native relay uses the registered popup request/reply client for admitted SDK replies and refusals`, async () => {
+	installBrowserMock({ manifestVersion })
+	const root = `${ manifestVersion === 2 ? 'moz-extension' : 'chrome-extension' }://extension-id/`
+	Object.assign(browser.runtime, { id: 'extension-id', getURL: (file: string) => new URL(file, root).href })
+	const hostUrl = new URL(manifestVersion === 2 ? 'html/gnosisSafeAppsHost.html' : 'html3/gnosisSafeAppsHostV3.html', root).href
+	let forwarded = 0
+	Object.assign(browser.tabs, {
+		get: async () => ({ id: 12, active: true, url: 'https://app.example/path' }),
+		sendMessage: async () => { forwarded++; return { id: request.id, success: false, error: 'SDK request denied' } },
+	})
+	const services = createEthereumWithGetBlockCounter({ count: 0 }).simulationServicesOwner
+	const settings = await getSettings()
+	Object.assign(browser.runtime, { sendMessage: async (value: unknown) => {
+		const reply = await popupMessageHandler(new Map(), services, PopupMessage.parse(value), settings, noopPublishRpcConnectionStatus, { id: 'extension-id', url: hostUrl })
+		return PopupReplyOption.serialize(PopupReplyOption.parse(reply))
+	} })
+	assert.deepEqual(await sendPopupMessageWithReply(message), { type: 'NativeGnosisSafeAppsRelayReply', ok: true, response: { id: request.id, success: false, error: 'SDK request denied' } })
+	const refused = await sendPopupMessageWithReply({ ...message, data: { ...message.data, origin: 'https://other.example' } })
+	assert.ok(refused !== undefined && !refused.ok)
+	assert.match(refused.message, /closed or navigated/)
+	assert.equal(forwarded, 1, 'admission refusal never forwards an SDK request')
+	Object.assign(browser.runtime, { sendMessage: async () => undefined })
+	assert.equal(await sendPopupMessageWithReply(message), undefined, 'missing transport replies retain the shared client contract')
 })

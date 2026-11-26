@@ -1,3 +1,4 @@
+import { NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING } from '../../utils/nativeGnosisSafeAppsHostTiming.js'
 import { computed, signal } from '@preact/signals'
 import { GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT, GNOSIS_SAFE_APPS_RESPONSE_VERSION, createGnosisSafeAppsErrorResponse, isNativeGnosisSafeAppsDiscovery, parseNativeGnosisSafeAppsRequest, type NativeGnosisSafeAppsRequest, type NativeGnosisSafeAppsResponse } from '../../utils/nativeGnosisSafeAppsHost.js'
 
@@ -49,7 +50,7 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 		update({ frameUrl: ports.appUrl, frameHidden: false, frameGeneration: view.peek().frameGeneration + 1, status: 'Waiting for the website’s Gnosis Safe App handshake…' })
 		cancelHandshake = ports.schedule(() => {
 			if (!receivedHandshake && !stopped) update({ status: 'No Gnosis Safe App handshake received. This website may block embedded pages, require a different parent origin, or not support Gnosis Safe Apps. You can use the original tab or retry.' })
-		}, 15_000)
+		}, NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.handshakeTimeoutMs)
 	}
 	const refresh = async () => {
 		if (stopped || sourceDisconnected) return
@@ -88,7 +89,7 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 		clearHandshake()
 		update({ status: 'Gnosis Safe App handshake received. Requests use Interceptor’s normal permissions and approvals.' })
 		if (pending >= GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT) { ports.postResponse(failure(request.id, 'Too many pending Gnosis Safe App requests.')); return }
-		if (request.method === 'getSafeInfo' && prepared !== undefined && ports.now() - prepared.at <= 10_000) {
+		if (request.method === 'getSafeInfo' && prepared !== undefined && ports.now() - prepared.at <= NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.preparedMetadataLifetimeMs) {
 			ports.postResponse({ ...prepared.response, id: request.id })
 			return
 		}
@@ -138,7 +139,7 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 		start: () => {
 			if (started || stopped || sourceDisconnected) return
 			started = true
-			cancelRefresh = ports.repeat(() => { void refresh() }, 5_000)
+			cancelRefresh = ports.repeat(() => { void refresh() }, NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs)
 			void refresh()
 		},
 		retry: () => {

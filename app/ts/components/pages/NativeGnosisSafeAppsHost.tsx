@@ -1,5 +1,5 @@
 import { NATIVE_GNOSIS_SAFE_APPS_HOST_CONTEXT_PORT, NativeGnosisSafeAppsHostContextChange } from '../../types/nativeGnosisSafeAppsHostContext.js'
-import { NativeGnosisSafeAppsRelayReply } from '../../types/interceptor-reply-messages.js'
+import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { useEffect, useMemo, useRef } from 'preact/hooks'
 import { createNativeGnosisSafeAppsHostController } from './nativeGnosisSafeAppsHostController.js'
 import { parseNativeGnosisSafeAppsLaunch, parseNativeGnosisSafeAppsResponse } from '../../utils/nativeGnosisSafeAppsHost.js'
@@ -16,8 +16,8 @@ export function NativeGnosisSafeAppsHost() {
 		appUrl: launch.appUrl.href,
 		request: async (request) => {
 			const id = crypto.randomUUID()
-			const response: unknown = await browser.runtime.sendMessage({ method: NATIVE_GNOSIS_SAFE_APPS_REQUEST, data: { sourceTabId: launch.sourceTabId, origin: launch.appUrl.origin, request: { ...request, id } } })
-			const relay = NativeGnosisSafeAppsRelayReply.parse(response)
+			const relay = await sendPopupMessageWithReply({ method: NATIVE_GNOSIS_SAFE_APPS_REQUEST, data: { sourceTabId: launch.sourceTabId, origin: launch.appUrl.origin, request: { ...request, id } } })
+			if (relay === undefined) throw new Error('The original website relay is unavailable. Check the original tab and retry.')
 			if (!relay.ok) throw new Error(relay.message)
 			const parsed = parseNativeGnosisSafeAppsResponse(relay.response)
 			if (parsed === undefined || parsed.id !== id) throw new Error('Interceptor returned an invalid Gnosis Safe App response. Check the original tab and retry.')

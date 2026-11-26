@@ -1,3 +1,4 @@
+import { NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING } from '../../app/ts/utils/nativeGnosisSafeAppsHostTiming.js'
 import * as assert from 'node:assert/strict'
 import { test } from 'bun:test'
 import { createNativeGnosisSafeAppsHostController } from '../../app/ts/components/pages/nativeGnosisSafeAppsHostController.js'
@@ -115,7 +116,7 @@ test('revocation clears the frame and cancels the old handshake deadline instead
 	host.setPreparation(async () => ({ id: 'prepare', success: false, error: 'Website permission revoked' }))
 	host.controller.invalidateContext(['websiteAccess'])
 	await host.controller.refresh()
-	host.advance(15_001)
+	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.handshakeTimeoutMs + 1)
 	assert.equal(host.controller.view.value.frameHidden, true)
 	assert.equal(host.controller.view.value.frameUrl, 'about:blank')
 	assert.equal(host.controller.view.value.status, 'Website permission revoked')
@@ -181,7 +182,7 @@ for (const failure of ['transport', 'RPC']) test(`${ failure } metadata refresh 
 		if (failure === 'transport') throw new TypeError('Source bridge temporarily unavailable')
 		return { id: 'prepare', success: false, error: 'Simulation RPC temporarily unavailable' }
 	})
-	host.advance(5_000)
+	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs)
 	await host.controller.refresh()
 	assert.equal(host.controller.view.value.frameHidden, false)
 	assert.equal(host.controller.view.value.frameUrl, frame.frameUrl)
@@ -191,7 +192,7 @@ for (const failure of ['transport', 'RPC']) test(`${ failure } metadata refresh 
 	assert.deepEqual(host.replies.at(-1), { ...metadata(), id: 'cached-info' })
 	assert.equal(host.requests.length, 2, 'a failed refresh preserves the still-fresh prepared response')
 	host.setPreparation(async () => metadata('refreshed-wallet'))
-	host.advance(5_000)
+	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs)
 	await host.controller.refresh()
 	assert.equal(host.controller.view.value.frameGeneration, frame.frameGeneration, 'recovery must not remount the iframe')
 	assert.equal(host.controller.view.value.frameHidden, false)
@@ -206,9 +207,13 @@ test('failed refreshes do not extend the prepared metadata lifetime', async () =
 	const host = hostHarness()
 	await host.controller.refresh()
 	host.setPreparation(async () => { throw new Error('Temporary refresh failure') })
-	host.advance(9_000)
+	host.advance(NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.preparedMetadataLifetimeMs - 1)
 	await host.controller.refresh()
-	host.advance(1_001)
+	host.advance(1)
+	await host.controller.receive(request('boundary-info', 'getSafeInfo'))
+	assert.equal(host.pending.has('boundary-info'), false, 'prepared metadata remains usable at its exact lifetime boundary')
+	assert.deepEqual(host.replies.at(-1), { ...metadata(), id: 'boundary-info' })
+	host.advance(1)
 	const discovery = host.controller.receive(request('expired-info', 'getSafeInfo'))
 	assert.ok(host.pending.has('expired-info'), 'expired cached metadata must use a newly admitted request despite the preserved iframe')
 	host.pending.get('expired-info')?.resolve({ id: 'expired-info', success: false, error: 'Metadata temporarily unavailable' })

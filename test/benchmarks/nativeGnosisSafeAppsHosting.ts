@@ -1,3 +1,5 @@
+import { NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING } from '../../app/ts/utils/nativeGnosisSafeAppsHostTiming.js'
+import { GNOSIS_SAFE_APPS_SOURCE_DISCOVERY_TIMEOUT_MS } from '../../app/shared/ts/gnosisSafeAppsProtocol.js'
 import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { getGnosisSafeUiScreenshotSettings } from './gnosisSafeUiScreenshotSettings.js'
@@ -109,13 +111,13 @@ async function verifyMetadataRefreshPreservesApp(session: BrowserSession, host: 
 		assert.equal(await host.evaluate(`nativeHostFixture.at(-1)?.results.${ name }?.value`), draft, 'The unfinished app draft must survive metadata refresh')
 	}
 	try {
-		await waitForBrowserCondition(async () => await host.evaluate(`document.querySelector('[role=status]')?.textContent===${ JSON.stringify(refreshError) }`), 'controlled periodic metadata refresh error')
+		await waitForBrowserCondition(async () => await host.evaluate(`document.querySelector('[role=status]')?.textContent===${ JSON.stringify(refreshError) }`), 'controlled periodic metadata refresh error', NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs + GNOSIS_SAFE_APPS_SOURCE_DISCOVERY_TIMEOUT_MS)
 		await assertPreserved('draftDuringRefreshError')
 		await Bun.write(path.join(outputDirectory, `${ session.browser }-native-refresh-error.png`), Buffer.from(await host.captureScreenshot(), 'base64'))
 	} finally {
 		await host.evaluate('(() => { globalThis.restoreNativeRefreshTransport(); delete globalThis.restoreNativeRefreshTransport; })()')
 	}
-	await waitForBrowserCondition(async () => await host.evaluate(`document.querySelector('[role=status]')?.textContent?.includes('Wallet information refreshed')`), 'periodic metadata refresh recovery')
+	await waitForBrowserCondition(async () => await host.evaluate(`document.querySelector('[role=status]')?.textContent?.includes('Wallet information refreshed')`), 'periodic metadata refresh recovery', NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.metadataRefreshIntervalMs + GNOSIS_SAFE_APPS_SOURCE_DISCOVERY_TIMEOUT_MS)
 	await assertPreserved('draftAfterRefreshRecovery')
 	await Bun.write(path.join(outputDirectory, `${ session.browser }-native-refresh-recovered.png`), Buffer.from(await host.captureScreenshot(), 'base64'))
 	await host.evaluate('delete globalThis.nativeRefreshRegression')
@@ -255,7 +257,7 @@ try {
 					try {
 						const host = await hostForSource(session, settings, source, unsupportedUrl)
 						try {
-							await waitForBrowserCondition(async () => await host.evaluate('document.querySelector("[role=status]")?.textContent?.startsWith("No Gnosis Safe App handshake received")'), 'honest native-policy unsupported state')
+							await waitForBrowserCondition(async () => await host.evaluate('document.querySelector("[role=status]")?.textContent?.startsWith("No Gnosis Safe App handshake received")'), 'honest native-policy unsupported state', 2 * NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.handshakeTimeoutMs)
 							assert.equal(await host.evaluate('parent===self&&top===self&&window.__interceptorSafeAppsHostEmulatedParent!==true'), true)
 							console.warn(`${ session.browser } native host preserves ${ path } restriction: ${ simulationMode ? 'simulation' : 'signing' }`)
 						} finally { await host.close() }
