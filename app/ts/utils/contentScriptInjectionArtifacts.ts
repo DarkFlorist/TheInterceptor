@@ -1,4 +1,4 @@
-import { INPAGE_SCRIPTS, PAGE_WORLD_EXTENSIONS } from '../config/injectedScripts.js'
+import { INPAGE_SCRIPTS } from '../config/injectedScripts.js'
 
 const inpageScriptDirectory = 'inpage/js'
 
@@ -9,7 +9,7 @@ const metamaskCompatibleDocumentStartScriptPath = `${ inpageScriptDirectory }/do
 
 // These paths drive runtime registration and the bundler's inpage artifact generation; static manifest copies are validated against this list in contentScriptInjectionStrategy.test.ts.
 export function getPageWorldScriptPaths(metamaskCompatibilityMode: boolean): readonly string[] {
-	return [metamaskCompatibilityMode ? metamaskCompatiblePageWorldProviderScriptPath : pageWorldProviderScriptPath, ...PAGE_WORLD_EXTENSIONS]
+	return [metamaskCompatibilityMode ? metamaskCompatiblePageWorldProviderScriptPath : pageWorldProviderScriptPath]
 }
 
 export function getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode: boolean) {

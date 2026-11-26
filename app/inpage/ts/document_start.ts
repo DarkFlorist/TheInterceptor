@@ -1,4 +1,4 @@
-function injectPageWorldScripts() {
+function injectPageWorldProvider() {
 	if (Reflect.get(globalThis, 'interceptorInjected') === true) return
 
 	const checkAndThrowRuntimeLastError = () => {
@@ -19,18 +19,15 @@ function injectPageWorldScripts() {
 		const pageWorldProviderSource = '[[pageWorldProviderSource]]'
 		const pageWorldProviderScriptPath = '[[pageWorldProviderScriptPath]]'
 		const providerRanAttribute = 'data-interceptor-provider-ran'
-		const extensions: readonly { readonly source: string, readonly scriptPath: string }[] = JSON.parse('[[pageWorldExtensionScripts]]')
-		for (const script of [{ source: pageWorldProviderSource, scriptPath: pageWorldProviderScriptPath }, ...extensions]) {
-			const inlineScript = document.createElement('script')
-			inlineScript.textContent = `document.currentScript.setAttribute('${ providerRanAttribute }', '');\n${ script.source }`
-			insertAndRemoveScript(inlineScript)
-			if (!inlineScript.hasAttribute(providerRanAttribute)) {
-				// Ordered external scripts preserve provider-before-extension initialization when Firefox falls back through page CSP.
-				const externalScript = document.createElement('script')
-				externalScript.async = false
-				externalScript.src = browser.runtime.getURL(script.scriptPath)
-				insertAndRemoveScript(externalScript)
-			}
+		const inlineScript = document.createElement('script')
+		inlineScript.textContent = `document.currentScript.setAttribute('${ providerRanAttribute }', '');\n${ pageWorldProviderSource }`
+		insertAndRemoveScript(inlineScript)
+		if (!inlineScript.hasAttribute(providerRanAttribute)) {
+			// A page CSP can block inline execution; load the same provider from its extension URL.
+			const externalScript = document.createElement('script')
+			externalScript.async = false
+			externalScript.src = browser.runtime.getURL(pageWorldProviderScriptPath)
+			insertAndRemoveScript(externalScript)
 		}
 		Reflect.set(globalThis, 'interceptorInjected', true)
 		checkAndThrowRuntimeLastError()
@@ -40,4 +37,4 @@ function injectPageWorldScripts() {
 	}
 }
 
-injectPageWorldScripts()
+injectPageWorldProvider()

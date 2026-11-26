@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
-import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker, pageWorldExtensionScriptsMarker } from '../../scripts/content-script-injection-markers.mts'
+import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker } from '../../scripts/content-script-injection-markers.mts'
 import { generateInpageArtifacts, inlineDocumentStartPageWorldProvider, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 import { bundlePageWorldProvider } from '../../build/bundler.mts'
 
@@ -16,13 +16,13 @@ const compileClassicScript = async (sourcePath: string) => ts.transpileModule(aw
 // Bundle each compatibility mode's provider with its shared policies exactly as the build does.
 const bundleProviderFromSource = async (metamaskCompatibilityMode: boolean) => await bundlePageWorldProvider(new URL('../../app/inpage/ts/inpage.ts', import.meta.url).pathname, metamaskCompatibilityMode, new URL('../../app/inpage/ts/inpageBootstrap.ts', import.meta.url).pathname)
 
-const generateArtifactsFromSources = async (extensions: readonly { readonly source: string, readonly scriptPath: string }[] = []) => {
+const generateArtifactsFromSources = async () => {
 	const pageWorldProviders = new Map([[false, await bundleProviderFromSource(false)], [true, await bundleProviderFromSource(true)]])
 	return generateInpageArtifacts(await compileClassicScript('../../app/inpage/ts/document_start.ts'), (metamaskCompatibilityMode) => {
 		const source = pageWorldProviders.get(metamaskCompatibilityMode)
 		if (source === undefined) throw new Error('Missing bundled page-world provider')
 		return source
-	}, extensions)
+	})
 }
 
 const getArtifact = (artifacts: Awaited<ReturnType<typeof generateArtifactsFromSources>>, path: string) => {
@@ -151,27 +151,10 @@ test('MV2 leaves injection retryable when bootstrap prerequisites are missing', 
 	assert.equal(errors.length, 1)
 })
 
-
-test('independent page extensions follow the core provider inline and through ordered CSP fallback', async () => {
-	const scriptPath = 'inpage/js/siteBehaviorBootstrap.js'
-	const source = 'window.extensionSawProvider = window.ethereum?.isInterceptor === true'
-	const artifacts = await generateArtifactsFromSources([{ scriptPath, source }])
-	for (const mode of [false, true]) {
-		const documentStart = getArtifact(artifacts, getManifestV2DocumentStartScriptPath(mode))
-		const inline = runDocumentStart(documentStart.source, { pageCspBlocksInlineScripts: false })
-		assert.equal(Reflect.get(inline.pageWindow, 'extensionSawProvider'), true)
-		assert.equal(inline.insertedScripts.length, 2)
-		const blocked = runDocumentStart(documentStart.source, { pageCspBlocksInlineScripts: true })
-		assert.deepEqual(blocked.queuedExternalScripts, [...getPageWorldScriptPaths(mode), scriptPath].map((file) => ({ src: `moz-extension://interceptor/${ file }`, async: false })))
-	}
-})
-
-
-test('script inlining does not reinterpret build markers contained in another script', async () => {
+test('script inlining preserves build-marker text inside the provider source', async () => {
 	const source = inlineDocumentStartPageWorldProvider(await compileClassicScript('../../app/inpage/ts/document_start.ts'), {
-		source: `window.providerMarker = ${ JSON.stringify(pageWorldExtensionScriptsMarker) }`, scriptPath: 'inpage/js/inpage.js',
-	}, [{ source: `window.extensionMarker = ${ JSON.stringify(pageWorldProviderSourceMarker) }`, scriptPath: 'inpage/js/siteBehaviorBootstrap.js' }])
+		source: `window.providerMarker = ${ JSON.stringify(pageWorldProviderSourceMarker) }`, scriptPath: 'inpage/js/inpage.js',
+	})
 	const result = runDocumentStart(source, { pageCspBlocksInlineScripts: false })
-	assert.equal(Reflect.get(result.pageWindow, 'providerMarker'), pageWorldExtensionScriptsMarker)
-	assert.equal(Reflect.get(result.pageWindow, 'extensionMarker'), pageWorldProviderSourceMarker)
+	assert.equal(Reflect.get(result.pageWindow, 'providerMarker'), pageWorldProviderSourceMarker)
 })
