@@ -15,7 +15,8 @@ const vendoredDependencyMirrorDirectoryName = '__dependencies__'
 const browserResolvedImports = {
 	'webextension-polyfill': path.join(nodeModulesDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
 } as const
-const externalRuntimeModules = ['webextension-polyfill'] as const
+// Re-bundles see the vendored relative import produced by the previous pass, so keep its resolved path external too.
+const externalRuntimeModules = ['webextension-polyfill', path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js')] as const
 const resolvedImportCache = new Map<string, string | undefined>()
 const packageJsonCache = new Map<string, PackageJson | undefined>()
 const resolutionConditionPriority = ['browser', 'import', 'default', 'module', 'require'] as const
@@ -461,18 +462,21 @@ type RuntimeBundleOptions = {
 	readonly outdir: string
 	readonly inpagePath: string
 	readonly documentStartPath: string
+	readonly inpageSourcePath?: string
+	readonly documentStartSourcePath?: string
 }
 
-// Generated provider and MV2 document-start variants are written under outdir and copied to root at their extension paths.
+// Keep marker-bearing inputs separate from generated runtime paths, so repeated bundles never consume their own output.
 export async function buildRuntimeEntrypoints(entrypoints: readonly string[], options: RuntimeBundleOptions): Promise<RuntimeEntrypointCopy[]> {
 	// Content-script entrypoints remain classic scripts; extension pages use module bundles.
 	const moduleEntrypoints = entrypoints.filter((entrypoint) => entrypoint !== options.inpagePath)
+	const sourcePath = (entrypoint: string) => entrypoint === options.documentStartPath ? options.documentStartSourcePath ?? entrypoint : entrypoint
 	if (moduleEntrypoints.length > 0) {
-		const buildResult = await Bun.build({ entrypoints: moduleEntrypoints, outdir: options.outdir, root: options.root, target: 'browser', format: 'esm', splitting: false, external: [...externalRuntimeModules] })
+		const buildResult = await Bun.build({ entrypoints: moduleEntrypoints.map(sourcePath), outdir: options.outdir, root: options.root, target: 'browser', format: 'esm', splitting: false, external: [...externalRuntimeModules] })
 		if (!buildResult.success) throw new Error(`Failed to bundle runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
 	}
 	const bundledEntrypoints = moduleEntrypoints.map((entrypointPath) => {
-		const relativeEntrypointPath = path.relative(options.root, entrypointPath).replace(/\.[cm]?[jt]sx?$/, '.js')
+		const relativeEntrypointPath = path.relative(options.root, sourcePath(entrypointPath)).replace(/\.[cm]?[jt]sx?$/, '.js')
 		const bundledEntrypointPath = path.join(options.outdir, relativeEntrypointPath)
 		if (!fs.existsSync(bundledEntrypointPath)) throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
 		return { bundledEntrypointPath, entrypointPath, requiresClassicSyntax: classicRuntimeEntrypointPaths.has(entrypointPath) }
@@ -482,7 +486,7 @@ export async function buildRuntimeEntrypoints(entrypoints: readonly string[], op
 	if (documentStart === undefined && !hasProvider) return bundledEntrypoints
 	if (documentStart === undefined || !hasProvider) throw new Error('The provider and document-start bundles are generated together.')
 	const pageWorldProviders = new Map<boolean, string>()
-	for (const metamaskCompatibilityMode of [false, true]) pageWorldProviders.set(metamaskCompatibilityMode, await bundlePageWorldProvider(options.inpagePath, metamaskCompatibilityMode))
+	for (const metamaskCompatibilityMode of [false, true]) pageWorldProviders.set(metamaskCompatibilityMode, await bundlePageWorldProvider(options.inpageSourcePath ?? options.inpagePath, metamaskCompatibilityMode))
 	// The MV2 document-start scripts embed the exact provider bytes that MV3 registers.
 	const generatedArtifacts = generateInpageArtifacts(fs.readFileSync(documentStart.bundledEntrypointPath, 'utf8'), (metamaskCompatibilityMode) => {
 		const source = pageWorldProviders.get(metamaskCompatibilityMode)
@@ -509,6 +513,8 @@ async function bundleRuntimeEntrypoints() {
 			outdir: bundledOutputDirectory,
 			inpagePath: inpageProviderPath,
 			documentStartPath: inpageDocumentStartPath,
+			inpageSourcePath: path.join(appDirectory, 'inpage', 'ts', 'inpage.ts'),
+			documentStartSourcePath: path.join(appDirectory, 'inpage', 'ts', 'document_start.ts'),
 		}))
 	} finally {
 		fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })

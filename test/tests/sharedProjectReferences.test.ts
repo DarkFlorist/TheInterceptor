@@ -21,6 +21,7 @@ function readProject(configFile: string) {
 test('the Docker build copies the complete TypeScript configuration graph used by its build scripts', () => {
 	const dockerfile = fs.readFileSync('Dockerfile', 'utf8')
 	const copiedRootFiles = new Set([...dockerfile.matchAll(/^COPY\s+(.+)\s+\/workspace\/\s*$/gmu)].flatMap((match) => (match[1] ?? '').split(/\s+/u).map((file) => file.replace(/^\.\//u, ''))))
+	assert.ok(copiedRootFiles.has('Dockerfile'), 'Docker-hosted tests must receive the Dockerfile they validate')
 	const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 	const scripts: Readonly<Record<string, unknown>> = packageJson.scripts
 	const pending: string[] = []

@@ -13,7 +13,7 @@ COPY ./patches/ /workspace/patches/
 WORKDIR /workspace
 RUN bun install --frozen-lockfile
 
-COPY tsconfig.json tsconfig-inpage.json tsconfig-shared.json tsconfig-app-build.json tsconfig-inpage-build.json /workspace/
+COPY Dockerfile tsconfig.json tsconfig-inpage.json tsconfig-shared.json tsconfig-app-build.json tsconfig-inpage-build.json /workspace/
 COPY app/*.png app/*.jpg app/*.json app/*.ico /workspace/app/
 COPY app/html/ /workspace/app/html/
 COPY app/html3/ /workspace/app/html3/
