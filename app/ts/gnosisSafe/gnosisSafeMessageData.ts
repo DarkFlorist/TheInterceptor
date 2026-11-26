@@ -14,14 +14,14 @@ function parseGnosisSafeTypedMessageFields(message: string) {
 	try {
 		return GnosisSafeTypedMessageFields.safeParse(JSON.parse(message))
 	} catch (error: unknown) {
-		// The 100000 character limit on Safe Apps messages still allows about 49000 nesting levels.
+		// The 100000 character limit on Gnosis Safe Apps messages still allows about 49000 nesting levels.
 		if (isStackOverflowError(error)) throw invalid(INVALID_GNOSIS_SAFE_TYPED_DATA_MESSAGE)
 		throw error
 	}
 }
 
 export function parseGnosisSafeTypedMessage(message: string) {
-	// Safe Apps permits omitting primaryType and EIP712Domain; normalize those before strict EIP-712 validation.
+	// Gnosis Safe Apps permits omitting primaryType and EIP712Domain; normalize those before strict EIP-712 validation.
 	if (!isJSON(message)) throw invalid('The Gnosis Safe typed message is not valid JSON.')
 	const input = parseGnosisSafeTypedMessageFields(message)
 	if (!input.success) throw invalid(INVALID_GNOSIS_SAFE_TYPED_DATA_MESSAGE)

@@ -38,7 +38,7 @@ export function getGnosisSafeUnsupportedFormedTransactionReason(transaction: Eth
 	return undefined
 }
 
-// Whether a request is one the Safe at activeAddress can make through execTransaction as the sender: a supported request shape whose `from`, or else the active address, is the active address. Whether activeAddress is a configured, supported Gnosis Safe is the caller's to check.
+// Whether a request is one the Gnosis Safe at activeAddress can make through execTransaction as the sender: a supported request shape whose `from`, or else the active address, is the active address. Whether activeAddress is a configured, supported Gnosis Safe is the caller's to check.
 export function isGnosisSafeExecutableRequestFromActiveAddress(transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
 	if (getGnosisSafeUnsupportedRequestReason(transactionParams) !== undefined) return false
 	// Already excluded as 'raw-transaction'; repeated so TypeScript narrows the request to eth_sendTransaction.

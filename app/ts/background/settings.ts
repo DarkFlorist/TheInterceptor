@@ -1,4 +1,4 @@
-import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import { createSettingsExport, type ExportedSettings, type Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
@@ -44,6 +44,10 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageVa
 	return await getStartupStorageValueOrDefault(await browser.storage.local.get(key), key, defaultValue)
 }
 
+export async function getWebsiteAccessFromStoredItems(storedItems: Readonly<Record<string, unknown>>): Promise<WebsiteAccessArray> {
+	return sanitizeWebsiteAccess(await getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []))
+}
+
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -60,7 +64,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccessFromStoredItems(storedItems))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
@@ -229,31 +233,32 @@ export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode:
 
 export const getGnosisSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const gnosisSafeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
-export const setGnosisSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(gnosisSafeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
+export const setGnosisSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => {
+	// Serialize comparison and write with imports so later selections win, while skipping no-op writes that Firefox announces as context changes.
+	await runSettingsStorageTransaction(async () => ({
+		writes: await getGnosisSafeAppsCompatibilityMode() === safeAppsCompatibilityMode ? [] : [gnosisSafeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode)],
+		result: undefined,
+	}))
+}
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
 	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
-	return {
-		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.6' as const,
-		exportedDate: exportDate,
-		settings: {
-			activeSimulationAddress: settings.activeSimulationAddress,
-			activeSigningSafeAddress: settings.activeSigningSafeAddress,
-			signingAddressPreferences,
-			openedPage: settings.openedPage,
-			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
-			websiteAccess: settings.websiteAccess,
-			rpcNetwork: settings.activeRpcNetwork,
-			simulationMode: settings.simulationMode,
-			addressBookEntries: await getUserAddressBookEntries(),
-			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
-			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-			safeAppsCompatibilityMode: await getGnosisSafeAppsCompatibilityMode(),
-		}
-	}
+	return createSettingsExport({
+		activeSimulationAddress: settings.activeSimulationAddress,
+		activeSigningSafeAddress: settings.activeSigningSafeAddress,
+		signingAddressPreferences,
+		openedPage: settings.openedPage,
+		useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
+		websiteAccess: settings.websiteAccess,
+		rpcNetwork: settings.activeRpcNetwork,
+		simulationMode: settings.simulationMode,
+		addressBookEntries: await getUserAddressBookEntries(),
+		useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
+		metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+		safeAppsCompatibilityMode: await getGnosisSafeAppsCompatibilityMode(),
+	}, exportDate)
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

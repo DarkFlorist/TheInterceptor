@@ -6,10 +6,15 @@ export type PopupMessageDomain = 'address-book' | 'confirmation' | 'diagnostics'
 type PopupMessageProtocolEntry = {
 	readonly domain: PopupMessageDomain
 	readonly legacyWireName?: true
+	// Content scripts share runtime.sendMessage with extension pages; flagged methods are rejected unless an extension page sent them.
+	readonly extensionPageSenderOnly?: true
 }
+
+export const NATIVE_GNOSIS_SAFE_APPS_REQUEST = 'popup_nativeGnosisSafeAppsRequest'
 
 // Wire names cannot be normalized without coordinating already-open extension pages. Mark historical spellings explicitly so new handlers do not copy those conventions.
 export const popupMessageProtocol = {
+	[NATIVE_GNOSIS_SAFE_APPS_REQUEST]: { domain: 'safe', extensionPageSenderOnly: true },
 	popup_confirmDialog: { domain: 'confirmation' },
 	popup_changeActiveAddress: { domain: 'home' },
 	popup_modifyMakeMeRich: { domain: 'home' },
@@ -39,9 +44,10 @@ export const popupMessageProtocol = {
 	popup_refreshInterceptorAccessMetadata: { domain: 'website-access' },
 	popup_interceptorAccessChangeAddress: { domain: 'website-access' },
 	popup_interceptorAccessRefresh: { domain: 'website-access' },
-	popup_ChangeSettings: { domain: 'settings', legacyWireName: true },
+	// Its compatibility-mode fields change which scripts are registered on websites (including the Gnosis Safe Apps host), so only the Settings page may send it.
+	popup_ChangeSettings: { domain: 'settings', legacyWireName: true, extensionPageSenderOnly: true },
 	popup_openSettings: { domain: 'navigation' },
-	popup_import_settings: { domain: 'settings', legacyWireName: true },
+	popup_import_settings: { domain: 'settings', legacyWireName: true, extensionPageSenderOnly: true },
 	popup_get_export_settings: { domain: 'settings', legacyWireName: true },
 	popup_set_rpc_list: { domain: 'settings', legacyWireName: true },
 	popup_simulateGovernanceContractExecution: { domain: 'simulation' },
@@ -77,10 +83,16 @@ export const popupMessageProtocol = {
 	popup_requestSimulationMetadata: { domain: 'simulation' },
 	popup_requestIdentifyAddress: { domain: 'address-book' },
 	popup_requestSafeContractState: { domain: 'safe' },
+	popup_openGnosisSafeApp: { domain: 'safe', extensionPageSenderOnly: true },
 	popup_isMainPopupWindowOpen: { domain: 'navigation' },
 	popup_isSimulationVisualizerOpen: { domain: 'navigation' },
 } satisfies Record<PopupMessage['method'], PopupMessageProtocolEntry>
 
 export const getPopupMessageDomain = (method: PopupMessage['method']) => popupMessageProtocol[method].domain
+
+export function requiresExtensionPageSender(method: PopupMessage['method']) {
+	const entry: PopupMessageProtocolEntry = popupMessageProtocol[method]
+	return entry.extensionPageSenderOnly === true
+}
 
 export const isPopupMessageMethod = (value: string): value is PopupMessage['method'] => hasOwnKey(popupMessageProtocol, value)

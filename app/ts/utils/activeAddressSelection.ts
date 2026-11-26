@@ -94,6 +94,11 @@ export function isActiveSigningGnosisSafe(activeAddress: AddressBookEntry | unde
 	return resolveSigningGnosisSafe(configuredSafeAddress, activeChainId, signerAccounts, activeAddresses) !== undefined
 }
 
+// The selected simulation address is independent of the selected signing Gnosis Safe. Simulation never requires a connected owner wallet.
+export function getConfiguredGnosisSafeAddressForMode(settings: { readonly simulationMode: boolean, readonly activeSimulationAddress?: bigint, readonly activeSigningSafeAddress?: bigint }) {
+	return settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+}
+
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {
 	const resolvedAddress = address === 'signer' ? signerAccounts[0] : address
 	return simulationMode
@@ -157,4 +162,19 @@ export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', 
 	throw new Error(simulationMode
 		? 'The selected address is not available for simulation.'
 		: 'The selected address is not available for the current signing wallet.')
+}
+
+type ConfiguredGnosisSafeMode = Parameters<typeof getConfiguredGnosisSafeAddressForMode>[0] & { readonly activeRpcNetwork: { readonly chainId: bigint } }
+
+// Registration needs a chain-pinned configured entry; live admission adds signer ownership below.
+export function getConfiguredGnosisSafeEntryForMode(settings: ConfiguredGnosisSafeMode, entries: AddressBookEntries) {
+	const address = getConfiguredGnosisSafeAddressForMode(settings)
+	const entry = entries.find((entry) => entry.type === 'safe' && entry.address === address && entry.chainId === settings.activeRpcNetwork.chainId)
+	return entry?.type === 'safe' ? entry : undefined
+}
+
+export function resolveConfiguredGnosisSafeForMode(settings: ConfiguredGnosisSafeMode, entries: AddressBookEntries, signerAccounts: readonly bigint[]) {
+	const entry = getConfiguredGnosisSafeEntryForMode(settings, entries)
+	if (entry === undefined || (!settings.simulationMode && !isActiveSigningGnosisSafe(entry, false, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerAccounts, entries))) return undefined
+	return entry
 }

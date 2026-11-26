@@ -1,3 +1,4 @@
+import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { beforeEach, describe, test } from 'bun:test'
@@ -114,6 +115,8 @@ const browserMock = createBrowserStorageMock()
 const settingsModulePromise = Promise.all([import('../../app/ts/background/settings.js'), import('../../app/ts/background/settingsImport.js')]).then(([settingsModule, settingsImportModule]) => ({
 	...settingsModule,
 	...settingsImportModule,
+	readRetiredHostingOriginsStorage: async () => (await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins,
+	seedRetiredHostingOriginsStorage: async (origins: readonly string[]) => await browser.storage.local.set({ safeAppsHostOrigins: origins }),
 	setMetamaskCompatibilityMode: settingsModule.persistMetamaskCompatibilityMode,
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
@@ -271,7 +274,30 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Gnosis Safe settings in version 1.6 exports', async () => {
+	test('imports an original version 1.6 JSON export without hosting origins', async () => {
+		const { exportSettingsAndAddressBook, getGnosisSafeAppsCompatibilityMode, readRetiredHostingOriginsStorage, importSettingsAndAddressBook, setGnosisSafeAppsCompatibilityMode, seedRetiredHostingOriginsStorage } = await settingsModulePromise
+		await setGnosisSafeAppsCompatibilityMode(true)
+		const exported = await exportSettingsAndAddressBook()
+		if (exported.version !== '1.7') throw new Error('Expected current settings export version')
+		const legacy = { ...exported, version: '1.6' }
+		const originalJson = JSON.stringify(legacy, (_key, value: unknown) => typeof value === 'bigint' ? `0x${ value.toString(16) }` : value)
+		await seedRetiredHostingOriginsStorage(['https://old-selection.example'])
+		await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(originalJson)))
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
+		assert.deepEqual(await readRetiredHostingOriginsStorage(), ['https://old-selection.example'])
+	})
+
+	test('exports ignore retired hosting origins without reading, repairing or rewriting the raw legacy value', async () => {
+		const { exportSettingsAndAddressBook } = await settingsModulePromise
+		for (const stored of ['not-a-list', ['https://*.invalid.example'], ['https://valid.example'], { arbitrary: 'legacy data' }]) {
+			await browser.storage.local.set({ safeAppsHostOrigins: stored })
+			const exported = await exportSettingsAndAddressBook()
+			assert.equal('safeAppsHostOrigins' in exported.settings, false)
+			assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, stored)
+		}
+	})
+
+	test('round-trips Gnosis Safe settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getGnosisSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setGnosisSafeAppsCompatibilityMode } = await settingsModulePromise
@@ -293,19 +319,22 @@ describe('settings import', () => {
 		})
 		await rememberSigningAddressPreference({ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId })
 		await setGnosisSafeAppsCompatibilityMode(true)
+		const { seedRetiredHostingOriginsStorage, readRetiredHostingOriginsStorage } = await settingsModulePromise
+		await seedRetiredHostingOriginsStorage(['https://safe-app.example', 'https://another.example:8443'])
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
 
 		browserMock.reset()
-		await importSettingsAndAddressBook(exportedSettings)
+		await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(JSON.stringify(ExportedSettings.serialize(exportedSettings)))))
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
 		assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
+		assert.equal(await readRetiredHostingOriginsStorage(), undefined)
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
 		const previousTabState = await getTabState(1)
 		const transition = await getSigningAddressSelectionTransition(importedSettings, previousTabState, {
@@ -394,13 +423,15 @@ describe('settings import', () => {
 	})
 
 	test('keeps experimental Gnosis Safe Apps compatibility disabled for legacy imports', async () => {
-		const { getGnosisSafeAppsCompatibilityMode, importSettingsAndAddressBook, setGnosisSafeAppsCompatibilityMode } = await settingsModulePromise
+		const { getGnosisSafeAppsCompatibilityMode, readRetiredHostingOriginsStorage, importSettingsAndAddressBook, setGnosisSafeAppsCompatibilityMode, seedRetiredHostingOriginsStorage } = await settingsModulePromise
 		assert.equal(await getGnosisSafeAppsCompatibilityMode(), false)
 		await setGnosisSafeAppsCompatibilityMode(true)
+		await seedRetiredHostingOriginsStorage(['https://legacy.example'])
 
 		await importSettingsAndAddressBook(buildVersion14Import(false, false))
 
 		assert.equal(await getGnosisSafeAppsCompatibilityMode(), false)
+		assert.deepEqual(await readRetiredHostingOriginsStorage(), ['https://legacy.example'])
 	})
 
 	test('serializes legacy preference clearing after an in-flight preference write', async () => {
@@ -544,8 +575,10 @@ describe('settings import', () => {
 
 	const preImportSigningPreference = { signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
 
+	const preImportSafeAppsHostOrigins = ['https://pre-import.example']
+
 	const storePreImportSettings = async () => {
-		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setGnosisSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
+		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setGnosisSafeAppsCompatibilityMode, seedRetiredHostingOriginsStorage, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: testRpcNetwork, activeSimulationAddress: 0x9292929292929292929292929292929292929292n, activeSigningAddress: 0x9393939393939393939393939393939393939393n, activeSigningSafeAddress: 0x9494949494949494949494949494949494949494n })
@@ -554,6 +587,7 @@ describe('settings import', () => {
 		await setPage({ page: 'Home' })
 		await setUseTabsInsteadOfPopup(false)
 		await setGnosisSafeAppsCompatibilityMode(true)
+		await seedRetiredHostingOriginsStorage(preImportSafeAppsHostOrigins)
 		await persistMetamaskCompatibilityMode(true)
 	}
 
@@ -639,9 +673,16 @@ describe('settings import', () => {
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
 			} },
+			{ exportedSettings: { ...version15Import, version: '1.6', settings: { ...version15Import.settings, safeAppsCompatibilityMode: false } }, assertImportedValues: async () => {
+				assert.deepEqual(await settings.getSigningAddressPreferences(), [version15SigningPreference])
+				assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), false)
+				assert.deepEqual(await settings.readRetiredHostingOriginsStorage(), preImportSafeAppsHostOrigins, 'version 1.6 has no hosting selection, so the stored one is kept')
+				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
+			} },
 			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 				assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), false)
+				assert.deepEqual(await settings.readRetiredHostingOriginsStorage(), preImportSafeAppsHostOrigins, 'A backup without retired list data preserves the existing legacy data')
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 			} },
 		]
@@ -690,7 +731,7 @@ describe('settings import', () => {
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
-		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
+		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
 			settings: {
@@ -791,4 +832,84 @@ describe('settings import', () => {
 			assert.deepEqual(modulesNamingKey.filter((path) => !owners.includes(path)), [], `${ key } is named outside its owner ${ owners.join('') }`)
 		}
 	})
+})
+
+
+test('all historical schemas normalize through their own fields and round-trip without borrowing newer capabilities', async () => {
+	const { defaultActiveAddresses, defaultRpcs, exportSettingsAndAddressBook, getPage, getSettings, getGnosisSafeAppsCompatibilityMode, readRetiredHostingOriginsStorage, getMetamaskCompatibilityMode, importSettingsAndAddressBook, setPage, setMetamaskCompatibilityMode, setGnosisSafeAppsCompatibilityMode, seedRetiredHostingOriginsStorage } = await settingsModulePromise
+	browserMock.reset()
+	const exported = await exportSettingsAndAddressBook()
+	const serialized: unknown = ExportedSettings.serialize(exported)
+	if (typeof serialized !== 'object' || serialized === null || !('settings' in serialized) || typeof serialized.settings !== 'object' || serialized.settings === null) throw new Error('Missing serialized settings')
+	const source = {
+		...serialized.settings,
+		activeChain: '0x1',
+		addressInfos: [],
+		contacts: [],
+		activeSimulationAddress: '0x1111111111111111111111111111111111111111',
+		activeSigningSafeAddress: '0x2222222222222222222222222222222222222222',
+		rpcNetwork: { ...testRpcNetwork, chainId: '0x1' },
+		openedPage: { page: 'Settings' },
+		metamaskCompatibilityMode: false,
+		safeAppsCompatibilityMode: true,
+		safeAppsHostOrigins: ['https://selected.example'],
+	}
+	for (const { version, modern, page, compatibility } of [
+		{ version: '1.0', modern: false, page: false, compatibility: false },
+		{ version: '1.1', modern: false, page: false, compatibility: false },
+		{ version: '1.2', modern: false, page: false, compatibility: false },
+		{ version: '1.3', modern: false, page: true, compatibility: false },
+		{ version: '1.4', modern: false, page: true, compatibility: false },
+		{ version: '1.5', modern: true, page: true, compatibility: false },
+		{ version: '1.6', modern: true, page: true, compatibility: true },
+		{ version: '1.7', modern: true, page: true, compatibility: true },
+	]) {
+		browserMock.reset()
+		await setPage({ page: 'Home' })
+		await setMetamaskCompatibilityMode(true)
+		await setGnosisSafeAppsCompatibilityMode(true)
+		await seedRetiredHostingOriginsStorage(['https://previous.example'])
+		// Historical codecs discard fields belonging to newer versions before capability-based normalization.
+		const parsed = ExportedSettings.parse({ name: exported.name, version, exportedDate: exported.exportedDate, settings: source })
+		assert.deepEqual(ExportedSettings.parse(ExportedSettings.serialize(parsed)), parsed)
+		await importSettingsAndAddressBook(parsed)
+		const settings = await getSettings()
+		assert.equal(settings.activeSimulationAddress, modern ? 0x1111111111111111111111111111111111111111n : defaultActiveAddresses[0]?.address)
+		assert.equal(settings.activeSigningSafeAddress, modern ? 0x2222222222222222222222222222222222222222n : undefined)
+		assert.deepEqual(settings.activeRpcNetwork, version === '1.0' ? defaultRpcs[0] : testRpcNetwork)
+		assert.deepEqual(await getPage(), { page: page ? 'Settings' : 'Home' })
+		assert.equal(await getMetamaskCompatibilityMode(), version === '1.0' || version === '1.1')
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), compatibility)
+		assert.deepEqual(await readRetiredHostingOriginsStorage(), ['https://previous.example'])
+	}
+})
+
+test('new settings exports omit the retired manual-host field and still round-trip', async () => {
+	browserMock.reset()
+	const { exportSettingsAndAddressBook } = await settingsModulePromise
+	const { CurrentExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	const exported = await exportSettingsAndAddressBook()
+	assert.equal('safeAppsHostOrigins' in exported.settings, false)
+	const parsed = ExportedSettings.parse(JSON.parse(JSON.stringify(serialize(CurrentExportedSettings, exported))))
+	assert.equal('safeAppsHostOrigins' in parsed.settings, false)
+})
+
+test('imports discard retired hosting fields of any shape without replacing inert legacy storage', async () => {
+	browserMock.reset()
+	const { CurrentExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await settingsModulePromise
+	const exported = await exportSettingsAndAddressBook()
+	if (exported.version !== '1.7') throw new Error('Expected current settings export version')
+	const serialized = serialize(CurrentExportedSettings, exported)
+	const existing = ['https://inert-existing.example']
+	await browser.storage.local.set({ safeAppsHostOrigins: existing })
+	browserMock.takeSetCalls()
+	for (const legacyInput of [['https://historical.example'], 'not-a-list', { malformed: true }]) {
+		const parsed = ExportedSettings.parse({ ...serialized, settings: { ...serialized.settings, safeAppsHostOrigins: legacyInput } })
+		assert.equal('safeAppsHostOrigins' in parsed.settings, false)
+		await importSettingsAndAddressBook(parsed)
+		assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, existing)
+		assert.equal('safeAppsHostOrigins' in (await exportSettingsAndAddressBook()).settings, false)
+		assert.equal(browserMock.takeSetCalls().some((write) => 'safeAppsHostOrigins' in write), false)
+	}
 })

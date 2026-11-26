@@ -414,7 +414,7 @@ describe('import simulation stack', () => {
 			assert.equal(visualized.quarantineReasons.some((reason) => reason.includes('signature was imported')), false)
 			const plainMessage = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), {
 				...operation.signedMessageTransaction,
-				// A Safe's declared account can differ from the owner used to fake its signature.
+				// A Gnosis Safe's declared account can differ from the owner used to fake its signature.
 				fakeSignedFor: VITALIK_ADDRESS,
 				originalRequestParameters: { method: 'personal_sign', params: ['0x6869', signer] },
 			}, rpcEntry)

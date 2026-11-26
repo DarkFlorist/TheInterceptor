@@ -350,7 +350,7 @@ describe('popup settings changes', () => {
 		installBrowserMock()
 		const { getSettings, changeSimulationMode } = await loadModules()
 		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
-		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+		const { createSimulationServicesOwner } = await import('../../app/ts/background/simulationServicesOwner.js')
 		const initial = (await getSettings()).activeRpcNetwork
 		if (initial.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const selected = { ...initial, name: 'Selected twin', primary: false, currencyTicker: 'SELECTED' }
@@ -373,7 +373,7 @@ describe('popup settings changes', () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { getSettings, changeActiveAddressAndChain } = await loadModules()
 		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
-		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+		const { createSimulationServicesOwner } = await import('../../app/ts/background/simulationServicesOwner.js')
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
@@ -529,7 +529,7 @@ describe('popup settings changes', () => {
 				assert.deepEqual(await getRpcList(), originalRpcList)
 				if (outcome === 'safe') {
 					assert.equal(messages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
-					assert.ok(!reply.ok && reply.message.includes('Gnosis Safe'))
+					assert.ok(!reply.ok && reply.message.includes('Safe'))
 				}
 			}
 		})

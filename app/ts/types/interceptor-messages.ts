@@ -1,4 +1,5 @@
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
+import { NATIVE_GNOSIS_SAFE_APPS_REQUEST } from './popupMessageProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList, ImportSettingsReply } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
@@ -1054,6 +1055,7 @@ const MessageToPopupPayloadRuntype: funtypes.Codec<MessageToPopupPayload> = funt
 export const MessageToPopupPayload = MessageToPopupPayloadRuntype
 
 const PopupMessageRuntype = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal(NATIVE_GNOSIS_SAFE_APPS_REQUEST) }).And(funtypes.ReadonlyPartial({ data: funtypes.Unknown })),
 	PopupMessageReplyRequests,
 	TransactionConfirmation,
 	RemoveTransaction,

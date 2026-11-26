@@ -40,7 +40,7 @@ test('delegate proposals require the exact deployed Gnosis Safe library bytecode
 
 test('SignMessageLib uses the canonical bytes selector and dynamic argument layout', () => {
 	const digest = '12'.repeat(32)
-	// Independent ABI vector for the v1.4.1 contract cited beside SAFE_SIGN_MESSAGE_ABI: selector, offset, byte length, payload.
+	// Independent ABI vector for the v1.4.1 contract cited beside GNOSIS_SAFE_SIGN_MESSAGE_ABI: selector, offset, byte length, payload.
 	const expected = '0x85a5affe' + '0'.repeat(62) + '20' + '0'.repeat(62) + '20' + digest
 	assert.equal(encodeFunctionCall(GNOSIS_SAFE_SIGN_MESSAGE_ABI, 'signMessage', [`0x${ digest }`]), expected)
 	const proposal = createGnosisSafeTx(1n, 123n, { to: GNOSIS_SAFE_SIGN_MESSAGE_LIB, operation: 1n, value: 0n, input: stringToUint8Array(expected) }, 7n)

@@ -19,7 +19,7 @@ const GnosisSafeBalances = funtypes.ReadonlyObject({
 	})),
 })
 
-// The SDK expects indexed token balances and fiat values from the Safe gateway, not only the native RPC balance.
+// The SDK expects indexed token balances and fiat values from the Gnosis Safe gateway, not only the native RPC balance.
 export async function fetchGnosisSafeAppsBalances(chainId: bigint, safeAddress: bigint, currency: string) {
 	const result = await requestGnosisSafeAppsGateway(`chains/${ chainId.toString() }/safes/${ addressString(safeAddress) }/balances/${ encodeURIComponent(currency) }`, 'balance')
 	const balances = GnosisSafeBalances.safeParse(result)

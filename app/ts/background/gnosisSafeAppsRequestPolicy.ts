@@ -9,10 +9,11 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { GnosisSafeContractState } from '../gnosisSafe/gnosisSafeCore.js'
 import { JsonValue, type GnosisSafeAppsRequestCommand } from '../types/gnosisSafeApps.js'
 
-export type GnosisSafeAppsRequestServices = {
-	readonly messages?: GnosisSafeAppsMessageServices
-	readonly getBalances?: (currency: string) => Promise<JsonValue>
-	readonly getTransaction?: (safeTxHash: string) => Promise<JsonValue>
+export type GnosisSafeAppsRequestServices = { readonly mode: 'simulation' } | {
+	readonly mode: 'signing'
+	readonly messages: GnosisSafeAppsMessageServices
+	readonly getBalances: (currency: string) => Promise<JsonValue>
+	readonly getTransaction: (safeTxHash: string) => Promise<JsonValue>
 }
 
 export type GnosisSafeAppsChainInfo = funtypes.Static<typeof GnosisSafeAppsChainInfo>
@@ -34,6 +35,7 @@ const GnosisSafeTransaction = funtypes.ReadonlyObject({
 	data: funtypes.String,
 }).And(funtypes.ReadonlyPartial({ operation: funtypes.Number }))
 const GnosisSafeTransactionOptions = funtypes.ReadonlyPartial({ safeTxGas: funtypes.Number })
+const gnosisSafeTransactionOptionKeys = new Set(Object.keys(GnosisSafeTransactionOptions.fields))
 const GnosisSafeSignMessageParams = funtypes.ReadonlyObject({ message: funtypes.String.withConstraint((value) => value.length <= 100_000) })
 const GnosisSafeSubmitMessageParams = GnosisSafeSignMessageParams.And(funtypes.ReadonlyObject({ signature: funtypes.String.withConstraint((value) => /^0x[0-9a-f]{130}$/i.test(value)), safeAddress: funtypes.String, chainId: funtypes.String })).And(funtypes.ReadonlyPartial({ isTypedData: funtypes.Boolean }))
 const GnosisSafeTransactionLookupParams = funtypes.ReadonlyObject({ safeTxHash: funtypes.String.withConstraint((value) => /^0x[0-9a-f]{64}$/i.test(value)) })
@@ -79,9 +81,11 @@ function normalizeGnosisSafeTransactionOptions(value: unknown) {
 	const { method, params } = value
 	if (method !== 'sendTransactions' || !isRecord(params) || Array.isArray(params)) return value
 	const { params: options, ...transactionParams } = params
-	if (options !== undefined) return value
-	// The SDK includes params: undefined when options are omitted; Firefox preserves it during structured cloning.
-	return { ...value, params: transactionParams }
+	// Firefox preserves omitted optional SDK fields during structured cloning; Chrome's JSON messaging omits them. Normalize only the known SDK option, retaining strict validation for every other undefined/non-JSON value.
+	if (options === undefined) return { ...value, params: transactionParams }
+	if (!isRecord(options) || Array.isArray(options)) return value
+	const definedOptions = Object.fromEntries(Object.entries(options).filter(([key, field]) => field !== undefined || !gnosisSafeTransactionOptionKeys.has(key)))
+	return { ...value, params: { ...transactionParams, params: definedOptions } }
 }
 
 function parseGnosisSafeAppsRequest(value: unknown): funtypes.Static<typeof GnosisSafeAppsRequest> {
@@ -163,9 +167,10 @@ export function getGnosisSafeAppsChainInfo(rpcNetwork: RpcNetwork): GnosisSafeAp
 	}
 }
 
-export async function getGnosisSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getGnosisSafeContractState: () => Promise<GnosisSafeContractState>, services?: GnosisSafeAppsRequestServices): Promise<GnosisSafeAppsRequestCommand> {
+export async function getGnosisSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getGnosisSafeContractState: () => Promise<GnosisSafeContractState>, services: GnosisSafeAppsRequestServices): Promise<GnosisSafeAppsRequestCommand> {
 	const request = parseGnosisSafeAppsRequest(value)
 	const offChainSigning = request.offChainSigning ?? true
+	if (services.mode === 'simulation' && (request.method === 'signMessage' || request.method === 'signTypedMessage') && offChainSigning) throw gnosisSafeAppsPolicyError('Off-chain Gnosis Safe message services are unavailable in simulation mode. Disable off-chain signing in the app to simulate an on-chain message approval.')
 	const safeAddress = addressString(activeSafeAddress)
 	const chainInfo = getGnosisSafeAppsChainInfo(rpcNetwork)
 	switch (request.method) {
@@ -191,26 +196,26 @@ export async function getGnosisSafeAppsRequestCommand(value: unknown, websiteOri
 			return { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, JSON.stringify(typedData)], safeRequestContext: { message: { text: message, isTypedData: true } }, mapResult: 'safeMessage', message, isTypedData: true, safeAddress, chainId: rpcNetwork.chainId.toString() }
 		}
 		case 'submitOffChainMessage': {
+			if (services.mode === 'simulation') throw gnosisSafeAppsPolicyError('Off-chain Gnosis Safe message services are unavailable in simulation mode. Disable off-chain signing in the app to simulate an on-chain message approval.')
 			const params = GnosisSafeSubmitMessageParams.safeParse(request.params)
 			if (!params.success || params.value.safeAddress !== safeAddress || params.value.chainId !== rpcNetwork.chainId.toString()) throw gnosisSafeAppsPolicyError('The signed Gnosis Safe message account or chain changed. Request the message again.')
-			if (services?.messages === undefined) throw gnosisSafeAppsPolicyError('Gnosis Safe message services are unavailable.')
 			return { kind: 'result', value: await services.messages.submit(params.value.message, params.value.signature, params.value.isTypedData) }
 		}
 		case 'getOffChainSignature': {
+			if (services.mode === 'simulation') throw gnosisSafeAppsPolicyError('Off-chain Gnosis Safe message services are unavailable in simulation mode. Disable off-chain signing in the app to simulate an on-chain message approval.')
 			if (typeof request.params !== 'string' || !/^0x[0-9a-f]{64}$/i.test(request.params)) throw gnosisSafeAppsPolicyError('Gnosis Safe Apps getOffChainSignature requires a message hash.')
-			if (services?.messages === undefined) throw gnosisSafeAppsPolicyError('Gnosis Safe message services are unavailable.')
 			return { kind: 'result', value: await services.messages.getSignature(request.params.toLowerCase()) }
 		}
 		case 'getTxBySafeTxHash': {
 			const params = GnosisSafeTransactionLookupParams.safeParse(request.params)
 			if (!params.success) throw gnosisSafeAppsPolicyError('Gnosis Safe Apps getTxBySafeTxHash requires a 32-byte Gnosis Safe transaction hash prefixed with 0x.')
-			if (services?.getTransaction === undefined) throw gnosisSafeAppsPolicyError('Gnosis Safe transaction services are unavailable.')
+			if (services.mode === 'simulation') throw gnosisSafeAppsPolicyError('Gnosis Safe transaction services are unavailable in simulation mode.')
 			return { kind: 'result', value: await services.getTransaction(params.value.safeTxHash.toLowerCase()) }
 		}
 		case 'getSafeBalances': {
 			const params = GnosisSafeBalanceParams.safeParse(request.params === undefined ? {} : request.params)
 			if (!params.success || (params.value.currency !== undefined && !/^[a-zA-Z]{3,10}$/.test(params.value.currency))) throw gnosisSafeAppsPolicyError('Gnosis Safe Apps balance currency must be a fiat currency code, such as usd or eur.')
-			if (services?.getBalances === undefined) throw gnosisSafeAppsPolicyError('Gnosis Safe balance services are unavailable.')
+			if (services.mode === 'simulation') throw gnosisSafeAppsPolicyError('Gnosis Safe balance services are unavailable in simulation mode.')
 			return { kind: 'result', value: await services.getBalances(params.value.currency?.toLowerCase() ?? 'usd') }
 		}
 		case 'wallet_getPermissions': return { kind: 'result', value: [] }
@@ -230,13 +235,13 @@ export async function getGnosisSafeAppsRequestCommand(value: unknown, websiteOri
 			}
 			const rpcCall = parseRpcCall(request.params)
 			if (rpcCall.method === 'wallet_getPermissions' || rpcCall.method === 'wallet_requestPermissions') {
-				return await getGnosisSafeAppsRequestCommand({ method: rpcCall.method, params: rpcCall.params }, websiteOrigin, activeSafeAddress, rpcNetwork, getGnosisSafeContractState)
+				return await getGnosisSafeAppsRequestCommand({ method: rpcCall.method, params: rpcCall.params }, websiteOrigin, activeSafeAddress, rpcNetwork, getGnosisSafeContractState, services)
 			}
 			return { kind: 'ethereumRequest', ...rpcCall, mapResult: 'passthrough' }
 		}
 		case 'sendTransactions': {
 			const { transaction, batch } = parseGnosisSafeTransaction(request.params, safeAddress)
-			return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [transaction], ...(batch ? { safeRequestContext: { operation: 1 as const } } : {}), mapResult: 'safeTxHash' }
+			return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [transaction], safeRequestContext: { operation: batch ? 1 : 0 }, mapResult: 'safeTxHash' }
 		}
 		default: throw gnosisSafeAppsPolicyError(`Unsupported Gnosis Safe Apps method: ${ request.method }.`)
 	}

@@ -4,7 +4,7 @@ import type { ChainChangeConfirmation, FetchSimulationStackRequestConfirmation }
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { InterceptedRequest, UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 import type { SimulationStackSnapshot } from '../../app/ts/background/windows/fetchSimulationStack.js'
-import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner } from '../../app/ts/background/simulationServicesOwner.js'
 
 const storageState: Record<string, unknown> = {}
 const openWindows = new Set<number>()

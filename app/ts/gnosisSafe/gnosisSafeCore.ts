@@ -153,28 +153,31 @@ export function assertGnosisSafeContractStateUnchanged(reviewedState: GnosisSafe
 	}
 }
 
-// The one read of a Safe's owners and threshold, for every path that needs them. The calls and their decoding are separate so a caller can run them with its other reads and still decode in its own order.
-const callGnosisSafeOwnership = async (ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint) => await Promise.all([
-	callGnosisSafe(ethereum, safeAddress, encodeFunctionCall(GNOSIS_SAFE_ABI, 'getOwners', []), blockNumber),
-	callGnosisSafe(ethereum, safeAddress, encodeFunctionCall(GNOSIS_SAFE_ABI, 'getThreshold', []), blockNumber),
-])
+// The one read of a Gnosis Safe's owners and threshold, for every path that needs them. The calls and their decoding are separate so a caller can run them with its other reads and still decode in its own order.
+const gnosisSafeOwnershipCalldata = (): readonly [Hex, Hex] => [encodeFunctionCall(GNOSIS_SAFE_ABI, 'getOwners', []), encodeFunctionCall(GNOSIS_SAFE_ABI, 'getThreshold', [])]
+
+const callGnosisSafeOwnership = async (ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint) => {
+	const [owners, threshold] = gnosisSafeOwnershipCalldata()
+	return await Promise.all([callGnosisSafe(ethereum, safeAddress, owners, blockNumber), callGnosisSafe(ethereum, safeAddress, threshold, blockNumber)])
+}
 
 const decodeGnosisSafeOwnership = ([ownersResult, thresholdResult]: Awaited<ReturnType<typeof callGnosisSafeOwnership>>) => ({
 	owners: decodeFunctionOutput(GNOSIS_SAFE_ABI, 'getOwners', ownersResult).map((owner) => BigInt(owner)),
 	threshold: decodeFunctionOutput(GNOSIS_SAFE_ABI, 'getThreshold', thresholdResult),
 })
 
-export async function getGnosisSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<GnosisSafeContractState> {
+export async function getGnosisSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint, readMany = (inputs: readonly Hex[]) => Promise.all(inputs.map((input) => callGnosisSafe(ethereum, safeAddress, input, blockNumber)))): Promise<GnosisSafeContractState> {
 	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
 	if (code.length === 0) throw createGnosisSafeContractValidationFailure('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
-	const [versionResult, nonceResult, ownershipResults] = await Promise.all([
-		callGnosisSafe(ethereum, safeAddress, encodeFunctionCall(GNOSIS_SAFE_ABI, 'VERSION', []), blockNumber),
-		callGnosisSafe(ethereum, safeAddress, encodeFunctionCall(GNOSIS_SAFE_ABI, 'nonce', []), blockNumber),
-		callGnosisSafeOwnership(ethereum, safeAddress, blockNumber),
+	const [versionResult, nonceResult, ownersResult, thresholdResult, ...extraResults] = await readMany([
+		encodeFunctionCall(GNOSIS_SAFE_ABI, 'VERSION', []),
+		encodeFunctionCall(GNOSIS_SAFE_ABI, 'nonce', []),
+		...gnosisSafeOwnershipCalldata(),
 	])
+	if (versionResult === undefined || nonceResult === undefined || ownersResult === undefined || thresholdResult === undefined || extraResults.length !== 0) throw new Error('Invalid Gnosis Safe metadata batch response length.')
 	const version = decodeFunctionOutput(GNOSIS_SAFE_ABI, 'VERSION', versionResult)
 	const nonce = decodeFunctionOutput(GNOSIS_SAFE_ABI, 'nonce', nonceResult)
-	const { owners, threshold } = decodeGnosisSafeOwnership(ownershipResults)
+	const { owners, threshold } = decodeGnosisSafeOwnership([ownersResult, thresholdResult])
 	if (!SUPPORTED_GNOSIS_SAFE_VERSIONS.some((supportedVersion) => supportedVersion === version)) {
 		throw createGnosisSafeContractValidationFailure(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_GNOSIS_SAFE_VERSIONS.join(', ') }.`)
 	}
@@ -190,16 +193,16 @@ export async function getGnosisSafeContractSnapshot(ethereum: EthereumClientServ
 	return { blockNumber, state: await getGnosisSafeContractStateAtBlock(ethereum, safeAddress, blockNumber) }
 }
 
-// A page's SafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. The active address counts as signer when it is the named Safe, because the user chose that Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
+// A page's GnosisSafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Gnosis Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. The active address counts as signer when it is the named Gnosis Safe, because the user chose that Gnosis Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
 export async function assertGnosisSafeTxPreviewAllowed(ethereum: EthereumClientService, safeAddress: EthereumAddress, activeAddress: EthereumAddress, messageChainId: bigint | undefined) {
 	if (messageChainId !== undefined && messageChainId !== ethereum.getChainId()) throw createGnosisSafeContractValidationFailure(`No outcome is simulated: this message is for chain ${ messageChainId.toString() }, not the selected network.`)
 	const notSafeMessage = `No outcome is simulated: ${ checksummedAddress(safeAddress) } is not a Gnosis Safe on this network, so nothing could execute this message there.`
-	// Unlike getSafeContractStateAtBlock, no VERSION or code is read: 1.1.1 and 1.5.0 Safes are in use and the preview only simulates, and an address without code fails the decode below.
+	// Unlike getGnosisSafeContractStateAtBlock, no VERSION or code is read: 1.1.1 and 1.5.0 Gnosis Safe wallets are in use and the preview only simulates, and an address without code fails the decode below.
 	const ownership = await callGnosisSafeOwnership(ethereum, safeAddress, await ethereum.getBlockNumber(undefined)).then(decodeGnosisSafeOwnership).catch((error: unknown) => {
 		if (isAbiDataDecodeError(error) || isExecutionRevert(error)) throw createGnosisSafeContractValidationFailure(notSafeMessage)
 		throw error
 	})
-	// A Safe's setup and owner changes keep its threshold between 1 and its owner count, so a reply outside that is not from a Safe.
+	// A Gnosis Safe's setup and owner changes keep its threshold between 1 and its owner count, so a reply outside that is not from a Gnosis Safe.
 	if (ownership.threshold === 0n || ownership.threshold > BigInt(ownership.owners.length)) throw createGnosisSafeContractValidationFailure(notSafeMessage)
 	if (activeAddress !== safeAddress && !ownership.owners.includes(activeAddress)) throw createGnosisSafeOwnerValidationFailure(`No outcome is simulated: ${ checksummedAddress(activeAddress) } is not an owner of Gnosis Safe ${ checksummedAddress(safeAddress) }, so its signature could not execute this message.`)
 }
@@ -389,7 +392,7 @@ function assertGnosisSafeTransactionContext(
 	assertInterceptorGnosisSafeTransactionPolicy(safeTx)
 }
 
-// The single rule for which chain a SafeTx may be signed or stacked on: its EIP-712 domain fixes the chain it executes on, so that chain must be the connected one, and a connected chain without an ID (0n) never qualifies.
+// The single rule for which chain a GnosisSafeTx may be signed or stacked on: its EIP-712 domain fixes the chain it executes on, so that chain must be the connected one, and a connected chain without an ID (0n) never qualifies.
 export function assertGnosisSafeDomainChainIsConnectedChain(domainChainId: bigint | undefined, connectedChainId: bigint) {
 	if (connectedChainId === 0n) throw createGnosisSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
 	if (domainChainId === connectedChainId) return
@@ -502,7 +505,7 @@ export function gnosisSafeTxToTypedDataJson(safeTx: GnosisSafeTx) {
 	})
 }
 
-// The one eth_signTypedData_v4 payload for a Safe transaction: every signer-facing request and every displayed hash must come from here.
+// The one eth_signTypedData_v4 payload for a Gnosis Safe transaction: every signer-facing request and every displayed hash must come from here.
 export function getGnosisSafeTxSignerFacingTypedData(safeTx: GnosisSafeTx): EIP712Message {
 	return EIP712Message.parse(gnosisSafeTxToTypedDataJson(safeTx))
 }

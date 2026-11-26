@@ -71,12 +71,13 @@ export const BlockTimeManipulationWithNoDelay = funtypes.Union(
 )
 
 export type TransactionSimulationOptions = funtypes.Static<typeof TransactionSimulationOptions>
-// Earlier versions also stored simulateWithZeroBaseFee here, true for Safe proposals. Parsing drops it from a stored or imported stack, so every stacked transaction runs in a block with the real base fee.
+// Earlier versions also stored simulateWithZeroBaseFee here, true for Gnosis Safe proposals. Parsing drops it from a stored or imported stack, so every stacked transaction runs in a block with the real base fee.
 export const TransactionSimulationOptions = funtypes.ReadonlyObject({
 	requiredChainId: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
-	// The transaction is a Gnosis Safe's own call. The simulator runs it the way the Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays real fees (safe/safeExecutionSimulation.ts).
+	// The transaction is a Gnosis Safe's own call. The simulator runs it the way the Gnosis Safe runs it on-chain: an executor account calls the Gnosis Safe's execTransaction and pays real fees (gnosisSafe/gnosisSafeExecutionSimulation.ts).
 	executeThroughSafe: funtypes.Literal(true),
+	safeOperation: funtypes.Literal(1),
 }))
 
 export type NonSimulatedAndVisualizedTransactionBase = funtypes.Static<typeof NonSimulatedAndVisualizedTransactionBase>
@@ -151,7 +152,7 @@ export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.
 	executedTransaction: EthereumSendableSignedTransaction,
 }))
 
-// Whether the node runs a transaction as an executedTransaction in place of its signedTransaction. It is the domain decision, read from the stored transaction; the RPC client sees it only as the executedCallAuthorized marker that toSimulationStateInputMinimalTransaction projects from it, and EthereumClientService.prepareEthSimulateV1Input requires an executedTransaction exactly when that marker is set. Only Gnosis Safe executions do: a Safe proposal (safeTransaction), which runs the SafeTx it holds, and a Safe's own call marked executeThroughSafe.
+// Whether the node runs a transaction as an executedTransaction in place of its signedTransaction. It is the domain decision, read from the stored transaction; the RPC client sees it only as the executedCallAuthorized marker that toSimulationStateInputMinimalTransaction projects from it, and EthereumClientService.prepareEthSimulateV1Input requires an executedTransaction exactly when that marker is set. Only Gnosis Safe executions do: a Gnosis Safe proposal (safeTransaction), which runs the GnosisSafeTx it holds, and a Gnosis Safe's own call marked executeThroughSafe.
 export const authorizesExecutedCall = (transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>) => transaction.safeTransaction !== undefined || transaction.simulationOptions?.executeThroughSafe === true
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
@@ -207,9 +208,9 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 	messageIdentifier: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
-	// Safe message review is normalized at admission and persisted independently of the transport envelope.
+	// Gnosis Safe message review is normalized at admission and persisted independently of the transport envelope.
 	safeMessageReview: GnosisSafeMessageReview,
-	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
+	// Older persisted stacks predate the distinction between the active Gnosis Safe and its simulation signer.
 	activeAddress: EthereumAddress,
 	// Full origin (`scheme://host[:port]`) of the requesting frame at request time, derived by getFrameOrigins together with `website.websiteOrigin`; it is not on `Website` because `websiteOrigin` is the scheme-less key that website access settings are persisted under. It is missing from records stored before it was recorded, from imported simulation stacks (importSimulationStack drops it because the extension never saw that frame) and when the frame had already disconnected, and getSiweQuarantineReasons then flags a sign-in message instead of comparing hosts alone.
 	requestOrigin: funtypes.String,
@@ -232,7 +233,7 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
 	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		signedTransaction: EthereumSendableSignedTransaction,
-		// The RPC client only needs whether the executed call is authorized; the Safe layer decides it from both markers (authorizesExecutedCall) when projecting into this input (toSimulationStateInputMinimalTransaction).
+		// The RPC client only needs whether the executed call is authorized; the Gnosis Safe layer decides it from both markers (authorizesExecutedCall) when projecting into this input (toSimulationStateInputMinimalTransaction).
 		executedCallAuthorized: funtypes.Boolean,
 	}).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction }))),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),

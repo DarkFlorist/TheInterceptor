@@ -249,7 +249,7 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 	return await getTransactionCountAfterTransactions(ethereumClientService, requestAbortController, includedInputBlocks, address, blockNumToUseForChain)
 }
 
-// The nonce field of a Gnosis Safe execution's own call, which is a display and hash sequence, not the Safe's account nonce: no account sends that call (getNonceRaisingCall). It is one more than the highest such field of the Safe's stacked executions, which stack removal never renumbers, so a removal can't make a stacked execution's number, and with it its hash, reusable. Its mock signature keeps it apart from ordinary transactions (getSignedTransactionForSimulation). Like ordinary transactions, two identical calls formed while both are pending confirmation still share a number and hash; that general mock-hash limitation is tracked in #1713.
+// The nonce field of a Gnosis Safe execution's own call, which is a display and hash sequence, not the Gnosis Safe's account nonce: no account sends that call (getNonceRaisingCall). It is one more than the highest such field of the Gnosis Safe's stacked executions, which stack removal never renumbers, so a removal can't make a stacked execution's number, and with it its hash, reusable. Its mock signature keeps it apart from ordinary transactions (getSignedTransactionForSimulation). Like ordinary transactions, two identical calls formed while both are pending confirmation still share a number and hash; that general mock-hash limitation is tracked in #1713.
 export const getSimulatedGnosisSafeCallNonce = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, safeAddress: bigint) => {
 	const stackedSafeCallNonces = simulationState.kind === 'passthrough' ? [] : simulationState.value.simulationStateInput.flatMap((block) => block.transactions)
 		.filter((transaction) => transaction.signedTransaction.from === safeAddress && authorizesExecutedCall(transaction))
@@ -285,7 +285,7 @@ type SimulateBlockCallOptions = {
 const isInactivePrecompileRelocationError = (error: unknown) => error instanceof JsonRpcResponseError
 	&& error.message.toLowerCase().includes('not a precompile')
 
-// A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
+// A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Gnosis Safe's: no account sends the Gnosis Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
 const getNonceRaisingCall = (transaction: RpcTransaction) => transaction.executedTransaction === undefined && transaction.executedCallAuthorized ? undefined : getExecutedTransaction(transaction)
 
 // Project actual calls while retaining their input prefix, so authorization code reads see overrides and earlier execution effects rather than the final or base-chain state.
@@ -654,7 +654,7 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 		return callResult.status === 'failure'
 		&& callResult.error.message === 'wrong transaction nonce' //TODO, change to error code
 		&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
-		// The node runs a Gnosis Safe execution as its executor's call, whose nonce its preparation sets, so the Safe's own nonce field can't fix it.
+		// The node runs a Gnosis Safe execution as its executor's call, whose nonce its preparation sets, so the Gnosis Safe's own nonce field can't fix it.
 		&& !authorizesExecutedCall(transaction)
 	}
 	const simulationInspection = await inspectSimulationInput(ethereumClientService, requestAbortController, simulationStateInput)
@@ -686,7 +686,7 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 			}
 			const fixedTransaction = await fixTransaction()
 			processedTransactions.push(fixedTransaction)
-			// A Gnosis Safe execution raises no nonce of the Safe (getNonceRaisingCall).
+			// A Gnosis Safe execution raises no nonce of the Gnosis Safe (getNonceRaisingCall).
 			if (!authorizesExecutedCall(fixedTransaction)) knownPreviousNonce.set(fromString, fixedTransaction.signedTransaction.nonce)
 		}
 		const oldBlock = simulationStateInput[blockIndex]
@@ -716,7 +716,7 @@ const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
 		&& isFeeMarketPreSimulationTransaction(transaction)
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
-		// A Gnosis Safe execution's own call has no fees: its executor pays them (prepareSafeExecutionSimulationInput).
+		// A Gnosis Safe execution's own call has no fees: its executor pays them (prepareGnosisSafeExecutionSimulationInput).
 		&& !authorizesExecutedCall(transaction)
 }
 

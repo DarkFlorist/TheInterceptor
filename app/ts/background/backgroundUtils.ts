@@ -252,12 +252,7 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
-export function getHtmlFile(file: HTMLFile) {
-	const manifest = browser.runtime.getManifest()
-	if (manifest.manifest_version === 2) return `/html/${ file }.html`
-	return `/html3/${ file }V3.html`
-}
+export { getHtmlFile } from '../utils/htmlPages.js'
 
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
 	const manifest = browser.runtime.getManifest()

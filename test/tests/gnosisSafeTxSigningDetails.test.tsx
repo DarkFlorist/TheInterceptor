@@ -26,8 +26,8 @@ const mainnet: RpcNetwork = {
 }
 
 
-describe('SafeTxSigningDetails', () => {
-	test('lists every EIP-712 SafeTx field together with the full domain, message, and Gnosis Safe transaction hashes', async () => {
+describe('GnosisSafeTxSigningDetails', () => {
+	test('lists every EIP-712 GnosisSafeTx field together with the full domain, message, and Gnosis Safe transaction hashes', async () => {
 		const dom = installDomMock()
 		const safeTx = createGnosisSafeTx(1n, safeAddress, { to: recipientAddress, value: 1_250_000_000_000_000_000n, input: new Uint8Array([0xde, 0xad, 0xbe, 0xef]) }, 5n)
 		const hashes = { ...getGnosisSafeTxSigningHashes(safeTx), safeTxHash: getGnosisSafeTxHash(safeTx) }

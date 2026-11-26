@@ -10,15 +10,13 @@ import { serialize } from '../../app/ts/types/wire-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGnosisSafeTxHash } from '../../app/ts/utils/eip712.js'
-import { createGnosisSafeMessageTypedData, GNOSIS_SAFE_MESSAGE_ABI } from '../../app/ts/gnosisSafe/gnosisSafeMessage.js'
-import { hashTypedData, privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
+import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeStorageReaderCall } from '../../app/ts/simulation/storageReader.js'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
 
-const safeAppsTypedMessage = process.argv.includes('--safe-apps-typed-message')
-const safeAppsMessage = process.argv.includes('--safe-apps-message') || safeAppsTypedMessage
-const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage
+// Native Gnosis Safe Apps hosting uses the shared browser runner with a real extension-owned iframe. This benchmark owns ordinary EIP-1193 co-signing and stack handoff only.
+if (process.argv.length > 2) throw new Error('This co-signing benchmark accepts no flags. Use bun run test:browser:native-hosting for real Gnosis Safe Apps hosting.')
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const GNOSIS_SAFE_ADDRESS = 0x1234567890123456789012345678901234567890n
@@ -33,13 +31,6 @@ const GNOSIS_SAFE_TX = createGnosisSafeTx(1n, GNOSIS_SAFE_ADDRESS, {
 }, 7n)
 const GNOSIS_SAFE_TX_HASH = BigInt(getGnosisSafeTxHash(GNOSIS_SAFE_TX))
 const GNOSIS_SAFE_TYPED_DATA = gnosisSafeTxToTypedDataJson(GNOSIS_SAFE_TX)
-const APP_TYPED_MESSAGE = { types: { EIP712Domain: [{ name: 'name', type: 'string' }], Mail: [{ name: 'contents', type: 'string' }] }, primaryType: 'Mail', domain: { name: 'Gnosis Safe Apps browser test' }, message: { contents: 'Typed browser message' } }
-const GNOSIS_SAFE_MESSAGE_TEXT = safeAppsTypedMessage ? JSON.stringify(APP_TYPED_MESSAGE, undefined, 2) : 'Hello from the Gnosis Safe Apps browser test'
-const SERVICE_MESSAGE = safeAppsTypedMessage ? APP_TYPED_MESSAGE : GNOSIS_SAFE_MESSAGE_TEXT
-const GNOSIS_SAFE_MESSAGE_DATA = createGnosisSafeMessageTypedData(1n, GNOSIS_SAFE_ADDRESS, GNOSIS_SAFE_MESSAGE_TEXT, safeAppsTypedMessage)
-const GNOSIS_SAFE_MESSAGE_HASH = hashTypedData(GNOSIS_SAFE_MESSAGE_DATA)
-const GNOSIS_SAFE_MESSAGE_SIGNATURE = await OWNER_ACCOUNT.signTypedData(GNOSIS_SAFE_MESSAGE_DATA)
-const GNOSIS_SAFE_MESSAGE_SIGNER_DATA = JSON.stringify({ types: GNOSIS_SAFE_MESSAGE_DATA.types, primaryType: GNOSIS_SAFE_MESSAGE_DATA.primaryType, domain: GNOSIS_SAFE_MESSAGE_DATA.domain, message: GNOSIS_SAFE_MESSAGE_DATA.message })
 const GNOSIS_SAFE_SIGNATURE = await OWNER_ACCOUNT.signTypedData(EIP712Message.parse(GNOSIS_SAFE_TYPED_DATA))
 const UNSIGNED_STACK = {
 	chainId: 1n,
@@ -150,7 +141,6 @@ async function setFileInput(connection: CdpConnection, selector: string, filePat
 }
 
 const { handleRpcRequest, safeStateReadCalls, safeCallResults } = createBrowserSimulationRpc({ safeAddress: GNOSIS_SAFE_ADDRESS, singletonAddress: GNOSIS_SAFE_SINGLETON_ADDRESS, ownerAddress: OWNER_ADDRESS, extraCallResults: [
-	[encodeFunctionCall(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [GNOSIS_SAFE_MESSAGE_DATA.message.message]), encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [GNOSIS_SAFE_MESSAGE_HASH])],
 	[encodeFunctionCall(GNOSIS_SAFE_ABI, 'getTransactionHash', [
 		addressString(GNOSIS_SAFE_TX.message.to),
 		GNOSIS_SAFE_TX.message.value,
@@ -168,6 +158,7 @@ const { handleRpcRequest, safeStateReadCalls, safeCallResults } = createBrowserS
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
 
 const communicationPageHtml = await readFile(new URL('./chromeCommunicationPage.html', import.meta.url), 'utf8')
 const sealwortFixtureDirectory = path.resolve('test/fixtures/sealwort')
@@ -239,7 +230,7 @@ const testRpcNetwork = {
 
 const fakeSignerPreload = `(() => {
 	const requests = []
-	let authorized = ${ !safeAppsOnly } || sessionStorage.getItem('fake-signer-authorized') === 'true'
+	let authorized = true
 	const signer = {
 		isMetaMask: true,
 		selectedAddress: ${ JSON.stringify(addressString(OWNER_ADDRESS)) },
@@ -252,8 +243,8 @@ const fakeSignerPreload = `(() => {
 				case 'eth_requestAccounts': authorized = true; sessionStorage.setItem('fake-signer-authorized', 'true'); return [${ JSON.stringify(addressString(OWNER_ADDRESS)) }]
 				case 'eth_signTypedData_v4':
 					if (params?.[0]?.toLowerCase() !== ${ JSON.stringify(addressString(OWNER_ADDRESS).toLowerCase()) }) throw new Error('Unexpected Gnosis Safe signer account')
-					if (JSON.stringify(params?.[1]) !== ${ JSON.stringify(JSON.stringify(safeAppsMessage ? GNOSIS_SAFE_MESSAGE_SIGNER_DATA : GNOSIS_SAFE_TYPED_DATA)) }) throw new Error('Unexpected Gnosis Safe typed-data payload')
-					return ${ JSON.stringify(safeAppsMessage ? GNOSIS_SAFE_MESSAGE_SIGNATURE : GNOSIS_SAFE_SIGNATURE) }
+					if (JSON.stringify(params?.[1]) !== ${ JSON.stringify(JSON.stringify(GNOSIS_SAFE_TYPED_DATA)) }) throw new Error('Unexpected Gnosis Safe typed-data payload')
+					return ${ JSON.stringify(GNOSIS_SAFE_SIGNATURE) }
 				default: throw Object.assign(new Error('Unsupported fake signer method: ' + method), { code: -32601 })
 			}
 		},
@@ -293,11 +284,11 @@ async function main() {
 			await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
 			const storedSettings = {
 				simulationMode: false,
-				safeAppsCompatibilityMode: safeAppsOnly,
+				safeAppsCompatibilityMode: false,
 				useSignersAddressAsActiveAddress: false,
 				independentActiveSimulationAddress: addressString(GNOSIS_SAFE_ADDRESS),
 				activeSigningAddress: addressString(OWNER_ADDRESS),
-				...(safeAppsOnly ? {} : { activeSigningSafeAddress: addressString(GNOSIS_SAFE_ADDRESS) }),
+				activeSigningSafeAddress: addressString(GNOSIS_SAFE_ADDRESS),
 				signingAddressPreferences: [{ signerAddress: addressString(OWNER_ADDRESS), selection: 'safe', safeAddress: addressString(GNOSIS_SAFE_ADDRESS), chainId: '0x1' }],
 				userAddressBookEntriesV3: [{
 					type: 'safe',
@@ -314,6 +305,7 @@ async function main() {
 			}
 			// Install the test RPC through the popup command below so persisted settings and live services change together.
 			await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify(storedSettings) })`)
+
 		} finally {
 			workerConnection.close()
 		}
@@ -348,16 +340,16 @@ async function main() {
 		try {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
-			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
+			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/` })
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Gnosis Safe access request')
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'Gnosis Safe access request')
 			} catch (error) {
 				const accessDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests, url: location.href, body: document.body.textContent })')
 				throw new Error(`Gnosis Safe access request did not open: ${ JSON.stringify(accessDiagnostics) }`, { cause: error })
 			}
 
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000).catch(async (error: unknown) => {
-				const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
+				const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests, ordinaryError: globalThis.__ordinarySafeAccessError, providerAtAccess: globalThis.__ordinarySafeAccessProvider, providerIsInterceptor: window.ethereum?.isInterceptor })')
 				throw new Error(`Gnosis Safe access popup did not open: ${ JSON.stringify(diagnostics) }`, { cause: error })
 			})
 			accessTargetId = accessTarget.id
@@ -370,7 +362,7 @@ async function main() {
 			}
 
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'safe-only-granted' : 'access-granted' }'`).catch(() => false), 30_000, 'Gnosis Safe access approval')
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'Gnosis Safe access approval')
 			} catch (error) {
 				const pageDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
 				throw new Error(`Gnosis Safe access approval failed: ${ JSON.stringify(pageDiagnostics) }`, { cause: error })
@@ -378,95 +370,6 @@ async function main() {
 			const grantedAccounts = await pageConnection.evaluate<readonly string[]>('globalThis.__interceptorChromeCommunicationState.accounts')
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(GNOSIS_SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Gnosis Safe address`)
-			}
-			if (safeAppsOnly && !safeAppsMessage) {
-				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
-				if (accountRequests !== 1) throw new Error(`Expected one MetaMask connection prompt, received ${ accountRequests }`)
-				await pageConnection.evaluate(`sessionStorage.setItem('fake-signer-block-chain', 'true')`)
-				for (let reload = 0; reload < 3; reload += 1) {
-					await pageConnection.evaluate('globalThis.__interceptorChromeCommunicationState = undefined')
-					await pageConnection.send('Page.reload')
-					try {
-						await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`).catch(() => false), 30_000, 'Gnosis Safe discovery after reload')
-					} catch (error) {
-						const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, requests: globalThis.__fakeSafeSignerRequests })')
-						throw new Error(`Gnosis Safe discovery stalled after reload: ${ JSON.stringify(diagnostics) }`, { cause: error })
-					}
-					const prompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
-					if (prompts !== 0) throw new Error(`Reload requested signer access ${ prompts } times`)
-				}
-				console.warn('Gnosis Safe Apps discovery connected an initially unauthorized signer and survived three reloads with stalled signer chain queries without prompting.')
-				return
-			}
-			if (safeAppsMessage) {
-				const gatewayConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
-				try {
-					await gatewayConnection.evaluate(`(() => {
-						const originalFetch = globalThis.fetch
-						globalThis.__safeMessageSubmissions = []
-						globalThis.fetch = async (url, init) => {
-							if (!String(url).startsWith('https://safe-client.safe.global/')) return originalFetch(url, init)
-							if (String(url).includes('/transactions/')) return Response.json({
-								safeAddress: ${ JSON.stringify(addressString(GNOSIS_SAFE_ADDRESS)) },
-								txId: ${ JSON.stringify(`multisig_${ addressString(GNOSIS_SAFE_ADDRESS) }_${ bytes32String(GNOSIS_SAFE_TX_HASH) }`) },
-								txStatus: 'AWAITING_CONFIRMATIONS', txInfo: { type: 'Custom' },
-								detailedExecutionInfo: { type: 'MULTISIG', safeTxHash: ${ JSON.stringify(bytes32String(GNOSIS_SAFE_TX_HASH)) }, nonce: 7, confirmations: [], confirmationsRequired: 2 },
-							})
-							if (String(url).includes('/balances/')) return Response.json({ fiatTotal: '42', items: [] })
-							if (init?.method === 'POST') {
-								globalThis.__safeMessageSubmissions.push(JSON.parse(init.body))
-								return new Response(undefined, { status: 202 })
-							}
-							return globalThis.__safeMessageSubmissions.length === 0 ? new Response(undefined, { status: 404 }) : Response.json({ messageHash: ${ JSON.stringify(GNOSIS_SAFE_MESSAGE_HASH) }, message: ${ JSON.stringify(SERVICE_MESSAGE) }, confirmations: [{ signature: ${ JSON.stringify(GNOSIS_SAFE_MESSAGE_SIGNATURE) } }] })
-						}
-					})()`)
-					for (const offChainSigning of [false, true]) {
-						const settingsReply = await pageConnection.evaluate<{ success: boolean, data?: { offChainSigning: boolean } }>(`new Promise((resolve, reject) => {
-							const id = crypto.randomUUID()
-							const listener = ({ data }) => { if (data?.id === id && typeof data.success === 'boolean') { clearTimeout(timer); window.removeEventListener('message', listener); resolve(data) } }
-							const timer = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('Gnosis Safe SDK settings acknowledgement timed out after 10s')) }, 10000)
-							window.addEventListener('message', listener)
-							window.postMessage({ id, method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning: ${ offChainSigning } }] }, env: { sdkVersion: '9.0.0' } }, location.origin)
-						})`)
-						if (!settingsReply.success || settingsReply.data?.offChainSigning !== offChainSigning) throw new Error('Gnosis Safe SDK settings were not acknowledged')
-					}
-					await pageConnection.evaluate(`(() => {
-						globalThis.__safeAppsReplies = {}
-						window.addEventListener('message', ({ data }) => {
-							if (typeof data?.success === 'boolean') globalThis.__safeAppsReplies[data.id] = data
-						})
-						window.postMessage({ id: 'transaction', method: 'getTxBySafeTxHash', params: { safeTxHash: ${ JSON.stringify(bytes32String(GNOSIS_SAFE_TX_HASH)) } }, env: { sdkVersion: '9.0.0' } }, location.origin)
-						window.postMessage({ id: 'balances', method: 'getSafeBalances', params: { currency: 'usd' }, env: { sdkVersion: '9.0.0' } }, location.origin)
-						window.postMessage({ id: 'message', method: ${ JSON.stringify(safeAppsTypedMessage ? 'signTypedMessage' : 'signMessage') }, params: ${ JSON.stringify(safeAppsTypedMessage ? { typedData: APP_TYPED_MESSAGE } : { message: GNOSIS_SAFE_MESSAGE_TEXT }) }, env: { sdkVersion: '9.0.0' } }, location.origin)
-					})()`)
-					const confirmation = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`, 30_000)
-					confirmTargetId = confirmation.id
-					const connection = await connectTarget(chrome.browserDebugPort, confirmation.id)
-					try {
-						await waitForButtonEnabled(connection, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
-						const text = await connection.evaluate<string>('document.body.textContent')
-						if (!text.includes(GNOSIS_SAFE_MESSAGE_TEXT) || !text.includes('publish this message')) throw new Error('Gnosis Safe message review did not disclose the text and publication')
-						await clickButton(connection, CONFIRM_APPROVE_BUTTON_SELECTOR)
-					} finally {
-						connection.close()
-					}
-					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies.message !== undefined'), 15_000, 'Gnosis Safe Apps signed-message reply')
-					const result = await pageConnection.evaluate<{ message: { success: boolean, data?: { messageHash: string } }, balances: { success: boolean, data?: { fiatTotal: string } } }>('globalThis.__safeAppsReplies')
-					if (!result.message.success || result.message.data?.messageHash !== GNOSIS_SAFE_MESSAGE_HASH || !result.balances.success || result.balances.data?.fiatTotal !== '42') throw new Error(`Unexpected Gnosis Safe Apps replies: ${ JSON.stringify(result) }`)
-					const submissions = await gatewayConnection.evaluate<readonly { message: string, signature: string }[]>('globalThis.__safeMessageSubmissions')
-					if (submissions.length !== 1 || JSON.stringify(submissions[0]?.message) !== JSON.stringify(SERVICE_MESSAGE) || submissions[0]?.signature !== GNOSIS_SAFE_MESSAGE_SIGNATURE) throw new Error('The reviewed Gnosis Safe signature was not submitted exactly once')
-					await pageConnection.evaluate(`window.postMessage({ id: 'pending-signature', method: 'getOffChainSignature', params: ${ JSON.stringify(GNOSIS_SAFE_MESSAGE_HASH) }, env: { sdkVersion: '9.0.0' } }, location.origin)`)
-					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies["pending-signature"] !== undefined'), 15_000, 'pending Gnosis Safe signature polling reply')
-					const pending = await pageConnection.evaluate<{ success: boolean, data?: string }>('globalThis.__safeAppsReplies["pending-signature"]')
-					if (!pending.success || pending.data !== '') throw new Error(`A pending Gnosis Safe signature must be a successful empty response: ${ JSON.stringify(pending) }`)
-					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies.transaction !== undefined'), 15_000, 'Gnosis Safe transaction lookup reply')
-					const transaction = await pageConnection.evaluate<{ success: boolean, data?: { txStatus: string, detailedExecutionInfo: { safeTxHash: string } } }>('globalThis.__safeAppsReplies.transaction')
-					if (!transaction.success || transaction.data?.txStatus !== 'AWAITING_CONFIRMATIONS' || transaction.data.detailedExecutionInfo.safeTxHash !== bytes32String(GNOSIS_SAFE_TX_HASH)) throw new Error(`Unexpected Gnosis Safe transaction lookup: ${ JSON.stringify(transaction) }`)
-					console.warn('Gnosis Safe Apps transaction lookup, balances and off-chain message signing passed through the real extension confirmation and signer bridge.')
-					return
-				} finally {
-					gatewayConnection.close()
-				}
 			}
 			const tabStateConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {
@@ -585,7 +488,7 @@ async function main() {
 					&& Array.isArray(blockStateCall.calls)
 					&& blockStateCall.calls.some((call) => isRecord(call) && call.input === STORAGE_READER_CALL))
 			})
-			// SIGNED_MESSAGE_STACK belongs to simulation mode; Safe signing inspection must not replay that unrelated overlay.
+			// SIGNED_MESSAGE_STACK belongs to simulation mode; Gnosis Safe signing inspection must not replay that unrelated overlay.
 			const liveStorageLookup = sealwortInspectionRpcRequests.some((request) => request.method === 'eth_getStorageAt' && request.params?.[0] === addressString(GNOSIS_SAFE_ADDRESS) && request.params?.[1] === '0x0')
 			if (!liveStorageLookup || simulatedStorageLookup) throw new Error('Gnosis Safe signing inspection did not isolate the simulation-mode message stack')
 			const sealwortSignerStateConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
@@ -655,7 +558,7 @@ async function main() {
 			}
 			await waitForText(pageConnection, 'Signature added')
 			const safeSignerRequests = await pageConnection.evaluate<readonly { method: string, params?: readonly unknown[] }[]>(
-				`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_signTypedData_v4')`
+				`(globalThis.__fakeSafeSignerRequests ?? []).filter(({ method }) => method === 'eth_signTypedData_v4')`
 			)
 			if (safeSignerRequests.length !== 1) {
 				throw new Error(`Sealwort forwarded ${ safeSignerRequests.length.toString() } Gnosis Safe signing requests instead of one`)

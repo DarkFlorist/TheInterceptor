@@ -222,7 +222,7 @@ describe('background eth_accounts', () => {
 		), true)
 	})
 
-	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
+	test('rejects arbitrary EOAs and unverified or unowned Gnosis Safe wallets selected through popup signing-mode bypasses', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -3221,4 +3221,27 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
 		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
 	})
+})
+
+test('an approved simulated Gnosis Safe advertises Gnosis Safe Apps without signer ownership and revokes on address change', async () => {
+	installBrowserMock()
+	const { changeSimulationMode, setGnosisSafeAppsCompatibilityMode, initializeGnosisSafeAppsCompatibility, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+	const address = 0x6868686868686868686868686868686868686868n
+	const website = { websiteOrigin: 'simulation-safe.example', title: undefined, icon: undefined }
+	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
+	await setGnosisSafeAppsCompatibilityMode(true)
+	await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Simulated Gnosis Safe', address, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
+	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }] }])
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(socket.tabId, undefined, 0)
+	const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
+	const dispose = await initializeGnosisSafeAppsCompatibility(connections)
+	try {
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.enabled, true)
+		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined })
+		await refreshGnosisSafeAppsPorts(connections)
+		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').at(-1)?.result?.enabled, false)
+	} finally { dispose() }
 })

@@ -1,9 +1,10 @@
+import { createGnosisSafeAppsSigningServices } from '../fixtures/gnosisSafeAppsRequestServices.js'
 import { getGnosisSafeAppsExecution } from '../../app/ts/gnosisSafe/gnosisSafeAppsExecution.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { getGnosisSafeAppsChainInfo, getGnosisSafeAppsRequestCommand, isGnosisSafeAppsRequestPolicyError } from '../../app/ts/background/gnosisSafeAppsRequestPolicy.js'
+import { type GnosisSafeAppsRequestServices, getGnosisSafeAppsChainInfo, getGnosisSafeAppsRequestCommand, isGnosisSafeAppsRequestPolicyError } from '../../app/ts/background/gnosisSafeAppsRequestPolicy.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { decodeGnosisSafeBatch, GNOSIS_SAFE_MULTI_SEND_CALL_ONLY } from '../../app/ts/gnosisSafe/gnosisSafeDelegateCalls.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
@@ -68,11 +69,11 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 	})
 
 	test('constructs protocol responses from privileged network and Gnosis Safe state', async () => {
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getEnvironmentInfo' }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getEnvironmentInfo' }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'result',
 			value: { origin: 'https://app.example' },
 		})
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getChainInfo' }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getChainInfo' }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'result',
 			value: {
 				chainName: 'Polygon',
@@ -82,7 +83,7 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 				blockExplorerUriTemplate: { address: '', txHash: '', api: 'https://api.polygonscan.com/api' },
 			},
 		})
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'result',
 			value: {
 				safeAddress: '0x1111111111111111111111111111111111111111',
@@ -102,28 +103,28 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 	})
 
 	test('allows only the supported RPC surface and normalizes SDK aliases', async () => {
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_getPastLogs', params: [{ fromBlock: 'latest' }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_getPastLogs', params: [{ fromBlock: 'latest' }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'ethereumRequest',
 			method: 'eth_getLogs',
 			params: [{ fromBlock: 'latest' }],
 			mapResult: 'passthrough',
 		})
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_getBlockByNumber', params: ['latest'] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_getBlockByNumber', params: ['latest'] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'ethereumRequest',
 			method: 'eth_getBlockByNumber',
 			params: ['latest', false],
 			mapResult: 'passthrough',
 		})
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_getPermissions', params: [] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_getPermissions', params: [] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'result',
 			value: [],
 		})
 		await assert.rejects(
-			async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_requestPermissions', params: [{ requestAddressBook: {} }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+			async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_requestPermissions', params: [{ requestAddressBook: {} }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			(error: unknown) => isGnosisSafeAppsRequestPolicyError(error) && /does not support the requestAddressBook permission/.test(error.message),
 		)
 		await assert.rejects(
-			async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_sendRawTransaction', params: [] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+			async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_sendRawTransaction', params: [] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			(error: unknown) => isGnosisSafeAppsRequestPolicyError(error) && /Unsupported Gnosis Safe Apps RPC call/.test(error.message),
 		)
 		assert.equal(isGnosisSafeAppsRequestPolicyError(new Error('unexpected storage failure')), false)
@@ -132,7 +133,7 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 	test('rejects non-finite numbers before serializing RPC diagnostics', async () => {
 		for (const value of [NaN, Infinity, -Infinity]) {
 			await assert.rejects(
-				async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'unsupported_method', params: [value] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+				async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'unsupported_method', params: [value] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 				(error: unknown) => isGnosisSafeAppsRequestPolicyError(error) && error.message === 'Gnosis Safe Apps request params must be JSON-compatible.',
 			)
 		}
@@ -147,7 +148,7 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 		]
 		for (const { params, reason } of cases) {
 			await assert.rejects(
-				async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', ...(params === undefined ? {} : { params }) }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+				async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', ...(params === undefined ? {} : { params }) }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 				(error: unknown) => isGnosisSafeAppsRequestPolicyError(error) && error.message === `${ reason } Received params: ${ JSON.stringify(params) }`,
 			)
 		}
@@ -155,13 +156,14 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 
 	test('validates and maps a single CALL transaction from the active Gnosis Safe', async () => {
 		const transaction = { to: '0x2222222222222222222222222222222222222222', value: '15', data: '0x1234' }
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction], params: { safeTxGas: 21000 } } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), {
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction], params: { safeTxGas: 21000 } } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), {
 			kind: 'ethereumRequest',
 			method: 'eth_sendTransaction',
 			params: [{ from: '0x1111111111111111111111111111111111111111', to: transaction.to, value: '0xf', data: transaction.data, gas: '0x5208' }],
+			safeRequestContext: { operation: 0 },
 			mapResult: 'safeTxHash',
 		})
-		const batch = await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction, { ...transaction, value: '20' }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState)
+		const batch = await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction, { ...transaction, value: '20' }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices())
 		if (batch.kind !== 'ethereumRequest') throw new Error('Missing batch command')
 		const request = SendTransactionParams.parse({ method: batch.method, params: batch.params })
 		assert.equal(request.params[0].to, GNOSIS_SAFE_MULTI_SEND_CALL_ONLY)
@@ -171,17 +173,17 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 			{ to: BigInt(transaction.to), value: 15n, data: stringToUint8Array(transaction.data) },
 			{ to: BigInt(transaction.to), value: 20n, data: stringToUint8Array(transaction.data) },
 		])
-		await assert.rejects(async () => await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ ...transaction, operation: 1 }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState), /delegate calls are not supported/)
+		await assert.rejects(async () => await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ ...transaction, operation: 1 }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), /delegate calls are not supported/)
 	})
 
 	test('accepts structured-cloned SDK requests with explicitly undefined transaction options', async () => {
 		const transaction = { to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }
-		for (const txs of [[transaction], [transaction, transaction]]) {
-			const sdkRequest = structuredClone({ method: 'sendTransactions', params: { txs, params: undefined } })
+		for (const txs of [[transaction], [transaction, transaction]]) for (const options of [undefined, { safeTxGas: undefined }]) {
+			const sdkRequest = structuredClone({ method: 'sendTransactions', params: { txs, params: options } })
 			assert.equal(Object.hasOwn(sdkRequest.params, 'params'), true)
 			assert.deepEqual(
-				await getGnosisSafeAppsRequestCommand(sdkRequest, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState),
-				await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+				await getGnosisSafeAppsRequestCommand(sdkRequest, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
+				await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			)
 			assert.equal(Object.hasOwn(sdkRequest.params, 'params'), true)
 		}
@@ -189,38 +191,40 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 			{ txs: [undefined], params: undefined },
 			{ txs: [{ ...transaction, value: undefined }], params: undefined },
 			{ txs: [transaction], params: undefined, unknown: undefined },
-		]) await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState), /JSON-compatible/)
+			{ txs: [transaction], params: { safeTxGas: undefined, unknown: undefined } },
+			{ txs: [transaction], params: { safeTxGas: NaN } },
+		]) await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), /JSON-compatible/)
 	})
 
 	test('rejects malformed Gnosis Safe Apps shapes at the shared runtype boundaries', async () => {
 		await assert.rejects(
-			async () => await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: 1, value: '0', data: '0x' }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+			async () => await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: 1, value: '0', data: '0x' }] } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			/Gnosis Safe transaction fields must be strings/,
 		)
 		await assert.rejects(
-			async () => await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }], params: { safeTxGas: '21000' } } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+			async () => await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }], params: { safeTxGas: '21000' } } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			/Gnosis Safe transaction gas must be a non-negative safe integer/,
 		)
 		await assert.rejects(
-			async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_call', params: {} } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+			async () => await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_call', params: {} } }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			/Gnosis Safe Apps RPC params must be an array/,
 		)
 		await assert.rejects(
-			async () => await getGnosisSafeAppsRequestCommand({ method: 'wallet_requestPermissions', params: [undefined] }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+			async () => await getGnosisSafeAppsRequestCommand({ method: 'wallet_requestPermissions', params: [undefined] }, 'https://app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 			/Gnosis Safe Apps request params must be JSON-compatible/,
 		)
 	})
 
 	test('rejects Gnosis Safe metadata that cannot be represented by the Gnosis Safe SDK', async () => {
-		await assert.rejects(async () => await getGnosisSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, { ...rpcNetwork, chainId: BigInt(Number.MAX_SAFE_INTEGER) + 1n }, getGnosisSafeState), /chain ID is too large/)
-		await assert.rejects(async () => await getGnosisSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, rpcNetwork, async () => ({ ...safeState, nonce: BigInt(Number.MAX_SAFE_INTEGER) + 1n })), /nonce is too large/)
+		await assert.rejects(async () => await getGnosisSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, { ...rpcNetwork, chainId: BigInt(Number.MAX_SAFE_INTEGER) + 1n }, getGnosisSafeState, createGnosisSafeAppsSigningServices()), /chain ID is too large/)
+		await assert.rejects(async () => await getGnosisSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, rpcNetwork, async () => ({ ...safeState, nonce: BigInt(Number.MAX_SAFE_INTEGER) + 1n }), createGnosisSafeAppsSigningServices()), /nonce is too large/)
 	})
 })
 
- test('Gnosis Safe SDK settings select off-chain signing or one on-chain message proposal', async () => {
+	test('Gnosis Safe SDK settings select off-chain signing or one on-chain message proposal', async () => {
 	for (const offChainSigning of [true, false]) {
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning }] } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState), { kind: 'settings', offChainSigning })
-		const command = await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Hello' }, offChainSigning }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState)
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning }] } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), { kind: 'settings', offChainSigning })
+		const command = await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Hello' }, offChainSigning }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices())
 		if (command.kind !== 'ethereumRequest') throw new Error('Missing message command')
 		assert.equal(command.method, offChainSigning ? 'eth_signTypedData_v4' : 'eth_sendTransaction')
 		assert.equal(command.mapResult, offChainSigning ? 'safeMessage' : 'safeTxHash')
@@ -235,7 +239,7 @@ describe('Gnosis Safe Apps compatibility policy', () => {
 		}
 	}
 	for (const params of [[], [{}], [{ offChainSigning: 'false' }], [{ offChainSigning: false }, {}], [{ offChainSigning: false, unknown: true }]]) {
-		await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState), /settings object/)
+		await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()), /settings object/)
 	}
 })
 
@@ -244,8 +248,8 @@ test('Gnosis Safe Apps execution normalizes transaction and message commands for
 	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
 	const transactions = [{ to: addressString(activeAddress), value: '0', data: '0x' }, { to: addressString(activeAddress), value: '1', data: '0x' }]
 	for (const command of [
-		await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: transactions } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState),
-		await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Reviewed text' } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState),
+		await getGnosisSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: transactions } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
+		await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Reviewed text' } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices()),
 	]) {
 		if (command.kind !== 'ethereumRequest' || command.safeRequestContext === undefined) throw new Error('Expected a Gnosis Safe execution command')
 		const execution = getGnosisSafeAppsExecution({ method: 'safe_apps_request', params: [{ method: 'execute', params: command }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier })
@@ -263,10 +267,10 @@ test('Gnosis Safe Apps execution normalizes transaction and message commands for
 
 test('Gnosis Safe Apps policy validates and normalizes gateway requests before invoking injected services', async () => {
 	const calls: string[] = []
-	const services = {
+	const services = createGnosisSafeAppsSigningServices({
 		getBalances: async (currency: string) => { calls.push(`balances:${ currency }`); return { items: [] } },
 		getTransaction: async (hash: string) => { calls.push(`transaction:${ hash }`); return { safeTxHash: hash } },
-	}
+	})
 	const request = async (value: unknown) => await getGnosisSafeAppsRequestCommand(value, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, services)
 	const hash = `0x${ 'AB'.repeat(32) }`
 	assert.deepEqual(await request({ method: 'getSafeBalances', params: { currency: 'EUR' } }), { kind: 'result', value: { items: [] } })
@@ -276,7 +280,22 @@ test('Gnosis Safe Apps policy validates and normalizes gateway requests before i
 	await assert.rejects(request({ method: 'getTxBySafeTxHash', params: { safeTxHash: 'invalid' } }), /32-byte Gnosis Safe transaction hash/)
 	assert.equal(calls.length, 2)
 	const unavailable = new Error('Service failed')
-	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'getSafeBalances' }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, { getBalances: async () => { throw unavailable } }), (error) => error === unavailable)
-	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'getSafeBalances' }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState), /balance services are unavailable/)
-	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'getTxBySafeTxHash', params: { safeTxHash: hash } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState), /transaction services are unavailable/)
+	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'getSafeBalances' }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, createGnosisSafeAppsSigningServices({ getBalances: async () => { throw unavailable } })), (error) => error === unavailable)
+	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'getSafeBalances' }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, { mode: 'simulation' }), /balance services are unavailable in simulation mode/)
+	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'getTxBySafeTxHash', params: { safeTxHash: hash } }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, { mode: 'simulation' }), /transaction services are unavailable in simulation mode/)
+})
+
+test('simulation Gnosis Safe Apps supports on-chain approvals and never submits simulated off-chain signatures', async () => {
+	const services: GnosisSafeAppsRequestServices = { mode: 'simulation' }
+	for (const request of [
+		{ method: 'signMessage', params: { message: 'Test' } },
+		{ method: 'signTypedMessage', params: { typedData: {} } },
+		{ method: 'submitOffChainMessage', params: {} },
+		{ method: 'getOffChainSignature', params: '0x' },
+	]) await assert.rejects(getGnosisSafeAppsRequestCommand(request, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, services), /Off-chain Gnosis Safe message services are unavailable in simulation mode/)
+	const approval = await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Test' }, offChainSigning: false }, 'app.example', activeAddress, rpcNetwork, getGnosisSafeState, services)
+	assert.equal(approval.kind, 'ethereumRequest')
+	if (approval.kind !== 'ethereumRequest') throw new Error('Missing simulated approval')
+	assert.equal(approval.mapResult, 'safeTxHash')
+	assert.equal(approval.safeRequestContext?.operation, 1)
 })

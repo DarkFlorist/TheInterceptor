@@ -29,7 +29,7 @@ type GnosisSafeTxSigningDetailsParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-// The EIP-712 SafeTx fields and hashes in the order a hardware signer lists them, so the user can compare the two side by side.
+// The EIP-712 GnosisSafeTx fields and hashes in the order a hardware signer lists them, so the user can compare the two side by side.
 export function GnosisSafeTxSigningDetails({ safeTx, hashes, addressBookEntries, rpcNetwork, renameAddressCallBack }: GnosisSafeTxSigningDetailsParams) {
 	return <>
 		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>

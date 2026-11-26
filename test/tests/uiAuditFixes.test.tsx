@@ -164,7 +164,7 @@ describe('UI audit fixes', () => {
 		assert.match(css, /\.button\.button--secondary\s*\{[\s\S]*?border:\s*1px solid var\(--accent-color\);[\s\S]*?color:\s*var\(--text-color\);/)
 		assert.match(css, /\.button\.button--secondary:hover, \.button\.button--secondary:focus, \.button\.button--secondary:active\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
 		assert.match(css, /\.button\.button--secondary\[disabled\]\s*\{[\s\S]*?border-color:\s*var\(--disabled-action-color\);[\s\S]*?color:\s*var\(--text-color\);/)
-		// The secondary Safe action wraps onto its own compact row below the two decisions in narrow popups.
+		// The secondary Gnosis Safe action wraps onto its own compact row below the two decisions in narrow popups.
 		assert.match(css, /@container \(max-width: 42rem\)[\s\S]*?\.confirmation-action-buttons--safe > \.button--secondary\s*\{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?order:\s*1;/)
 		assert.match(css, /@container \(max-width: 24rem\)[\s\S]*?\.confirmation-action-buttons--safe\s*\{[\s\S]*?flex-direction:\s*column;/)
 	})

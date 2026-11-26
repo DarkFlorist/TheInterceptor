@@ -21,7 +21,7 @@ const renderNoticeText = async (transaction: NoticeTransaction) => {
 	return dom.document.body.textContent ?? ''
 }
 
-describe('SafeExecutionSimulationNotice', () => {
+describe('GnosisSafeExecutionSimulationNotice', () => {
 	test('labels a Gnosis Safe proposal and a simulation-mode Gnosis Safe execution alike, and nothing else', async () => {
 		const proposal: NoticeTransaction = { simulationOptions: { requiredChainId: 1n }, safeTransaction: { safeTx, safeTxHash: BigInt(getGnosisSafeTxHash(safeTx)), created: new Date(0), websiteOrigin: 'https://example.com', transactionIdentifier: 1n, signatures: [] } }
 		const simulationModeExecution: NoticeTransaction = { simulationOptions: { requiredChainId: 1n, executeThroughSafe: true } }

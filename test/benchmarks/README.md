@@ -136,3 +136,13 @@ Add product scenarios to the shared registry in `scripts/test-browsers.mts`. Use
 The runner builds each browser sequentially, attempts both even after a failure, reports failure if either engine fails and restores the original generated manifest. The paired suite runs through `.github/workflows/browser-tests.yml`. No additional browser-framework dependencies are required. Existing browser-specific aliases select the shared scenario for diagnosis.
 
 The provider check opens local pages with and without a CSP blocking inline scripts. An allowed inline provider must be available when its script is observed; a blocked inline provider must load through the extension-URL fallback. MV2 starts after a background navigation round trip, so either arrival before the first page script or the observed injection sequence is accepted. Set `CHROME_BIN`, `FIREFOX_BIN` or `GECKODRIVER_BIN` to select other executables.
+
+## Native Gnosis Safe Apps hosting
+
+The shared `gnosis-safe-hosting` scenario runs on both engines in signing and simulation modes. It opens a genuine extension-owned host iframe through **Open as Gnosis Safe App**, verifies SDK replies, source-tab authorization, revocation and native framing restrictions, and builds a two-transaction simulation stack through separate UI approvals. It also forces a stale review, waits for the refreshed result to be published and verifies rejection followed by deliberate reapproval. Local signer and RPC fixtures never broadcast a transaction.
+
+The provider scenario additionally checks extension-page sender authorization and cross-site child-frame account/chain reads. The Chrome-specific communication check covers IPv6 content-script registration and permission revocation.
+
+The original website tab must stay open. Native frame policies and SDK parent-origin restrictions remain enforced; unsupported websites are accepted. Parent, referrer and page timers are not emulated. See [the native-host design, live-site observations and limitations](../../docs/testing/native-gnosis-safe-host.md) for current compatibility. Older discovery-emulation results are historical.
+
+Website-owned HTTP reads retain their native transport in this layer. The separate HTTP simulation-read PR adds its own paired scenarios.

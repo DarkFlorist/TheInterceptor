@@ -285,7 +285,7 @@ try {
 	const destinationAddress = 0x9876543210987654321098765432109876543210n
 	const created = new Date('2026-07-28T00:00:00.000Z')
 	const uniqueRequestIdentifier = { requestId: 42, requestSocket: { tabId: 7, connectionName: 0n } }
-	const confirmationLifetime = 'safe-ui-screenshots'
+	const confirmationLifetime = 'gnosis-safe-ui-screenshots'
 	const originalRequestParameters = {
 		method: 'eth_sendTransaction' as const,
 		params: [{
@@ -460,7 +460,7 @@ try {
 		await ${ setSimulatedProposalFixture }
 	})()`)
 	await waitForText(simulatedConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
-	// The Safe notice always mentions "Sign & add", so wait for the action buttons themselves.
+	// The Gnosis Safe notice always mentions "Sign & add", so wait for the action buttons themselves.
 	await waitForSelector(simulatedConfirm, 'button[aria-label="Sign and add to Gnosis Safe stack"]')
 	await waitForSelector(simulatedConfirm, 'button[aria-label="Add unsigned to Gnosis Safe stack"]')
 	const findSigningRequestHeader = `[...document.querySelectorAll('header')].find((element) => element.textContent?.includes('Gnosis Safe signing request (EIP-712)'))`

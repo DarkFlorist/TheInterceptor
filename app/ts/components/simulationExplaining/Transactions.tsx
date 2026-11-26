@@ -211,7 +211,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	return <ConnectedDelegationStack delegationNotice = { delegationNotice }>{ content }</ConnectedDelegationStack>
 }
 
-// Shown for every Gnosis Safe execution, which the simulation runs as its executor's execTransaction call (authorizesExecutedCall, safe/safeExecutionSimulation.ts). The simulation stack adds a Safe proposal's nonce and collected signatures as children.
+// Shown for every Gnosis Safe execution, which the simulation runs as its executor's execTransaction call (authorizesExecutedCall, gnosisSafe/gnosisSafeExecutionSimulation.ts). The simulation stack adds a Gnosis Safe proposal's nonce and collected signatures as children.
 export function GnosisSafeExecutionSimulationNotice({ transaction, children }: { transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>, children?: ComponentChildren }) {
 	if (!authorizesExecutedCall(transaction)) return <></>
 	return <div class = 'notification is-info' style = 'margin-bottom: 10px;'>

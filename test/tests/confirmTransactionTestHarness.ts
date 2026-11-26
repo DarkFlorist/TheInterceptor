@@ -1,9 +1,10 @@
+import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import multiSendLibrary from '../fixtures/gnosis-safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/gnosis-safe-libraries/SignMessageLib.json'
 import { GNOSIS_SAFE_MULTI_SEND_CALL_ONLY, GNOSIS_SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/gnosisSafe/gnosisSafeDelegateCalls.js'
 import { GNOSIS_SAFE_MESSAGE_ABI } from '../../app/ts/gnosisSafe/gnosisSafeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
-import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { decodeFunctionDataStrict, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createGnosisSafeTx, GNOSIS_SAFE_ABI, gnosisSafeTxToTypedDataJson } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
 import { GNOSIS_SAFE_EXECUTION_ABI } from '../../app/ts/gnosisSafe/gnosisSafeExecution.js'
@@ -215,11 +216,11 @@ export async function loadModules() {
 		pendingTerminalReplies,
 		terminalReplyDelivery,
 		providerMessageHandlers,
-		gnosisSafeExecutionRouting,
-		gnosisSafeConfirmationResolver,
-		gnosisSafeSimulation,
-		gnosisSafeCore,
-		gnosisSafeConfirmationPersistence,
+		safeExecutionRouting,
+		safeConfirmationResolver,
+		safeSimulation,
+		safeCore,
+		safeConfirmationPersistence,
 		errors,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -270,18 +271,18 @@ export async function loadModules() {
 		toPopupPendingTransactionOrSignableMessage: confirmTransaction.toPopupPendingTransactionOrSignableMessage,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
-		getGnosisSafeExecutionSignerRoute: gnosisSafeExecutionRouting.getGnosisSafeExecutionSignerRoute,
-		prepareGnosisSafeExecutionSignerRoute: gnosisSafeExecutionRouting.prepareGnosisSafeExecutionSignerRoute,
+		getGnosisSafeExecutionSignerRoute: safeExecutionRouting.getGnosisSafeExecutionSignerRoute,
+		prepareGnosisSafeExecutionSignerRoute: safeExecutionRouting.prepareGnosisSafeExecutionSignerRoute,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
 		openConfirmTransactionDialogForTransaction: confirmTransaction.openConfirmTransactionDialogForTransaction,
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
 		refreshPendingGnosisSafeSignerSelectionErrors: confirmTransaction.refreshPendingGnosisSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
-		resolveGnosisSafeConfirmation: gnosisSafeConfirmationResolver.resolveGnosisSafeConfirmation,
-		createGnosisSafeExecutionPreSimulationTransaction: gnosisSafeSimulation.createGnosisSafeExecutionPreSimulationTransaction,
-		createGnosisSafeSigningSimulationInput: gnosisSafeSimulation.createGnosisSafeSigningSimulationInput,
-		createGnosisSafeContractValidationFailure: gnosisSafeCore.createGnosisSafeContractValidationFailure,
-		resolveGnosisSafeSignerReply: gnosisSafeConfirmationPersistence.resolveGnosisSafeSignerReply,
+		resolveGnosisSafeConfirmation: safeConfirmationResolver.resolveGnosisSafeConfirmation,
+		createGnosisSafeExecutionPreSimulationTransaction: safeSimulation.createGnosisSafeExecutionPreSimulationTransaction,
+		createGnosisSafeSigningSimulationInput: safeSimulation.createGnosisSafeSigningSimulationInput,
+		createGnosisSafeContractValidationFailure: safeCore.createGnosisSafeContractValidationFailure,
+		resolveGnosisSafeSignerReply: safeConfirmationPersistence.resolveGnosisSafeSignerReply,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		getGnosisSafeTransactionStacks: storageVariables.getGnosisSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
@@ -362,7 +363,7 @@ const SIMULATED_GET_CODE_ABI = [{ type: 'function', name: 'at', stateMutability:
 
 const isSimulatedGetCodeCall = (call: unknown) => isRecord(call) && (typeof call.to === 'bigint' || typeof call.to === 'string') && BigInt(call.to) === SIMULATED_GET_CODE_CONTRACT
 
-// Answers code reads with non-empty code, so simulated calls to contracts such as a Safe produce a result, and every other call with a multicall balance result.
+// Answers code reads with non-empty code, so simulated calls to contracts such as a Gnosis Safe produce a result, and every other call with a multicall balance result.
 export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], calls: readonly unknown[] = [{}]) {
 	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
 	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
@@ -398,10 +399,12 @@ export const fakeRpcNetwork = {
 }
 
 export const fakeBlock = makeFakeBlock()
-const isSafeNonceCall = (call: unknown) => {
-	if (!isRecord(call)) return false
+const getGnosisSafeMetadataCallInput = (call: unknown) => {
+	if (!isRecord(call)) return undefined
 	const input = call.input instanceof Uint8Array ? call.input : call.data
-	return input instanceof Uint8Array && `0x${ Buffer.from(input).toString('hex').slice(0, 8) }` === encodeFunctionCall(GNOSIS_SAFE_ABI, 'nonce', []).slice(0, 10)
+	if (!(input instanceof Uint8Array)) return undefined
+	const selector = `0x${ Buffer.from(input).toString('hex').slice(0, 8) }`
+	return [gnosisSafeSelectors.version, gnosisSafeSelectors.nonce, gnosisSafeSelectors.owners, gnosisSafeSelectors.threshold].includes(selector) ? input : undefined
 }
 
 export const gnosisSafeSelectors = {
@@ -456,6 +459,25 @@ export function resetFakeGnosisSafeContractState() {
 	fakeGnosisSafeContract.safeOwnerLookupFailure = undefined
 }
 
+const getFakeGnosisSafeContractReturnData = async (input: Uint8Array) => {
+	const selector = `0x${ Buffer.from(input).toString('hex').slice(0, 8) }`
+	switch (selector) {
+		case gnosisSafeSelectors.version:
+			await fakeGnosisSafeContract.beforeVersionResponse?.()
+			return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'VERSION', [fakeGnosisSafeContract.version])
+		case gnosisSafeSelectors.nonce: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'nonce', [fakeGnosisSafeContract.nonce])
+		case gnosisSafeSelectors.owners:
+			if (fakeGnosisSafeContract.safeOwnerLookupFailure === 'expected') throw modules.createGnosisSafeContractValidationFailure('Gnosis Safe owner lookup unavailable')
+			if (fakeGnosisSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Gnosis Safe owner decoder failure')
+			return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getOwners', [fakeGnosisSafeContract.owners.map(addressString)])
+		case gnosisSafeSelectors.threshold: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getThreshold', [fakeGnosisSafeContract.threshold])
+		case gnosisSafeSelectors.messageHash: return encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeGnosisSafeContract.messageHash)])
+		case gnosisSafeSelectors.messageSignature: return encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'isValidSignature', [fakeGnosisSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])
+		case gnosisSafeSelectors.transactionHash: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getTransactionHash', [bytes32String(fakeGnosisSafeContract.transactionHash)])
+		default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
+	}
+}
+
 export const fakeRequestHandler = {
 	rpcUrl: fakeRpcNetwork.httpsRpc,
 	clearCache() { return undefined },
@@ -475,6 +497,7 @@ export const fakeRequestHandler = {
 			if (typeof rawAddress !== 'string' && typeof rawAddress !== 'bigint') throw new Error('Malformed eth_getCode test request')
 			const requestedAddress = BigInt(rawAddress)
 			fakeGnosisSafeContract.requestedCodeAddresses.push(requestedAddress)
+			if (requestedAddress === MULTICALL3) return '0x01'
 			if (requestedAddress === GNOSIS_SAFE_MULTI_SEND_CALL_ONLY) return multiSendLibrary.deployedBytecode
 			if (requestedAddress === GNOSIS_SAFE_SIGN_MESSAGE_LIB) return signMessageLibrary.deployedBytecode
 			return requestedAddress === activeAddress ? '0x01' : fakeGnosisSafeContract.ownerCode
@@ -484,33 +507,28 @@ export const fakeRequestHandler = {
 			case 'eth_call': {
 				const call = rpcRequest.params?.[0]
 				if (!isRecord(call) || !(call.data instanceof Uint8Array)) throw new Error('Malformed test eth_call')
-				const selector = `0x${ Buffer.from(call.data).toString('hex').slice(0, 8) }`
-				switch (selector) {
-					case gnosisSafeSelectors.version:
-						await fakeGnosisSafeContract.beforeVersionResponse?.()
-						return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'VERSION', [fakeGnosisSafeContract.version])
-					case gnosisSafeSelectors.nonce: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'nonce', [fakeGnosisSafeContract.nonce])
-					case gnosisSafeSelectors.owners:
-						if (fakeGnosisSafeContract.safeOwnerLookupFailure === 'expected') throw modules.createGnosisSafeContractValidationFailure('Gnosis Safe owner lookup unavailable')
-						if (fakeGnosisSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Gnosis Safe owner decoder failure')
-						return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getOwners', [fakeGnosisSafeContract.owners.map(addressString)])
-					case gnosisSafeSelectors.threshold: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getThreshold', [fakeGnosisSafeContract.threshold])
-					case gnosisSafeSelectors.messageHash: return encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeGnosisSafeContract.messageHash)])
-					case gnosisSafeSelectors.messageSignature: return encodeFunctionReturn(GNOSIS_SAFE_MESSAGE_ABI, 'isValidSignature', [fakeGnosisSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])
-					case gnosisSafeSelectors.transactionHash: return encodeFunctionReturn(GNOSIS_SAFE_ABI, 'getTransactionHash', [bytes32String(fakeGnosisSafeContract.transactionHash)])
-					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
-				}
+				return await getFakeGnosisSafeContractReturnData(call.data)
 			}
 			case 'eth_simulateV1':
 				if (fakeGnosisSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
 				return modules.serialize(
 					modules.EthSimulateV1Result,
-					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => {
+					await Promise.all((Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map(async (blockStateCall) => {
 						const calls: readonly unknown[] = Array.isArray(blockStateCall.calls) ? blockStateCall.calls : []
 						const result = makeFakeEthSimulateResult(0n, modules.Multicall3ABI, calls)
-						// The simulation reads a Gnosis Safe's nonce with a nonce() call after the input before an execution; the fake Safe executes nothing, so its nonce stays fakeSafeContract.nonce.
-						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(GNOSIS_SAFE_ABI, 'nonce', [fakeGnosisSafeContract.nonce])) } : callResult) }
-					}),
+						// Read Gnosis Safe metadata after the prefix as eth_call does. This fake node does not execute contracts, so stored metadata stays unchanged.
+						return { ...result, calls: await Promise.all(result.calls.map(async (callResult, index) => {
+							const originalCall = calls[index]
+							if (isRecord(originalCall) && BigInt(originalCall.to ?? 0n) === MULTICALL3 && originalCall.input instanceof Uint8Array) {
+								const decoded = decodeFunctionDataStrict(Multicall3ABI, originalCall.input)
+								if (decoded.functionName === 'aggregate3' && decoded.args[0].every((entry) => BigInt(entry.target) === activeAddress && getGnosisSafeMetadataCallInput({ input: hexToBytes(entry.callData) }) !== undefined)) {
+									return { ...callResult, returnData: hexToBytes(encodeFunctionReturn(Multicall3ABI, 'aggregate3', [await Promise.all(decoded.args[0].map(async (entry) => ({ success: true, returnData: await getFakeGnosisSafeContractReturnData(hexToBytes(entry.callData)) })))])) }
+								}
+							}
+							const input = getGnosisSafeMetadataCallInput(originalCall)
+							return input === undefined ? callResult : { ...callResult, returnData: hexToBytes(await getFakeGnosisSafeContractReturnData(input)) }
+						})) }
+					})),
 				)
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
@@ -741,7 +759,7 @@ export async function createAcceptConfirmation(requestIdentifier: UniqueRequestI
 	if (pending === undefined) throw new Error('Expected a stored request to accept')
 	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: getPopupReviewedResultId(pending), forceSend } }
 }
-// The Gnosis Safe transaction of a pending transaction that is a created Safe proposal.
+// The Gnosis Safe transaction of a pending transaction that is a created Gnosis Safe proposal.
 export const getPendingGnosisSafeProposal = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' ? getCreatedGnosisSafeProposal(pending.safeFlow) : undefined
 
 export async function resetConfirmTransactionTestState() {

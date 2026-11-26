@@ -162,7 +162,7 @@ test('keeps a disconnected Gnosis Safe proposal reviewable and attaches the owne
 		new Date(),
 		1n,
 		false,
-		preparation.gasPayment,
+		{ gasPayment: preparation.gasPayment },
 	)
 	const finalized = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	assert.equal(finalized.transactionToSimulate.success, true)
@@ -851,9 +851,9 @@ test('rebases a later pending Gnosis Safe proposal after an earlier nonce is rej
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier: secondIdentifier },
 	}), true)
-	const [gnosisSafeStack] = await modules.getGnosisSafeTransactionStacks()
-	assert.equal(gnosisSafeStack?.baseNonce, 0n)
-	assert.equal(gnosisSafeStack?.transactions[0]?.safeTxHash, rebasedSafeTxHash)
+	const [safeStack] = await modules.getGnosisSafeTransactionStacks()
+	assert.equal(safeStack?.baseNonce, 0n)
+	assert.equal(safeStack?.transactions[0]?.safeTxHash, rebasedSafeTxHash)
 })
 
 test('rejects a stale forwarded Gnosis Safe nonce before persistence and rebases it when retried', async () => {
@@ -1208,7 +1208,7 @@ test('propagates unexpected Gnosis Safe signer-reply RPC and storage failures', 
 
 const otherChainRpcNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: 1338n }
 
-// Services for a second chain on which the Safe has the same address, owners, and nonce as on fakeRpcNetwork, so only the chain differs.
+// Services for a second chain on which the Gnosis Safe has the same address, owners, and nonce as on fakeRpcNetwork, so only the chain differs.
 function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
 	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork)
 	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
@@ -1320,7 +1320,7 @@ test('does not add an unsigned Gnosis Safe proposal prepared on another chain to
 test('does not move a Gnosis Safe proposal to the connected chain when the wallet switches owners after the network switches', async () => {
 	const otherOwner = recipientAddress
 	const { postedMessages, websiteTabConnections } = await prepareGnosisSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' }, [gnosisSafeTestOwnerAddress, otherOwner])
-	// The Safe on the other chain would hash a rebuilt proposal with that chain's domain.
+	// The Gnosis Safe on the other chain would hash a rebuilt proposal with that chain's domain.
 	fakeGnosisSafeContract.transactionHash = BigInt(getGnosisSafeTxHash(createGnosisSafeTx(otherChainRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)))
 	const otherChainSimulator = createOtherChainSimulator()
 

@@ -1,13 +1,15 @@
 import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { reportUnexpectedError } from '../utils/errors.js'
+import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { hasSameContentScriptInjectionSitesConfiguration, hasSameContentScriptRegistrationConfiguration, hasSamePageWorldProviderConfiguration, type ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
 import { getContentScriptInjectionConfiguration } from './contentScriptInjectionConfigurationLoader.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import { getMetamaskCompatibilityMode } from './settings.js'
+import { contentScriptRegistration } from './contentScriptRegistration.js'
+import { updateContentScriptInjectionStrategyManifestV2 } from './manifestV2ContentScriptInjection.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
@@ -22,10 +24,11 @@ async function applyContentScriptInjectionStrategy(refresh: ContentScriptInjecti
 	if (browser.runtime.getManifest().manifest_version === 2) {
 		// MV2 installs a lazy reader because each navigation is injected through webNavigation.
 		await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+		await contentScriptRegistration.reconcile(refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration)
 		return
 	}
 	const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
-	await updateContentScriptInjectionStrategyManifestV3(configuration)
+	await contentScriptRegistration.reconcile(configuration)
 }
 
 // Each exported entry point below is the one place that reports a refresh failure, once and with the code of its context; the scripting layer only throws.
@@ -37,6 +40,12 @@ export async function refreshContentScriptInjectionStrategy() {
 			await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 		}
 	})
+}
+
+// Both manifests observe hosting permissions and selection; MV2 also retains its ordinary navigation injector.
+export function startContentScriptInjectionStrategy() {
+	contentScriptRegistration.start()
+	if (browser.runtime.getManifest().manifest_version === 2) silenceChromeUnCaughtPromise(refreshContentScriptInjectionStrategy())
 }
 
 type RefreshFailureHandling = 'rollBackUpdate' | 'reportAndKeepUpdate'

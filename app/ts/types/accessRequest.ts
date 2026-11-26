@@ -106,16 +106,16 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: GnosisSafeSignerErrorDetails })),
 )
 
-// How a pending transaction's confirmation forms it, the one record of that decision: prepareSafeTransactionConfirmation makes it once when the confirmation opens, with the data the flow needs, and every refresh reads it back (getPendingTransactionFlowKind) to form the transaction the same way.
+// How a pending transaction's confirmation forms it, the one record of that decision: prepareGnosisSafeTransactionConfirmation makes it once when the confirmation opens, with the data the flow needs, and every refresh reads it back (getPendingTransactionFlowKind) to form the transaction the same way.
 // - ordinary: a transaction from the active address, or a raw transaction.
-// - simulationModeSafeExecution: in simulation mode, a Gnosis Safe's own transaction. Forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe.
-// - directExecution: a signer's execTransaction call executing a SafeTx of the configured Safe.
-// - proposal: a transaction of the configured Safe, proposed as a SafeTx. It is 'created' with its Gnosis Safe transaction. If the transaction did not form ('formationFailed': a gas estimate that reverted, a node error), the proposal was never attempted, so every refresh prepares the confirmation again, with the page's safeRequestContext, until it forms. If the transaction formed but the Gnosis Safe transaction could not be made from it ('creationFailed'), the confirmation keeps that failure.
-// - unsupportedSafeRequest: a request the configured Safe can't make through execTransaction (a contract creation), which the confirmation keeps as its request-shape failure.
+// - simulationModeSafeExecution: in simulation mode, a Gnosis Safe's own transaction. Forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Gnosis Safe.
+// - directExecution: a signer's execTransaction call executing a GnosisSafeTx of the configured Gnosis Safe.
+// - proposal: a transaction of the configured Gnosis Safe, proposed as a GnosisSafeTx. It is 'created' with its Gnosis Safe transaction. If the transaction did not form ('formationFailed': a gas estimate that reverted, a node error), the proposal was never attempted, so every refresh prepares the confirmation again, with the page's safeRequestContext, until it forms. If the transaction formed but the Gnosis Safe transaction could not be made from it ('creationFailed'), the confirmation keeps that failure.
+// - unsupportedSafeRequest: a request the configured Gnosis Safe can't make through execTransaction (a contract creation), which the confirmation keeps as its request-shape failure.
 export type PendingTransactionGnosisSafeFlow = funtypes.Static<typeof PendingTransactionGnosisSafeFlow>
 export const PendingTransactionGnosisSafeFlow = funtypes.Union(
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('ordinary') }),
-	funtypes.ReadonlyObject({ kind: funtypes.Literal('simulationModeSafeExecution') }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('simulationModeSafeExecution') }).And(funtypes.ReadonlyPartial({ operation: funtypes.Literal(1) })),
 	funtypes.ReadonlyObject({
 		kind: funtypes.Literal('directExecution'),
 		safeExecutionOriginalRequestParameters: SendTransactionParams,

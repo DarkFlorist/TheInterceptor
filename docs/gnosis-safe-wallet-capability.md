@@ -46,3 +46,9 @@ Capabilities are keyed by canonical hexadecimal chain ID:
 After discovering the capability, a site submits the Gnosis Safe `execTransaction` call with `eth_sendTransaction`. Both `from` and `to` must be the active Gnosis Safe address, and the outer transaction value must be zero. Any ETH transferred by the Gnosis Safe is encoded inside `execTransaction`.
 
 Interceptor validates the call, completes the approved Gnosis Safe signature set when the configured signer can do so, changes the outer transaction sender to the configured EOA, simulates the result, and presents it for approval. A site should use its ordinary EOA signing and execution flow when `gnosisSafeExecution` is absent.
+
+## Terminology and compatibility
+
+Project-owned files, module exports, internal APIs and UI classes use `gnosisSafe`, `GnosisSafe` or `GNOSIS_SAFE` naming. Generic safety operations such as `safeParse` and `Number.isSafeInteger` are unrelated and retain their names.
+
+Wire and storage contracts retain their existing spellings. This includes SDK methods such as `getSafeInfo`, fields such as `safeAddress` and `safeTx`, EIP-712 type keys `SafeTx` and `SafeMessage`, the `Interceptor Safe Stack` export discriminator, persisted settings keys, extension message tags and the registered content-script ID `safe-apps-host`. Renaming those values would break existing wallets, exports, saved settings or extension connections. User-provided account names are also preserved.

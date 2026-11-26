@@ -555,14 +555,14 @@ function FirstCard(param: FirstCardParams) {
 		void waitForSafeOwnerLookup(async () => {
 			const safeContractStateReply = await requestPopupGnosisSafeContractState({ address: safe.address, chainId: safe.chainId })
 			if (safeContractStateReply === undefined) throw new Error('Interceptor did not return the current Gnosis Safe owners.')
-			const gnosisSafeContractState = safeContractStateReply.data.result
-			if (!gnosisSafeContractState.ok) throw new Error(gnosisSafeContractState.message)
-			if (gnosisSafeContractState.owners.length === 0) throw new Error('The Gnosis Safe does not have any owners.')
+			const safeContractState = safeContractStateReply.data.result
+			if (!safeContractState.ok) throw new Error(safeContractState.message)
+			if (safeContractState.owners.length === 0) throw new Error('The Gnosis Safe does not have any owners.')
 			const currentSafeSimulationSignerAddress = safe.safeSimulationSignerAddress !== undefined
-				&& gnosisSafeContractState.owners.includes(safe.safeSimulationSignerAddress)
+				&& safeContractState.owners.includes(safe.safeSimulationSignerAddress)
 				? safe.safeSimulationSignerAddress
 				: undefined
-			retrievedSafeOwnerAddressBookEntries.value = gnosisSafeContractState.ownerAddressBookEntries
+			retrievedSafeOwnerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
 			const updateVisibleGnosisSafeOwners = (simulationSignerAddress: bigint | undefined) => {
 				if (param.activeAddresses.value === undefined) return
 				param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
@@ -570,8 +570,8 @@ function FirstCard(param: FirstCardParams) {
 						? {
 							...entry,
 							safeSimulationSignerAddress: simulationSignerAddress,
-							safeSignerAddresses: [...gnosisSafeContractState.owners],
-							safeVersion: gnosisSafeContractState.version,
+							safeSignerAddresses: [...safeContractState.owners],
+							safeVersion: safeContractState.version,
 						}
 						: entry
 				)
@@ -909,6 +909,7 @@ export function Home(param: HomeParams) {
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
+	const { value: appHostLaunchState, waitFor: waitForAppHostLaunch } = useAsyncState<void>()
 	const tabSignerAvailability = useComputed(() => isSignerMissing(param.tabState.value?.signerName ?? 'NoSignerDetected') ? 'missing' : 'available')
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
@@ -964,6 +965,14 @@ export function Home(param: HomeParams) {
 		globalThis.close()
 	}
 
+	async function openGnosisSafeApp() {
+		const sourceTabId = param.tabState.value?.tabId
+		if (sourceTabId === undefined) throw new Error('The original website tab is unavailable.')
+		const reply = await sendPopupMessageWithReply({ method: 'popup_openGnosisSafeApp', data: { sourceTabId } })
+		if (reply === undefined) throw new Error('Interceptor did not confirm opening the Gnosis Safe App. Please retry.')
+		if (!reply.ok) throw new Error(reply.message)
+	}
+
 	if (!param.isInitialHomeDataLoaded.value) {
 		return <HomeLoadingSkeleton/>
 	}
@@ -996,6 +1005,17 @@ export function Home(param: HomeParams) {
 			isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }
 			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
+		{ currentActiveAddress.value?.type === 'safe' ? <div class = 'card-body' style = 'padding: 12px'>
+			<AsyncActionButton
+				state = { appHostLaunchState.value.state }
+				text = 'Open as Gnosis Safe App'
+				pendingText = 'Opening Gnosis Safe App…'
+				onClick = { () => waitForAppHostLaunch(openGnosisSafeApp) }
+				disabled = { param.isSettingsChangePending.value }
+				class = 'btn btn--outline'
+			/>
+			{ appHostLaunchState.value.state === 'rejected' ? <p role = 'alert'>{ appHostLaunchState.value.error.message }</p> : <></> }
+		</div> : <></> }
 
 		{ (param.simulationMode.value || safeStackMode.value) && visualizedAddress.value !== undefined
 			? showPopupVisualisation.value

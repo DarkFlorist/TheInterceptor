@@ -29,8 +29,8 @@ export const SimulateExecutionReplyData = funtypes.Union(
 			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 			simulationState: funtypes.Union(SimulationState),
 		}).And(funtypes.ReadonlyPartial({
-			// Set for a Gnosis Safe transaction preview when the Safe answered its owner reads.
-			gnosisSafeSignatureRequirement: GnosisSafeSignatureRequirement,
+			// Set for a Gnosis Safe transaction preview when the Gnosis Safe answered its owner reads.
+			safeSignatureRequirement: GnosisSafeSignatureRequirement,
 		})),
 	}),
 )

@@ -10,7 +10,7 @@ import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
 import { activeAddress, addressString, browserMock, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction as sharedPendingTransaction, popupVisualisation as sharedSuccessfulPopupVisualisation, recipientAddress, signedTransaction as sharedSignedTransaction, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
-// These previews use their own mainnet clients; mutating the shared local-chain fixture can leak into Safe fixtures evaluated while these tests run.
+// These previews use their own mainnet clients; mutating the shared local-chain fixture can leak into Gnosis Safe fixtures evaluated while these tests run.
 const previewRpcNetwork = { ...fakeRpcNetwork, chainId: 1n }
 const previewEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, previewRpcNetwork)
 const simulator = { ethereum: previewEthereum, tokenPriceService: new modules.TokenPriceService(previewEthereum, 60_000) }

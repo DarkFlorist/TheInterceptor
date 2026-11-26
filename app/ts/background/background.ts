@@ -24,7 +24,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { getWalletSelectedAccount, isActiveSigningGnosisSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -110,6 +110,7 @@ async function handleRPCRequest(
 			confirmation,
 			parsedRequest: undefined,
 			safeSigningMode,
+			simulationMode: settings.simulationMode,
 			forwardToSigner,
 			activeAddress,
 			chainId: settings.activeRpcNetwork.chainId,
@@ -137,6 +138,7 @@ async function handleRPCRequest(
 		confirmation,
 		parsedRequest,
 		safeSigningMode,
+		simulationMode: settings.simulationMode,
 		forwardToSigner,
 		activeAddress,
 		chainId: settings.activeRpcNetwork.chainId,
@@ -529,19 +531,19 @@ type RequestRouting =
 	| { readonly kind: 'answeredAtAdmission', readonly reply: InterceptedRequestForward }
 	| { readonly kind: 'resolved', readonly resolved: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
 
-// One routing decision on the given settings. A re-route repeats all of it because every step depends on the mode: the Safe signing state, Safe Apps admission and rpcContext, the simulation overlay, and the services handleRPCRequest selects.
+// One routing decision on the given settings. A re-route repeats all of it because every step depends on the mode: the Gnosis Safe signing state, Gnosis Safe Apps admission and rpcContext, the simulation overlay, and the services handleRPCRequest selects.
 async function routeRequest(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<RequestRouting> {
 	const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const safeSigningMode = isActiveSigningGnosisSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 	let rpcContext: RpcRequestContext = { request }
 	if (request.method === 'safe_apps_request') {
-		const admission = await prepareGnosisSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+		const admission = await prepareGnosisSafeAppsRequest(simulationServicesOwner.getCurrent(), websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 		if (admission.kind === 'reply') return { kind: 'answeredAtAdmission', reply: admission.reply }
 		rpcContext = admission.context
 	}
 	const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
-	// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
+	// The request's active entry is captured before async handling begins. Recheck Gnosis Safe ownership without rerouting the request if the popup selects another account meanwhile.
 	const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 	const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
 	const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)

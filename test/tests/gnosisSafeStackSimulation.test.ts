@@ -218,7 +218,7 @@ function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Arra
 	})))
 }
 
-// Answers the owner reads of the Safe preview check the way a Safe does.
+// Answers the owner reads of the Gnosis Safe preview check the way a Gnosis Safe does.
 function getNamedGnosisSafeCallReply(callParameters: unknown, owners: readonly bigint[]) {
 	if (typeof callParameters !== 'object' || callParameters === null || !('data' in callParameters) || !(callParameters.data instanceof Uint8Array)) throw new Error('Missing eth_call data')
 	const callData = dataStringWith0xStart(callParameters.data)
@@ -304,7 +304,7 @@ function createGnosisSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestMo
 	return safeMessage
 }
 
-// Answers the owner reads of the Safe signature requirement as a Safe with the given owners and threshold, and undefined for any other call.
+// Answers the owner reads of the Gnosis Safe signature requirement as a Gnosis Safe with the given owners and threshold, and undefined for any other call.
 function getGnosisSafeOwnerReadReply(call: unknown, safeAddress: bigint, owners: readonly bigint[], threshold: bigint) {
 	if (typeof call !== 'object' || call === null || !('to' in call) || call.to !== safeAddress || !('input' in call) || !(call.input instanceof Uint8Array)) return undefined
 	const callData = dataStringWith0xStart(call.input)
@@ -674,7 +674,7 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(delegateCallSimulationCount, operation === 1n ? 2 : 0)
 		// Both owner reads run on top of the stack the preview runs on: one block for the read, after the seeded stack block.
 		assert.deepEqual(ownerReadBlockCounts, seedStack ? [2, 2] : [1, 1])
-		assert.deepEqual(reply.result.gnosisSafeSignatureRequirement, { threshold: 1n, ownerCount: 1n, signerIsOwner: true })
+		assert.deepEqual(reply.result.safeSignatureRequirement, { threshold: 1n, ownerCount: 1n, signerIsOwner: true })
 	})
 	test('a default demo account among the owners does not count as a signature the user can provide', async () => {
 		// Fresh storage: the user has configured no accounts, so the default demo accounts are the active addresses.
@@ -725,7 +725,7 @@ describe('Gnosis Safe stack simulation', () => {
 		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: sharedSafe, message: { ...safeMessage.message, domain: { ...safeMessage.message.domain, verifyingContract: sharedSafe.address } } }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
 		if (!reply.success) throw new Error(reply.errorMessage)
 
-		const requirement = reply.result.gnosisSafeSignatureRequirement
+		const requirement = reply.result.safeSignatureRequirement
 		assert.deepEqual(requirement, { threshold: 2n, ownerCount: 2n, signerIsOwner: true })
 		if (requirement === undefined) throw new Error('missing Gnosis Safe signature requirement')
 		assert.equal(modules.signaturesTheSignerProvides(requirement), 1n)

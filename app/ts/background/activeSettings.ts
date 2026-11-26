@@ -1,6 +1,6 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
-import type { SimulationServicesOwner, SimulationNetworkReconciliation } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationNetworkReconciliation } from './simulationServicesOwner.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -114,7 +114,7 @@ export async function runActiveSettingsTransition(
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
-			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
+			// External-wallet signing has no simulated stack; Gnosis Safe signing retains its separate stack visualization.
 			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 				await startPopupSimulationRefreshInBackground(simulationServicesOwner.getCurrent())
 			}

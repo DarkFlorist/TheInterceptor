@@ -7,7 +7,7 @@ import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimu
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setGnosisSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getGnosisSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getGnosisSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, prepareUnformedGnosisSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
@@ -18,7 +18,7 @@ import { changeActiveRpc } from './walletSwitch.js'
 import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
 import { withWebsiteAccessChanges } from './websiteAccessMutations.js'
-import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveOrFirstSignerAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress, hasAddressBookDuplicate } from './metadataUtils.js'
@@ -35,7 +35,7 @@ import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestGnosisSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -48,7 +48,7 @@ import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationSta
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -57,7 +57,7 @@ import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
 import { createGnosisSafeContractValidationFailure, getGnosisSafeContractSnapshot, validateGnosisSafeOwnerIsEoa } from '../gnosisSafe/gnosisSafeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
-import { getCreatedGnosisSafeProposal, getPendingTransactionGasPayment, getPendingTransactionRefresh, getGnosisSafePendingFlow } from '../gnosisSafe/gnosisSafePendingFlow.js'
+import { getCreatedGnosisSafeProposal, getPendingTransactionFormationOptions, getPendingTransactionRefresh, getGnosisSafePendingFlow } from '../gnosisSafe/gnosisSafePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
@@ -119,7 +119,7 @@ export function getGnosisSafeSignerSelectionFromAccountRefresh(refreshResult: Gn
 }
 
 export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	// Captured before the pending-request read and the Safe signer refresh below, so a simulation mode switch during either still refuses the signer forward.
+	// Captured before the pending-request read and the Gnosis Safe signer refresh below, so a simulation mode switch during either still refuses the signer forward.
 	const resolvePreparedConfirmation = beginPendingTransactionResolution()
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
@@ -506,7 +506,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 						&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
 						&& transaction.signedTransaction.from === removedTransaction.signedTransaction.from
 						&& transaction.signedTransaction.nonce > removedTransaction.signedTransaction.nonce
-						// A Gnosis Safe execution raises no account nonce of the Safe, and its own nonce field is a sequence that stays unique only if it is never renumbered (getSimulatedSafeCallNonce).
+						// A Gnosis Safe execution raises no account nonce of the Gnosis Safe, and its own nonce field is a sequence that stays unique only if it is never renumbered (getSimulatedGnosisSafeCallNonce).
 						&& !authorizesExecutedCall(removedTransaction)
 						&& !authorizesExecutedCall(transaction)
 				}
@@ -559,7 +559,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 	const thisConfirmationMetadataRefresh = latestConfirmationMetadataRefresh
 	const [first] = await getPendingTransactionsAndMessages()
 	if (first === undefined) return
-	// Signing confirmations are independent of the simulation-mode stack, so the request's own mode decides. Safe proposals carry their own isolated optimistic simulation in the pending transaction payload.
+	// Signing confirmations are independent of the simulation-mode stack, so the request's own mode decides. Gnosis Safe proposals carry their own isolated optimistic simulation in the pending transaction payload.
 	const dialogStatePromise = silenceChromeUnCaughtPromise(buildConfirmTransactionDialogState(ethereum, {
 		simulationMode: first.simulationMode,
 		getVisualisation: async () => await refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, dependencies.visualisation),
@@ -630,7 +630,7 @@ async function formPendingTransactionAgain(ethereum: EthereumClientService, pend
 		pending.created,
 		pending.transactionIdentifier,
 		pending.simulationMode,
-		getPendingTransactionGasPayment(pending),
+		getPendingTransactionFormationOptions(pending),
 	)
 	return await formSendRawTransaction(ethereum, pending.originalRequestParameters, pending.transactionToSimulate.website, pending.created, pending.transactionIdentifier)
 }
@@ -782,54 +782,6 @@ export async function getAddressBookData(parsed: GetAddressBookData) {
 	})
 }
 
-type ExtensionTabName = 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack'
-
-type ExistingTabUpdate = {
-	active: true
-	highlighted: true
-	url?: string
-}
-
-function getExistingTabUpdate(tabName: ExtensionTabName, targetUrl: string, resolvedTargetUrl: URL, currentTabUrl: string | undefined, targetHash: string): ExistingTabUpdate {
-	const url = getExistingTabUrlUpdate(tabName, targetUrl, resolvedTargetUrl, currentTabUrl, targetHash)
-	if (url === undefined) return { active: true, highlighted: true }
-	return { active: true, highlighted: true, url }
-}
-
-function getExistingTabUrlUpdate(tabName: ExtensionTabName, targetUrl: string, resolvedTargetUrl: URL, currentTabUrl: string | undefined, targetHash: string) {
-	if (targetHash.length !== 0) return targetUrl
-	if (tabName !== 'simulationStack') return undefined
-	if (currentTabUrl === undefined) return undefined
-	return shouldClearSimulationStackHash(currentTabUrl, targetUrl, resolvedTargetUrl) ? targetUrl : undefined
-}
-
-function shouldClearSimulationStackHash(currentTabUrl: string, targetUrl: string, resolvedTargetUrl: URL) {
-	try {
-		const currentUrl = new URL(currentTabUrl, browser.runtime.getURL('/'))
-		return currentUrl.pathname !== resolvedTargetUrl.pathname || currentUrl.hash !== ''
-	} catch {
-		return currentTabUrl !== targetUrl
-	}
-}
-
-export const openNewTab = async (tabName: ExtensionTabName, targetHash = '') => {
-	const targetUrl = `${ getHtmlFile(tabName) }${ targetHash }`
-	const resolvedTargetUrl = new URL(targetUrl, browser.runtime.getURL('/'))
-	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: targetUrl })
-		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })
-	}
-
-	const tabId = (await getIdsOfOpenedTabs())[tabName]
-	if (tabId === undefined) return await openInNewTab()
-	const allTabs = await browser.tabs.query({})
-	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
-
-	if (addressBookTab?.id === undefined) return await openInNewTab()
-	const tab = await updateTabIfExists(addressBookTab.id, getExistingTabUpdate(tabName, targetUrl, resolvedTargetUrl, addressBookTab.url, targetHash))
-	if (tab === undefined) return await openInNewTab()
-	if (tab?.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })
-}
 
 export async function requestNewHomeData(
 	ethereum: EthereumClientService,

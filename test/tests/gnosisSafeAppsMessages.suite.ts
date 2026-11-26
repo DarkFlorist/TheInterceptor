@@ -1,3 +1,4 @@
+import { createGnosisSafeAppsSigningServices } from '../fixtures/gnosisSafeAppsRequestServices.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { isValidMessage } from '../../app/ts/utils/eip712.js'
 import * as assert from 'assert'
@@ -41,13 +42,13 @@ test('Gnosis Safe Apps signMessage hashes UTF-8 text with the canonical Gnosis S
 	assert.equal(isGnosisSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId + 1n), false)
 	assert.equal(isGnosisSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { text: 'Different text', isTypedData: false }), false)
 	assert.deepEqual(Object.keys(data).sort(), ['domain', 'message', 'primaryType', 'types'])
-	const command = await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: originalMessage } }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => ({ version: '1.4.1', nonce: 0n, threshold: 2n, owners: [gnosisSafeTestOwnerAddress] }))
+	const command = await getGnosisSafeAppsRequestCommand({ method: 'signMessage', params: { message: originalMessage } }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => ({ version: '1.4.1', nonce: 0n, threshold: 2n, owners: [gnosisSafeTestOwnerAddress] }), createGnosisSafeAppsSigningServices())
 	assert.equal(command.kind, 'ethereumRequest')
 	if (command.kind !== 'ethereumRequest') throw new Error('Missing signing command')
 	assert.equal(command.method, 'eth_signTypedData_v4')
 	assert.equal(command.mapResult, 'safeMessage')
 	assert.deepEqual(command.params, [data.domain.verifyingContract, JSON.stringify(data)])
-	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'submitOffChainMessage', params: { message: originalMessage, signature: `0x${ '11'.repeat(65) }`, safeAddress: data.domain.verifyingContract, chainId: '999' } }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }), /account or chain changed/)
+	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'submitOffChainMessage', params: { message: originalMessage, signature: `0x${ '11'.repeat(65) }`, safeAddress: data.domain.verifyingContract, chainId: '999' } }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, createGnosisSafeAppsSigningServices()), /account or chain changed/)
 })
 
 test('Gnosis Safe message review shows authenticated text, forwards to the selected owner, and validates its signature', async () => {
@@ -106,7 +107,7 @@ test('Gnosis Safe message service submits validated owner signatures and require
 		await assert.rejects(services.getSignature(messageHash), /did not accept/)
 		fakeGnosisSafeContract.messageSignatureValid = true
 		fakeGnosisSafeContract.threshold = 2n
-		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getOffChainSignature', params: messageHash }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, { messages: services }), { kind: 'result', value: '' })
+		assert.deepEqual(await getGnosisSafeAppsRequestCommand({ method: 'getOffChainSignature', params: messageHash }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, createGnosisSafeAppsSigningServices({ messages: services })), { kind: 'result', value: '' })
 		await assert.rejects(services.submit('Different message', signature))
 		assert.equal(submitted.length, 1)
 		globalThis.fetch = async () => Response.json({ messageHash, message: 'Wrong text', confirmations: [{ signature }] })
@@ -129,7 +130,7 @@ test('Gnosis Safe typed messages authenticate the original EIP-712 data through 
 	assert.equal(envelope.message.message, hashTypedData(appTypedData))
 	assert.equal(createGnosisSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, JSON.stringify({ domain: appTypedData.domain, types: { Mail: appTypedData.types.Mail }, message: appTypedData.message }), true).message.message, envelope.message.message)
 	assert.notEqual(envelope.message.message, hashMessage(original))
-	const command = await getGnosisSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: appTypedData } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') })
+	const command = await getGnosisSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: appTypedData } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, createGnosisSafeAppsSigningServices())
 	if (command.kind !== 'ethereumRequest' || command.mapResult !== 'safeMessage') throw new Error('Missing typed signing command')
 	assert.equal(command.isTypedData, true)
 	assert.equal(command.message, original)
@@ -162,7 +163,7 @@ test('Gnosis Safe typed messages authenticate the original EIP-712 data through 
 		assert.equal(await services.getSignature(messageHash), signature)
 		await assert.rejects(services.submit(original, signature, false))
 	} finally { globalThis.fetch = originalFetch }
-	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: { ...appTypedData, message: { contents: 'Missing amount' } } } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }), /Invalid Gnosis Safe typed message/)
+	await assert.rejects(getGnosisSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: { ...appTypedData, message: { contents: 'Missing amount' } } } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, createGnosisSafeAppsSigningServices()), /Invalid Gnosis Safe typed message/)
 })
 
 for (const isTypedData of [false, true]) test(`Gnosis Safe ${ isTypedData ? 'typed' : 'plain' } message recovers after selecting an owner`, async () => {

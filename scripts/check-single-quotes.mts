@@ -8,6 +8,7 @@ const filePatterns = [
 	'app/ts/**/*.ts',
 	'app/ts/**/*.tsx',
 	'app/inpage/ts/**/*.ts',
+	'app/shared/ts/**/*.ts',
 	'test/**/*.ts',
 	'build/**/*.mts',
 	'scripts/**/*.ts',

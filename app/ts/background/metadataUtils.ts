@@ -155,7 +155,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	return undefined
 }
 
-// Duplicate form validation needs only existence, never a locally inferred contract type or Safe owners.
+// Duplicate form validation needs only existence, never a locally inferred contract type or Gnosis Safe owners.
 export async function hasAddressBookDuplicate(address: bigint, rpcEntry: RpcNetwork | undefined): Promise<boolean> {
 	const entry = await identifyAddressWithoutNode(address, rpcEntry)
 	return entry !== undefined && entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'

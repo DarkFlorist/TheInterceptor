@@ -1,53 +1,16 @@
 import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
-const GNOSIS_SAFE_APPS_RESPONSE_VERSION = '9.1.0'
-const GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT = 32
-
-type GnosisSafeAppsWindow = {
-	readonly location: { readonly origin: string }
-	addEventListener(type: 'message', listener: (event: Event) => void): void
-	removeEventListener(type: 'message', listener: (event: Event) => void): void
-	postMessage(message: unknown, targetOrigin: string): void
-}
-
-type GnosisSafeAppsRequest = {
-	readonly id: string
-	readonly method: string
-	readonly params?: unknown
-}
-
-type ParsedGnosisSafeAppsRequest =
-	| { readonly id: string, readonly request: GnosisSafeAppsRequest }
-	| { readonly id: string, readonly error: string }
-
-type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
+import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, isGnosisSafeAppsCancellation } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
+import { GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS, GNOSIS_SAFE_APPS_RESPONSE_VERSION, createGnosisSafeAppsErrorResponse, isGnosisSafeAppsDiscoveryMethod, parseGnosisSafeAppsRequest, type ParsedGnosisSafeAppsRequest, type GnosisSafeAppsRequest, type GnosisSafeAppsResponse } from '../../shared/ts/gnosisSafeAppsProtocol.js'
+import { createGnosisSafeAppsRequestQueue } from '../../shared/ts/gnosisSafeAppsRequestQueue.js'
+import { createGnosisSafeAppsTransport, type GnosisSafeAppsWindow } from '../../shared/ts/gnosisSafeAppsTransport.js'
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
 
-type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
-type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
 type GnosisSafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
 type GnosisSafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
 
-const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
-const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
 const isGnosisSafeAppsCompatibilityCandidate = (value: unknown): value is GnosisSafeAppsCompatibilityCandidate => isRecord(value)
 const isGnosisSafeAppsCommandCandidate = (value: unknown): value is GnosisSafeAppsCommandCandidate => isRecord(value)
-
-function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefined {
-	if (!('data' in event) || !('origin' in event) || !('source' in event) || typeof event.origin !== 'string') return undefined
-	return { data: event.data, origin: event.origin, source: event.source }
-}
-
-function parseGnosisSafeAppsRequest(data: unknown): ParsedGnosisSafeAppsRequest | undefined {
-	if (!isSafeAppsRequestCandidate(data) || typeof data.id !== 'string') return undefined
-	// The SDK envelope distinguishes Safe Apps requests from unrelated page postMessage protocols.
-	if (!isSafeAppsEnvironmentCandidate(data.env)) return undefined
-	if (typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) {
-		return { id: data.id, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.' }
-	}
-	if (typeof data.method !== 'string') return { id: data.id, error: 'Gnosis Safe Apps method must be a string.' }
-	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
-}
 
 function parseGnosisSafeAppsCompatibility(value: unknown) {
 	if (!isGnosisSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
@@ -75,7 +38,7 @@ async function executeGnosisSafeAppsCommand(command: unknown, requestEthereum: E
 }
 
 // Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
-const isGnosisSafeAppsDiscoveryRequest = (request: ParsedGnosisSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
+const isGnosisSafeAppsDiscoveryRequest = (request: ParsedGnosisSafeAppsRequest) => 'request' in request && isGnosisSafeAppsDiscoveryMethod(request.request.method)
 
 function createGnosisSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
 	let offChainSigning = true
@@ -97,49 +60,82 @@ function createGnosisSafeAppsRequestHandler(requestBackground: (request: unknown
 }
 
 function createGnosisSafeAppsBridge(windowObject: GnosisSafeAppsWindow, requestSafeApps: (request: Pick<GnosisSafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
+	const transport = createGnosisSafeAppsTransport(windowObject)
+	const reply = (envelope: GnosisSafeAppsResponse, origin: string, bridgeToken?: string) => transport.post(bridgeToken === undefined ? envelope : createGnosisSafeAppsBridgeMessage(envelope, bridgeToken), origin)
 	let enabled = false
 	let enablementGeneration = 0
 	let canRequestAccess = false
 	let accessRequested = false
 	let accessFailure: string | undefined
-	const pendingRequests: { readonly parsedRequest: ParsedGnosisSafeAppsRequest, readonly origin: string }[] = []
-	const answerRequest = (parsedRequest: ParsedGnosisSafeAppsRequest, origin: string) => {
+	type DiscoveryLifecycle = { readonly id: string, readonly bridgeToken?: string, cancelled: boolean, timeoutId?: number }
+	const activeDiscoveries = new Set<DiscoveryLifecycle>()
+	const releaseDiscovery = (discovery: DiscoveryLifecycle) => {
+		activeDiscoveries.delete(discovery)
+		if (discovery.timeoutId !== undefined) window.clearTimeout(discovery.timeoutId)
+	}
+	const cancelDiscovery = (discovery: DiscoveryLifecycle) => {
+		discovery.cancelled = true
+		releaseDiscovery(discovery)
+	}
+	const pendingRequests = createGnosisSafeAppsRequestQueue<{ readonly id: string, readonly method: string, readonly parsedRequest: ParsedGnosisSafeAppsRequest, readonly origin: string, readonly bridgeToken?: string }>({
+		// Expire queued discovery on its own deadline, even if no message or eligibility update follows.
+		timers: { setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window) },
+		onRejected: (pending, error, reason) => {
+			// Startup discovery stays silent until the background determines access eligibility.
+			if (reason === 'capacity' && !canRequestAccess) return
+			reply(createGnosisSafeAppsErrorResponse(pending, error), pending.origin, pending.bridgeToken)
+		},
+	})
+	const queueDiscovery = (parsedRequest: ParsedGnosisSafeAppsRequest, origin: string, bridgeToken?: string) => {
+		if ('request' in parsedRequest && pendingRequests.add({ id: parsedRequest.id, method: parsedRequest.request.method, parsedRequest, origin, bridgeToken })) requestAccessForDiscovery()
+	}
+	const answerRequest = (parsedRequest: ParsedGnosisSafeAppsRequest, origin: string, bridgeToken?: string) => {
 		if ('error' in parsedRequest) {
-			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, origin)
+			reply(createGnosisSafeAppsErrorResponse(parsedRequest, parsedRequest.error), origin, bridgeToken)
 			return
 		}
 		const request = parsedRequest.request
+		const requestLifecycle: DiscoveryLifecycle = { id: request.id, bridgeToken, cancelled: false }
+		if (isGnosisSafeAppsDiscoveryRequest(parsedRequest)) {
+			activeDiscoveries.add(requestLifecycle)
+			requestLifecycle.timeoutId = window.setTimeout(() => cancelDiscovery(requestLifecycle), GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS)
+		}
 		const requestEnablementGeneration = enablementGeneration
 		const isCurrentResponse = () => {
+			if (requestLifecycle.cancelled) return false
+			// Already admitted mutations keep their one terminal result when eligibility changes. The background owns approval and execution; dropping this reply can invite a duplicate operation.
+			if (request.method === 'sendTransactions' || request.method === 'signMessage' || request.method === 'signTypedMessage' || request.method === 'submitOffChainMessage' || request.method === 'execute') return true
 			if (enabled && requestEnablementGeneration === enablementGeneration) return true
-			// Startup queries must survive a temporary loss of eligibility, but their old account data must never be published.
+			// Startup queries survive a temporary loss of eligibility, but their old account data must never be published.
 			if (isGnosisSafeAppsDiscoveryRequest(parsedRequest)) {
-				if (enabled) answerRequest(parsedRequest, origin)
-				else if (pendingRequests.length < GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT) {
-					pendingRequests.push({ parsedRequest, origin })
-					requestAccessForDiscovery()
-				}
+				if (enabled) answerRequest(parsedRequest, origin, bridgeToken)
+				else queueDiscovery(parsedRequest, origin, bridgeToken)
+			} else {
+				// Other reads settle without stale data, so their host can finish its pending-request lifecycle instead of waiting forever.
+				reply(createGnosisSafeAppsErrorResponse(request, 'Gnosis Safe App eligibility changed before the read completed. Retry the connection.'), origin, bridgeToken)
 			}
 			return false
 		}
 		void requestSafeApps(request).then(
 			(data) => {
+				if (activeDiscoveries.has(requestLifecycle)) releaseDiscovery(requestLifecycle)
 				if (!isCurrentResponse()) return
-				windowObject.postMessage({ id: request.id, success: true, data, version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, origin)
+				reply({ id: request.id, success: true, data, version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, origin, bridgeToken)
 			},
 			(error: unknown) => {
+				if (activeDiscoveries.has(requestLifecycle)) releaseDiscovery(requestLifecycle)
 				if (!isCurrentResponse()) return
-				windowObject.postMessage({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Gnosis Safe Apps request failed.', version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, origin)
+				reply({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Gnosis Safe Apps request failed.', version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, origin, bridgeToken)
 			},
 		)
 	}
 	const rejectPendingDiscovery = (message: string) => {
-		for (const { parsedRequest, origin } of pendingRequests.splice(0)) {
-			windowObject.postMessage({ id: parsedRequest.id, success: false, error: message, version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, origin)
+		for (const { parsedRequest, origin, bridgeToken } of pendingRequests.drain()) {
+			reply(createGnosisSafeAppsErrorResponse('request' in parsedRequest ? parsedRequest.request : parsedRequest, message), origin, bridgeToken)
 		}
 	}
 	const requestAccessForDiscovery = () => {
-		if (enabled || !canRequestAccess || !pendingRequests.some(({ parsedRequest }) => isGnosisSafeAppsDiscoveryRequest(parsedRequest))) return
+		if (enabled || !canRequestAccess || !pendingRequests.values().some(({ parsedRequest }) => isGnosisSafeAppsDiscoveryRequest(parsedRequest))) return
 		if (accessFailure !== undefined) {
 			rejectPendingDiscovery(accessFailure)
 			return
@@ -152,42 +148,43 @@ function createGnosisSafeAppsBridge(windowObject: GnosisSafeAppsWindow, requestS
 			rejectPendingDiscovery(accessFailure)
 		})
 	}
-	const onMessage = (event: Event) => {
-		const messageEvent = parseSafeAppsMessageEvent(event)
-		if (messageEvent === undefined) return
-		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
-		const parsedRequest = parseGnosisSafeAppsRequest(messageEvent.data)
-		if (parsedRequest === undefined) return
-		if (!enabled && isGnosisSafeAppsDiscoveryRequest(parsedRequest)) {
-			if (pendingRequests.length >= GNOSIS_SAFE_APPS_PENDING_REQUEST_LIMIT) {
-				if (enabled === false && !canRequestAccess) return
-				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Gnosis Safe Apps request queue is full. Retry after the connection finishes initializing.', version: GNOSIS_SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
-				return
-			}
-			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
-			requestAccessForDiscovery()
+	const unsubscribe = transport.subscribe((messageEvent) => {
+		const internalMessage = parseGnosisSafeAppsBridgeMessage(messageEvent.data)
+		const envelope = internalMessage?.envelope ?? messageEvent.data
+		const bridgeToken = internalMessage?.bridgeToken
+		if (isGnosisSafeAppsCancellation(envelope)) {
+			const cancellation = envelope
+			const pending = pendingRequests.values().find((request) => request.id === cancellation.id && request.bridgeToken === bridgeToken)
+			if (pending !== undefined) pendingRequests.take(pending.id)
+			for (const discovery of activeDiscoveries) if (discovery.id === cancellation.id && discovery.bridgeToken === bridgeToken) cancelDiscovery(discovery)
 			return
 		}
-		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
-	}
-	windowObject.addEventListener('message', onMessage)
+		pendingRequests.expire()
+		const parsedRequest = parseGnosisSafeAppsRequest(envelope)
+		if (parsedRequest === undefined) return
+		if (!enabled && isGnosisSafeAppsDiscoveryRequest(parsedRequest)) {
+			queueDiscovery(parsedRequest, messageEvent.origin, bridgeToken)
+			return
+		}
+		if (enabled) answerRequest(parsedRequest, messageEvent.origin, bridgeToken)
+	})
 	return {
 		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
+			pendingRequests.expire()
 			canRequestAccess = nextCanRequestAccess
 			if (enabled !== nextEnabled) enablementGeneration += 1
 			enabled = nextEnabled
-			const queuedRequests = pendingRequests.splice(0)
 			if (nextEnabled) {
-				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+				for (const { parsedRequest, origin, bridgeToken } of pendingRequests.drain()) answerRequest(parsedRequest, origin, bridgeToken)
 			} else {
-				// Never defer signing or transaction requests across a disabled state.
-				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isGnosisSafeAppsDiscoveryRequest(parsedRequest)))
+				// Only discovery enters the queue; leave it there for re-enablement without replaying signing or transactions.
 				requestAccessForDiscovery()
 			}
 		},
 		dispose() {
-			pendingRequests.splice(0)
-			windowObject.removeEventListener('message', onMessage)
+			for (const discovery of activeDiscoveries) cancelDiscovery(discovery)
+			pendingRequests.drain()
+			unsubscribe()
 		},
 	}
 }
@@ -296,6 +293,8 @@ type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly typ
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
 const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
+const INTERCEPTOR_BRIDGE_READY_MESSAGE = 'interceptor_bridge_ready'
+const INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE = 'interceptor_bridge_ready_request'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 // Account connections wait for signer ownership; reads can proceed independently. The shared account-method policy is bundled into this classic provider.
@@ -531,7 +530,7 @@ type InpageWindow = Window & {
 }
 
 const inpageWindow: InpageWindow = window
-// Build-time variant flag: scripts/inline-inpage-document-start.mts rewrites this literal per artifact; the source value false is the default inpage.js (non-compatibility) build.
+// Build-time variant flag: build/bundler.mts rewrites this literal per artifact with scripts/inline-inpage-document-start.mts before bundling; the source value false is the default inpage.js (non-compatibility) build.
 const metamaskCompatibilityModeAtPageLoad = false // [[metamaskCompatibilityModeAtPageLoad]]
 
 interface EIP6963ProviderInfo {
@@ -730,7 +729,7 @@ class InterceptorMessageListener {
 		// Restore persisted access after reload before considering an interactive wallet connection.
 		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
 		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
-		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
+		// Recheck Gnosis Safe eligibility after the ordinary wallet/site approval flow completes.
 		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
 	})
 	private signerName: Signer = 'NoSigner'
@@ -874,7 +873,16 @@ class InterceptorMessageListener {
 		const channel = new MessageChannel()
 		this.extensionMessagePort = channel.port1
 		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
-		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
+		// MAIN and ISOLATED document-start scripts can start in either order, particularly in Chrome's cross-process frames. Retain port2 until the isolated listener is ready; requests sent on port1 remain queued without replaying RPCs.
+		let transferred = false
+		const transferWhenReady = (event: MessageEvent<unknown>) => {
+			if (transferred || event.source !== window || event.origin !== window.location.origin || typeof event.data !== 'object' || event.data === null || !('type' in event.data) || event.data.type !== INTERCEPTOR_BRIDGE_READY_MESSAGE) return
+			transferred = true
+			window.removeEventListener('message', transferWhenReady)
+			window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
+		}
+		window.addEventListener('message', transferWhenReady)
+		window.postMessage({ type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE }, '*')
 	}
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
@@ -1647,7 +1655,9 @@ class InterceptorMessageListener {
 				}
 				case 'safe_apps_compatibility': {
 					const safeAppsCompatibility = parseGnosisSafeAppsCompatibility(replyRequest.result)
-					if (safeAppsCompatibility !== undefined) this.gnosisSafeAppsBridge.setEnabled(safeAppsCompatibility.enabled, safeAppsCompatibility.canRequestAccess)
+					if (safeAppsCompatibility !== undefined) {
+						this.gnosisSafeAppsBridge.setEnabled(safeAppsCompatibility.enabled, safeAppsCompatibility.canRequestAccess)
+					}
 					return
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()

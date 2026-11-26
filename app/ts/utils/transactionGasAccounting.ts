@@ -8,7 +8,7 @@ export type TransactionGasAccounting = {
 	readonly simulationOptions?: TransactionSimulationOptions
 }
 
-// A transaction a Gnosis Safe executes: a Safe proposal, or in simulation mode the Safe's own call. The simulation runs it as its executor's execTransaction call (authorizesExecutedCall, safe/safeExecutionSimulation.ts), and the Safe never pays for it: its executor does.
+// A transaction a Gnosis Safe executes: a Gnosis Safe proposal, or in simulation mode the Gnosis Safe's own call. The simulation runs it as its executor's execTransaction call (authorizesExecutedCall, gnosisSafe/gnosisSafeExecutionSimulation.ts), and the Gnosis Safe never pays for it: its executor does.
 export function isGnosisSafeExecution(transaction: Pick<TransactionGasAccounting, 'safeTransaction' | 'simulationOptions'>) {
 	return authorizesExecutedCall(transaction)
 }

@@ -11,7 +11,19 @@ import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulat
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { GnosisSafeStackExport } from './gnosisSafeTypes.js'
 
+export const NativeGnosisSafeAppsRelayReply = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('NativeGnosisSafeAppsRelayReply'), ok: funtypes.Literal(true), response: funtypes.Unknown }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('NativeGnosisSafeAppsRelayReply'), ok: funtypes.Literal(false), message: funtypes.String }),
+)
+export type NativeGnosisSafeAppsRelayReply = funtypes.Static<typeof NativeGnosisSafeAppsRelayReply>
+
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
+export const OpenGnosisSafeAppReply = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('OpenGnosisSafeAppReply'), ok: funtypes.Literal(true) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('OpenGnosisSafeAppReply'), ok: funtypes.Literal(false), message: funtypes.String }),
+)
+export type OpenGnosisSafeAppReply = funtypes.Static<typeof OpenGnosisSafeAppReply>
+
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
 	data: funtypes.ReadonlyObject({
@@ -288,6 +300,7 @@ type PopupSettingsRepliesMap = {
 }
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
+	popup_openGnosisSafeApp: typeof OpenGnosisSafeAppReply
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
@@ -311,6 +324,7 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 }
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
+	popup_openGnosisSafeApp: OpenGnosisSafeAppReply,
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -349,6 +363,7 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 }).asReadonly()
 
 export const PopupMessageReplyRequests = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openGnosisSafeApp'), data: funtypes.ReadonlyObject({ sourceTabId: funtypes.Number.withConstraint((value) => Number.isSafeInteger(value) && value >= 0) }) }),
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
 	RequestGnosisSafeContractState,
@@ -391,6 +406,8 @@ export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
 export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
 export type PopupReplyOption =
+	| NativeGnosisSafeAppsRelayReply
+	| OpenGnosisSafeAppReply
 	| RequestMakeMeRichDataReply
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
@@ -415,6 +432,8 @@ export type PopupReplyOption =
 	| undefined
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
+	NativeGnosisSafeAppsRelayReply,
+	OpenGnosisSafeAppReply,
 	RequestMakeMeRichDataReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,

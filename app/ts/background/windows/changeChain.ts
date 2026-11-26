@@ -9,7 +9,7 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequest } from '../messageSending.js'
 import type { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulationServicesOwner.js'
 import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 

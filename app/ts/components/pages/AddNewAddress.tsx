@@ -435,7 +435,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			inFlightIdentifications.value = [...inFlightIdentifications.peek(), requestedIdentification]
 			try {
 				const [identifiedAddress, safeContractStateReply] = await Promise.all([
-					// Safe state already supplies owner metadata; optional token identification must not delay it.
+					// Gnosis Safe state already supplies owner metadata; optional token identification must not delay it.
 					requestedIdentification.requestGnosisSafeContractState ? Promise.resolve(undefined)
 						: requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId }),
 					requestedIdentification.requestGnosisSafeContractState
@@ -450,15 +450,15 @@ export function AddNewAddress(param: AddAddressParam) {
 				if (requestedIdentification.requestGnosisSafeContractState && (safeContractStateReply === undefined || safeContractStateReply.data.chainId !== requestedIdentification.chainId)) {
 					setGnosisSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
 				} else if (requestedIdentification.requestGnosisSafeContractState && safeContractStateReply !== undefined) {
-					const gnosisSafeContractState = safeContractStateReply.data.result
-					if (!gnosisSafeContractState.ok) {
-						setGnosisSafeContractStateError(gnosisSafeContractState.message)
+					const safeContractState = safeContractStateReply.data.result
+					if (!safeContractState.ok) {
+						setGnosisSafeContractStateError(safeContractState.message)
 						return
 					}
 					lastSuccessfulSafeIdentification.value = requestedIdentification
-					safeSimulationSignerAddressBookEntries.value = gnosisSafeContractState.ownerAddressBookEntries
+					safeSimulationSignerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
 					const currentState = param.modifyAddressWindowState.peek()
-					const safeSignerAddresses = gnosisSafeContractState.owners.map(checksummedAddress)
+					const safeSignerAddresses = safeContractState.owners.map(checksummedAddress)
 					const currentSafeSignerAddress = currentState.incompleteAddressBookEntry.safeSimulationSignerAddress
 					const safeSimulationSignerAddress = currentSafeSignerAddress === undefined
 						? safeSignerAddresses[0]
@@ -467,7 +467,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						incompleteAddressBookEntry: modifyObject(currentState.incompleteAddressBookEntry, {
 							safeSignerAddresses,
 							safeSimulationSignerAddress,
-							safeVersion: gnosisSafeContractState.version,
+							safeVersion: safeContractState.version,
 						}),
 						errorState: undefined,
 					})

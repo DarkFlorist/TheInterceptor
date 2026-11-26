@@ -67,6 +67,9 @@ const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
 	return Array.from(contents.matchAll(/^\s*(popup_[A-Za-z0-9_]+):/gmu), (match) => match[1]).filter((method) => method !== undefined)
 }
 
+const confirmationPersistenceDefinition = /function persistGnosisSafeConfirmationRefresh/u
+const peerCoordinatorImport = /gnosisSafeAppsCompatibilityCoordinator/u
+
 test('simulation service keeps compatibility exports backed by focused signing modules', () => {
 	assert.equal(simulationFacade.mockSignTransaction, simulationTransactionSigning.mockSignTransaction)
 	assert.equal(simulationFacade.getSignedTransactionForSimulation, simulationTransactionSigning.getSignedTransactionForSimulation)
@@ -77,7 +80,8 @@ test('simulation service keeps compatibility exports backed by focused signing m
 test('Gnosis Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
 	assert.match(safeAppsCompatibilityCoordinatorSource, /function createGnosisSafeAppsCompatibilityCoordinator/u)
 	assert.match(websiteTabConnectionsSource, /from '\.\/websiteLifecycle\.js'/u)
-	assert.doesNotMatch(accessManagementSource, /gnosisSafeAppsCompatibilityCoordinator/u)
+	assert.match('import { value } from \'./gnosisSafeAppsCompatibilityCoordinator.js\'', peerCoordinatorImport)
+	assert.doesNotMatch(accessManagementSource, peerCoordinatorImport)
 	assert.doesNotMatch(websiteTabConnectionsSource, /from '\.\/accessManagement\.js'/u)
 	assert.doesNotMatch(accessManagementSource, /function createGnosisSafeAppsCompatibilityCoordinator/u)
 	assert.match(backgroundUtilsSource, /export const getWebsiteSocketConnection/u)
@@ -110,8 +114,9 @@ test('each popup method has exactly one handler owner', async () => {
 	const declaredMethods = (await Promise.all(popupHandlerRegistrySources.map(getDeclaredPopupHandlerMethods))).flat()
 	const duplicateMethods = declaredMethods.filter((method, index) => declaredMethods.indexOf(method) !== index)
 	assert.deepEqual(duplicateMethods, [])
-	assert.equal(new Set(declaredMethods).size, Object.keys(popupMessageProtocol).length)
-	for (const method of Object.keys(popupMessageProtocol)) assert.equal(declaredMethods.includes(method), true, `${ method } has no handler owner`)
+	const methods = Object.keys(popupMessageProtocol).filter(isPopupMessageMethod)
+	assert.equal(declaredMethods.length, methods.length)
+	for (const method of methods) assert.equal(declaredMethods.includes(method), true, `${ method } has no handler owner`)
 })
 
 test('historical popup wire spellings are explicit protocol exceptions', () => {
@@ -134,7 +139,8 @@ test('Gnosis Safe signer refresh persistence is isolated from confirmation resol
 	assert.doesNotMatch(safeSignerSelectionRefreshSource, /JSON\.stringify/u)
 	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshGnosisSafeSignerSelection/u)
 	assert.doesNotMatch(confirmTransactionSource, /function mergeGnosisSafeSignerSelectionRefresh/u)
-	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
+	assert.match(safeSignerSelectionRefreshSource, confirmationPersistenceDefinition)
+	assert.doesNotMatch(confirmTransactionSource, confirmationPersistenceDefinition)
 })
 
 const SIGNER_REPLY_UPDATE = 'updatePendingRequestWaitingForSigner'

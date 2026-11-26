@@ -17,6 +17,30 @@ const simulationSourceFiles: string[] = []
 for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: simulationSourceDirectory, absolute: true })) simulationSourceFiles.push(file)
 const simulationSources = await Promise.all(simulationSourceFiles.map(async (file) => await Bun.file(file).text()))
 
+const ownerValidationFactory = /createGnosisSafeOwnerValidator/u
+const confirmationDomainImports = /from '\.\.\/\.\.\/gnosisSafe\/gnosisSafe(?:Core|Stack|Simulation|ExecutionSimulation)\.js'/u
+const rpcDomainImports = /from '\.\.\/\.\.\/(?:gnosisSafe\/|utils\/transactionGasAccounting\.js)/u
+const simulationDomainImports = /from '(?:\.\.\/)+(?:gnosisSafe\/|types\/accessRequest\.js')/u
+const admissionLeakage = /GnosisSafeReviewInput|(?:gnosisSafeReview|safeReview)[?:,]/u
+const gatewayImports = /from '\.\/gnosisSafeApps(?:Balances|Transactions|Gateway)\.js'|\bfetch\(/u
+
+test('architecture guards detect imports of existing domain modules and admission fields', async () => {
+	assert.match(await Bun.file(new URL('../../app/ts/background/gnosisSafeConfirmationPersistence.ts', import.meta.url)).text(), ownerValidationFactory)
+	for (const suffix of ['Core', 'Stack', 'Simulation', 'ExecutionSimulation']) {
+		const file = `gnosisSafe${ suffix }.js`
+		assert.equal(await Bun.file(new URL(`../../app/ts/gnosisSafe/${ file.replace(/\.js$/u, '.ts') }`, import.meta.url)).exists(), true)
+		assert.match(`import { value } from '../../gnosisSafe/${ file }'`, confirmationDomainImports)
+		assert.match(`import { value } from '../../gnosisSafe/${ file }'`, rpcDomainImports)
+		assert.match(`import { value } from '../gnosisSafe/${ file }'`, simulationDomainImports)
+	}
+	for (const suffix of ['Balances', 'Transactions', 'Gateway']) {
+		const file = `gnosisSafeApps${ suffix }.js`
+		assert.equal(await Bun.file(new URL(`../../app/ts/background/${ file.replace(/\.js$/u, '.ts') }`, import.meta.url)).exists(), true)
+		assert.match(`import { value } from './${ file }'`, gatewayImports)
+	}
+	for (const input of ['GnosisSafeReviewInput', 'gnosisSafeReview:', 'gnosisSafeReview?', 'gnosisSafeReview,']) assert.match(input, admissionLeakage)
+})
+
 test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', () => {
 	assert.match(backgroundSource, /import \{ getGnosisSafeModeRpcPolicyReply \} from '\.\.\/gnosisSafe\/gnosisSafeRequestPolicy\.js'/u)
 	assert.doesNotMatch(backgroundSource, /GNOSIS_SAFE_MESSAGE_SIGNING_METHODS|isGnosisSafeTransactionCoSignRequest|gnosisSafeModeUnsupportedMethod/u)
@@ -28,17 +52,18 @@ test('the confirmation window delegates Gnosis Safe resolution, persistence, and
 	assert.match(confirmTransactionSource, /resolveGnosisSafeSignerReply\(/u)
 	assert.match(confirmTransactionSource, /prepareGnosisSafeTransactionConfirmation\(/u)
 	assert.match(confirmTransactionSource, /safePreparation\.finalize\(/u)
-	assert.doesNotMatch(confirmTransactionSource, /from '\.\.\/\.\.\/gnosisSafe\/(?:gnosisSafeCore|gnosisSafeStack|gnosisSafeSimulation|gnosisSafeExecutionSimulation)\.js'/u)
-	assert.doesNotMatch(confirmTransactionSource, /persistSignedGnosisSafeTransaction|validateSafeOwnerSignature|reconcileGnosisSafeTransactionState/u)
+	assert.doesNotMatch(confirmTransactionSource, ownerValidationFactory)
+	assert.doesNotMatch(confirmTransactionSource, confirmationDomainImports)
+	assert.doesNotMatch(confirmTransactionSource, /persistSignedGnosisSafeTransaction|reconcileGnosisSafeTransactionState/u)
 	assert.doesNotMatch(confirmTransactionSource, /safeExecutionSignerRoute|reconciledStoredSafeState/u)
 })
 
 test('the Gnosis Safe layer alone decides how a simulated Gnosis Safe execution is formed', async () => {
 	const safeExecutionSimulationSource = await Bun.file(new URL('../../app/ts/gnosisSafe/gnosisSafeExecutionSimulation.ts', import.meta.url)).text()
 	assert.doesNotMatch(confirmTransactionSource, /executeThroughSafe: true|getSimulatedGnosisSafeCallNonce|'simulated-safe-executor'/u)
-	assert.match(confirmTransactionSource, /const executedCallFormation = getExecutedCallFormation\(ethereumClientService, gasPayment\)/u)
+	assert.match(confirmTransactionSource, /const executedCallFormation = getExecutedCallFormation\(ethereumClientService, gasPayment, safeOperation\)/u)
 	assert.equal(safeExecutionSimulationSource.match(/executeThroughSafe: true/gu)?.length, 1, 'one factory builds the options that forming and estimating share')
-	assert.match(safeExecutionSimulationSource, /simulationOptions: createGnosisSafeExecutionSimulationOptions\(ethereum\.getChainId\(\)\),\n\t\}/u)
+	assert.match(safeExecutionSimulationSource, /simulationOptions: createGnosisSafeExecutionSimulationOptions\(ethereum\.getChainId\(\), operation\),\n\t\}/u)
 })
 
 test('Gnosis Safe persistence only persists, and the confirmation window shows the stored proposal', async () => {
@@ -67,9 +92,9 @@ test('everything that sends the simulation stack to the node runs its Gnosis Saf
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {
 	const ethereumClientServiceSource = await Bun.file(new URL('../../app/ts/simulation/services/EthereumClientService.ts', import.meta.url)).text()
-	assert.doesNotMatch(ethereumClientServiceSource, /from '\.\.\/\.\.\/(?:safe\/|utils\/transactionGasAccounting\.js)/u)
+	assert.doesNotMatch(ethereumClientServiceSource, rpcDomainImports)
 	assert.doesNotMatch(ethereumClientServiceSource, /Gnosis Safe|prepareGnosisSafeExecutionsForRpc|runsThroughGnosisSafe/u)
-	// The RPC client decides from the minimal input's marker alone, not from the domain predicate or the Safe data it reads.
+	// The RPC client decides from the minimal input's marker alone, not from the domain predicate or the Gnosis Safe data it reads.
 	assert.doesNotMatch(ethereumClientServiceSource, /authorizesExecutedCall|GnosisSafeStackTransaction|safeTransaction|simulationOptions|executeThroughSafe/u)
 	assert.match(ethereumClientServiceSource, /transaction\.executedCallAuthorized && transaction\.executedTransaction === undefined/u)
 	assert.match(ethereumClientServiceSource, /transaction\.executedTransaction !== undefined && !transaction\.executedCallAuthorized/u)
@@ -94,7 +119,7 @@ test('the minimal simulation input that crosses into the RPC client carries no G
 		visit(runtype)
 		return reachableRuntypes
 	}
-	// The full simulation input block does reach the Safe runtypes, so the walk below would find them.
+	// The full simulation input block does reach the Gnosis Safe runtypes, so the walk below would find them.
 	assert.equal(getReachableRuntypes(SimulationStateInputBlock).has(GnosisSafeStackTransaction), true)
 	const reachableRuntypes = getReachableRuntypes(SimulationStateInputMinimalDataBlock)
 	assert.equal(reachableRuntypes.has(GnosisSafeStackTransaction), false, 'the minimal block reaches no GnosisSafeStackTransaction runtype')
@@ -132,7 +157,9 @@ test('a pending transaction records its flow once, as the safeFlow that the conf
 	if (pendingTransactionBaseDefinition === undefined) throw new Error('SimulatedPendingTransactionBase definition not found')
 	assert.match(pendingTransactionBaseDefinition, /\tsafeFlow: PendingTransactionGnosisSafeFlow,\n/u)
 	// The flow's data lives only in safeFlow, so no other pending field can disagree with it.
-	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|gnosisSafeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest|\.And\(/u)
+	const duplicateFlowField = /safeTransaction|(?:gnosisSafe|safe)Execution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest|\.And\(/u
+	assert.doesNotMatch(pendingTransactionBaseDefinition, duplicateFlowField)
+	for (const name of ['gnosisSafeExecution', 'safeExecution']) assert.match(`\t${ name }: funtypes.Boolean,`, duplicateFlowField)
 	assert.equal(accessRequestSource.match(/export const PendingTransactionGnosisSafeFlow = /gu)?.length, 1)
 	assert.match(safePendingFlowSource, /export type GnosisSafeTransactionFlowKind = PendingTransactionGnosisSafeFlow\['kind'\]/u)
 	assert.match(safePendingFlowSource, /export const getPendingTransactionFlowKind = \(pending: PendingTransaction\): GnosisSafeTransactionFlowKind => pending\.safeFlow\.kind/u)
@@ -158,7 +185,11 @@ test('the Gnosis Safe domain layer does not import background orchestration', ()
 
 test('the simulation layer imports neither the Gnosis Safe layer, which imports it, nor the popup\'s pending request model', () => {
 	assert.ok(simulationSources.length > 0)
-	for (const simulationSource of simulationSources) assert.doesNotMatch(simulationSource, /from '(?:\.\.\/)+(?:safe\/|types\/accessRequest\.js')/u)
+	for (const simulationSource of simulationSources) assert.doesNotMatch(simulationSource, simulationDomainImports)
+})
+
+test('neutral simulation services do not depend on the background installed-service owner', () => {
+	for (const simulationSource of simulationSources) assert.doesNotMatch(simulationSource, /from '[^']*background\/simulationServicesOwner\.js'/u)
 })
 
 test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
@@ -180,7 +211,7 @@ test('the confirmation presentation imports shared Gnosis Safe flow policy from 
 test('shared dispatch and confirmation APIs depend on operation models, not frontend admission types', async () => {
 	const simulationHandlers = await Bun.file(new URL('../../app/ts/background/simulationModeHandlers.ts', import.meta.url)).text()
 	for (const source of [backgroundSource, simulationHandlers, confirmTransactionSource, safeTransactionConfirmationSource]) {
-		assert.doesNotMatch(source, /GnosisSafeReviewInput|gnosisSafeReview[?:,]/u)
+		assert.doesNotMatch(source, admissionLeakage)
 	}
 	assert.match(simulationHandlers, /confirmation: TransactionConfirmationRequest/u)
 	assert.match(simulationHandlers, /confirmation: MessageConfirmationRequest/u)
@@ -198,9 +229,9 @@ test('signer ownership and Gnosis Safe Apps eligibility use the same top-frame p
 
 
 test('only the Gnosis Safe message preview replaces a Gnosis Safe\'s code; Gnosis Safe proposals delegate-call through execTransaction', async () => {
-	const gnosisSafeSimulation = await Bun.file(new URL('../../app/ts/gnosisSafe/gnosisSafeSimulation.ts', import.meta.url)).text()
+	const safeSimulation = await Bun.file(new URL('../../app/ts/gnosisSafe/gnosisSafeSimulation.ts', import.meta.url)).text()
 	assert.match(simulationUpdatingSource, /return prepareGnosisSafeDelegateStateOverrides\(/u)
-	assert.doesNotMatch(gnosisSafeSimulation, /prepareGnosisSafeDelegateStateOverrides\(safeAddress, code, block\.stateOverrides\)/u)
+	assert.doesNotMatch(safeSimulation, /prepareGnosisSafeDelegateStateOverrides\(safeAddress, code, block\.stateOverrides\)/u)
 	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
 })
 
@@ -208,14 +239,14 @@ test('the content-script router delegates Gnosis Safe Apps admission and error m
 	const handler = await Bun.file(new URL('../../app/ts/background/gnosisSafeAppsRequestHandler.ts', import.meta.url)).text()
 	assert.match(backgroundSource, /await prepareGnosisSafeAppsRequest\(/u)
 	assert.doesNotMatch(backgroundSource, /getGnosisSafeAppsCompatibilityMode|isGnosisSafeAppsConnectionEligible|getGnosisSafeAppsExecution|getGnosisSafeAppsRequestCommand|isGnosisSafeAppsRequestPolicyError/u)
-	assert.match(handler, /isGnosisSafeAppsConnectionEligible\(/u)
+	assert.match(handler, /isGnosisSafeAppsConnectionEligibleForAdmittedAddress\(/u)
 	assert.match(handler, /isGnosisSafeAppsRequestPolicyError\(/u)
 	assert.doesNotMatch(handler, /handleRPCRequest|openConfirmTransactionDialogFor/u)
 })
 
 test('Gnosis Safe Apps request policy receives gateway operations through injected services', async () => {
 	const policy = await Bun.file(new URL('../../app/ts/background/gnosisSafeAppsRequestPolicy.ts', import.meta.url)).text()
-	assert.doesNotMatch(policy, /from '\.\/safeApps(?:Balances|Transactions|Gateway)\.js'|\bfetch\(/u)
+	assert.doesNotMatch(policy, gatewayImports)
 	assert.match(policy, /services\.getBalances\(/u)
 	assert.match(policy, /services\.getTransaction\(/u)
 	assert.match(policy, /services\.messages\./u)

@@ -137,7 +137,7 @@ export async function createGnosisSafeMessageCoSignSnapshot(
 			},
 		)
 	}
-	// Signing deliberately ignores stored simulation/owner preferences: the wallet selection is refreshed before forwarding and validated against current on-chain Safe state.
+	// Signing deliberately ignores stored simulation/owner preferences: the wallet selection is refreshed before forwarding and validated against current on-chain Gnosis Safe state.
 	if (walletSignerAddress === undefined) {
 		throw createGnosisSafeSignerSelectionFailure('Connect a signer wallet and select a Gnosis Safe owner before co-signing.')
 	}

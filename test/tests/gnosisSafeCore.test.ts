@@ -66,7 +66,7 @@ describe('Gnosis Safe transaction support', () => {
 		}), (error) => isGnosisSafeContractValidationFailure(error) && /zero gas reimbursement fields/u.test(error.message))
 	})
 
-	test('accepts a SafeTx domain chain only when it is the connected chain and that chain has an ID', () => {
+	test('accepts a GnosisSafeTx domain chain only when it is the connected chain and that chain has an ID', () => {
 		const expectedFailure = (pattern: RegExp) => (error: unknown) => isGnosisSafeContractValidationFailure(error) && pattern.test(error.message)
 		assert.doesNotThrow(() => assertGnosisSafeDomainChainIsConnectedChain(1n, 1n))
 		assert.throws(() => assertGnosisSafeDomainChainIsConnectedChain(0n, 0n), expectedFailure(/require a chain ID/u))

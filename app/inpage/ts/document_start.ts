@@ -1,5 +1,5 @@
 function injectPageWorldScripts() {
-	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
+	if (Reflect.get(globalThis, 'interceptorInjected') === true) return
 
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox returns `null` when there is no error
@@ -18,7 +18,6 @@ function injectPageWorldScripts() {
 		// The build fills in this file's compatibility-mode provider, both as source and as its extension URL.
 		const pageWorldProviderSource = '[[pageWorldProviderSource]]'
 		const pageWorldProviderScriptPath = '[[pageWorldProviderScriptPath]]'
-		// An inline script runs synchronously when inserted, so the provider exists before any later page script. The provider's first statement marks its script element, which this content script shares, so a missing mark means the page CSP blocked inline scripts.
 		const providerRanAttribute = 'data-interceptor-provider-ran'
 		const inlineProviderScript = document.createElement('script')
 		inlineProviderScript.textContent = `document.currentScript.setAttribute('${ providerRanAttribute }', '');\n${ pageWorldProviderSource }`
@@ -29,10 +28,11 @@ function injectPageWorldScripts() {
 			externalProviderScript.src = browser.runtime.getURL(pageWorldProviderScriptPath)
 			insertAndRemoveScript(externalProviderScript)
 		}
-		;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
+		Reflect.set(globalThis, 'interceptorInjected', true)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.error('Interceptor: Provider injection failed.', error)
+		throw error
 	}
 }
 

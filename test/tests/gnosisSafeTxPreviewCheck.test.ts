@@ -39,7 +39,7 @@ describe('Gnosis Safe preview check', () => {
 		await check(answeringAsGnosisSafe([STRANGER, OWNER], 2n), OWNER, CHAIN_ID)
 	})
 
-	test('allows a message without a chain id, as Safes before 1.3.0 sign', async () => {
+	test('allows a message without a chain id, as Gnosis Safe wallets before 1.3.0 sign', async () => {
 		await check(answeringAsGnosisSafe([OWNER]), OWNER, undefined)
 	})
 

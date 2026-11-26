@@ -339,7 +339,7 @@ function createPendingGnosisSafeTxMessage(modules: TestModules, rpcNetwork: RpcE
 		originalRequestParameters,
 		simulationMode: true,
 		uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
-		instanceId: 'SafeTx pending message',
+		instanceId: 'GnosisSafeTx pending message',
 		signedMessageTransaction: {
 			website: visualizedPersonalSignRequest.website,
 			created: visualizedPersonalSignRequest.created,
@@ -384,7 +384,7 @@ function assertPopupPendingGnosisSafeTxShape(sentMessages: readonly RuntimeMessa
 	assert.equal(visualizedPersonalSignRequest.website !== undefined, true)
 }
 
-describe('SafeTx confirm transaction metadata', () => {
+describe('GnosisSafeTx confirm transaction metadata', () => {
 	test('uses the stored visualisation when a confirmation refresh fails unexpectedly', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
@@ -479,7 +479,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		assert.equal(reportCalls, 1)
 	})
 
-	test('refresh confirm metadata sends popup-safe SafeTx payload', async () => {
+	test('refresh confirm metadata sends popup-safe GnosisSafeTx payload', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const fakeRpcNetwork: RpcEntry = {
@@ -528,7 +528,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 
-	test('initial confirm render sends popup-safe SafeTx payload', async () => {
+	test('initial confirm render sends popup-safe GnosisSafeTx payload', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const fakeRpcNetwork: RpcEntry = {

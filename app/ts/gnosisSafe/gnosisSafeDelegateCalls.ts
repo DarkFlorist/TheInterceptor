@@ -7,7 +7,7 @@ import { addressString, dataStringWith0xStart, stringToUint8Array } from '../uti
 import { isAbiDataDecodeError, keccak256 } from '../utils/ethereumPrimitives.js'
 import { createGnosisSafeValidationError } from './gnosisSafeErrors.js'
 
-// Canonical Safe deployments v1.4.1: safe-global/safe-deployments/src/assets/v1.4.1/{multi_send_call_only,sign_message_lib}.json.
+// Canonical Gnosis Safe deployments v1.4.1: safe-global/safe-deployments/src/assets/v1.4.1/{multi_send_call_only,sign_message_lib}.json.
 export const GNOSIS_SAFE_MULTI_SEND_CALL_ONLY = 0x9641d764fc13c8b624c04430c7356c1c7c8102e2n
 const libraryCodeHashes = new Map([
 	[GNOSIS_SAFE_MULTI_SEND_CALL_ONLY, '0xecd5bd14a08c5d2122379900b2f272bdf107a7e92423c10dd5fe3254386c9939'],

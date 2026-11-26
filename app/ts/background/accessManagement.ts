@@ -14,7 +14,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -327,7 +327,7 @@ export async function reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConn
 		for (const connection of connections) {
 			try {
 				if (approvedConnections.has(connection)) disconnectFromPort(websiteTabConnections, connection.socket)
-				// Invalidate in-flight Safe Apps publications even on ports that were not approved yet.
+				// Invalidate in-flight Gnosis Safe Apps publications even on ports that were not approved yet.
 				else notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, connection.socket, false)
 			} catch (notificationError) { notificationErrors.push(notificationError) }
 		}

@@ -319,14 +319,14 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /<p>Gnosis Safe signer in simulation<\/p>/)
 		assert.match(addNewAddressSource, /name = 'safe-simulation-signer'/)
 		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ addressBookEntry \}/)
-		assert.match(addNewAddressSource, /safeSimulationSignerAddressBookEntries\.value = gnosisSafeContractState\.ownerAddressBookEntries/)
+		assert.match(addNewAddressSource, /safeSimulationSignerAddressBookEntries\.value = safeContractState\.ownerAddressBookEntries/)
 		assert.match(addNewAddressSource, /onChange = \{ \(\) => \{ void setGnosisSafeSignerAddress\(safeSignerAddress\) \} \}/)
 		assert.match(addNewAddressSource, /nonInteractive = \{ true \}/)
 		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
 		assert.doesNotMatch(addNewAddressSource, /Choose the owner used when simulating transactions|Enter a deployed Gnosis Safe address|Choose how Interceptor uses this address/)
 		assert.match(addNewAddressSource, /text = 'Refresh owners'/)
 		assert.match(addNewAddressSource, /safeSignerRefreshGeneration\.value \+= 1/)
-		assert.match(addNewAddressSource, /gnosisSafeContractState\.owners\.map\(checksummedAddress\)/)
+		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)
 		assert.match(addNewAddressSource, /address\.toLowerCase\(\) === currentSafeSignerAddress\.toLowerCase\(\)/)
 	})
 
@@ -341,7 +341,7 @@ describe('add new address save flow', () => {
 
 	test('preserves known Gnosis Safe owners on lookup failure and clears them when the target changes', () => {
 		assert.match(addNewAddressSource, /const setGnosisSafeContractStateError = \(message: string\)/)
-		assert.match(addNewAddressSource, /if \(!gnosisSafeContractState\.ok\) \{[\s\S]*?setGnosisSafeContractStateError\(gnosisSafeContractState\.message\)/)
+		assert.match(addNewAddressSource, /if \(!safeContractState\.ok\) \{[\s\S]*?setGnosisSafeContractStateError\(safeContractState\.message\)/)
 		assert.match(addNewAddressSource, /const setAddress = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSimulationSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
 		assert.match(addNewAddressSource, /const setChain = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSimulationSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
 		assert.match(safeContractStateSource, /chainId === 'AllChains'[\s\S]*?'Gnosis Safe wallets must use a specific chain to load their signers\.'/)
@@ -357,7 +357,7 @@ describe('add new address save flow', () => {
 	test('keeps Gnosis Safe contract retrieval separate from generic address identification', () => {
 		assert.match(metadataUtilsSource, /async function identifyAddressWithoutNode/)
 		assert.doesNotMatch(metadataUtilsSource, /export (?:async function|\{[^}]*)(?:identifyAddressWithoutNode|identifyAddressFromLocalMetadata)/)
-		assert.doesNotMatch(popupMessageHandlersSource, /gnosisSafeContractState|includeSafeContractState/)
+		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
 		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
 		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)
 		assert.match(safeContractStateSource, /getUserAddressBookEntriesForChainIdMorePreciseFirst/)

@@ -8,7 +8,7 @@ type PendingRequestField = FieldOf<PendingTransactionOrSignableMessage>
 
 // Whether the user reviews each stored pending-request field through the popup. Typing this as a Record over every field makes a newly added field fail to compile until it is classified here.
 const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
-	// What the request asks to sign or send, and the simulation, signature and Safe details the popup shows for it.
+	// What the request asks to sign or send, and the simulation, signature and Gnosis Safe details the popup shows for it.
 	originalRequestParameters: true,
 	transactionOrMessageCreationStatus: true,
 	transactionIdentifier: true,
@@ -28,7 +28,7 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	uniqueRequestIdentifier: false,
 	popupOrTabId: false,
 	approvalStatus: false,
-	// Bind the visualization and its signing inputs together, including the simulated signer and Safe message review.
+	// Bind the visualization and its signing inputs together, including the simulated signer and Gnosis Safe message review.
 	signedMessageTransaction: true,
 }
 

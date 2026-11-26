@@ -1,7 +1,13 @@
+import { GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST } from '../../shared/ts/gnosisSafeAppsProtocol.js'
+import { createNativeGnosisSafeAppsSourceBridge } from './nativeGnosisSafeAppsSourceBridge.js'
+
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
+	// Non-module counterparts of inpage.ts; startup rendezvous tests enforce the message identities.
+	const INTERCEPTOR_BRIDGE_READY_MESSAGE = 'interceptor_bridge_ready'
+	const INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE = 'interceptor_bridge_ready_request'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
 	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
@@ -272,7 +278,13 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 	}
 
+	const announceBridgeReady = () => globalThis.postMessage({ type: INTERCEPTOR_BRIDGE_READY_MESSAGE }, '*')
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+		if (messageEvent.source !== window || messageEvent.origin !== globalThis.location.origin) return
+		if (typeof messageEvent.data === 'object' && messageEvent.data !== null && 'type' in messageEvent.data && messageEvent.data.type === INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE) {
+			if (inpagePort === undefined) announceBridgeReady()
+			return
+		}
 		if (
 			inpagePort !== undefined
 			|| typeof messageEvent.data !== 'object'
@@ -288,6 +300,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
 	})
+
+	// Announces a late listener; the request/response above also handles a listener that started before the provider.
+	announceBridgeReady()
 
 	connect = () => {
 		if (reconnectTimer !== undefined) {
@@ -354,7 +369,15 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		return connectedExtensionPort
 	}
 	connect()
-	browser.runtime.onMessage.addListener(async (message: unknown) => {
+	// getRandomValues also works on ordinary HTTP pages, unlike randomUUID.
+	const randomNativeBridgeToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+	const nativeHostBridge = createNativeGnosisSafeAppsSourceBridge(window, randomNativeBridgeToken, { setTimeout: (callback, delay) => setTimeout(callback, delay), clearTimeout: (id) => clearTimeout(id) })
+	globalThis.addEventListener('pagehide', () => nativeHostBridge.cancelPending())
+	browser.runtime.onMessage.addListener(async (message: unknown, sender) => {
+		if (typeof message === 'object' && message !== null && 'method' in message && message.method === GNOSIS_SAFE_APPS_NATIVE_SOURCE_REQUEST) {
+			if (sender.id !== browser.runtime.id || window.top !== window || !('origin' in message) || message.origin !== location.origin || !('request' in message)) throw new Error('Invalid native Gnosis Safe App source request.')
+			return await nativeHostBridge.request(message.request)
+		}
 		if (
 			typeof message !== 'object'
 			|| message === null

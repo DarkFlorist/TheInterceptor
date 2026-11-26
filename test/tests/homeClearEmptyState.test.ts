@@ -1562,7 +1562,7 @@ test('shows the selected Gnosis Safe simulation signer and retrieves missing own
 		assert.notEqual(viewPosition, -1)
 		assert.notEqual(clearPosition, -1)
 		assert.equal(viewPosition < clearPosition, true)
-		assert.equal(headerSource.includes('CopySafeTransactionsButton'), false)
+		assert.equal(headerSource.includes('CopyGnosisSafeTransactionsButton'), false)
 	})
 
 	test('does not expose Gnosis Safe export from the Home results header', async () => {

@@ -96,12 +96,12 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 	return { createdTabs, updatedTabs, updatedWindows, storageState }
 }
 
-async function loadOpenNewTab() {
-	return (await import('../../app/ts/background/popupMessageHandlers.js')).openNewTab
+async function loadOpenExtensionTab() {
+	return (await import('../../app/ts/background/extensionTabs.js')).openExtensionTab
 }
 
 async function loadGetLastKnownCurrentTabId() {
-	return (await import('../../app/ts/background/popupMessageHandlers.js')).getLastKnownCurrentTabId
+	return (await import('../../app/ts/background/currentTab.js')).getLastKnownCurrentTabId
 }
 
 const emptyOpenedTabs = (): OpenedTabIds => ({
@@ -114,9 +114,9 @@ const emptyOpenedTabs = (): OpenedTabIds => ({
 describe('open simulation stack tab', () => {
 	test('focuses the existing simulation stack tab without opening a duplicate', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/simulationStackV3.html' }], { ...emptyOpenedTabs(), simulationStack: 42 })
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 
-		await openNewTab('simulationStack')
+		await openExtensionTab('simulationStack')
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true } }])
@@ -124,9 +124,9 @@ describe('open simulation stack tab', () => {
 
 	test('focuses the existing simulation stack tab window without opening a duplicate', async () => {
 		const { createdTabs, updatedTabs, updatedWindows } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/simulationStackV3.html', windowId: 7 }], { ...emptyOpenedTabs(), simulationStack: 42 })
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 
-		await openNewTab('simulationStack')
+		await openExtensionTab('simulationStack')
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true } }])
@@ -135,10 +135,10 @@ describe('open simulation stack tab', () => {
 
 	test('focuses and targets an existing simulation stack tab', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/simulationStackV3.html' }], { ...emptyOpenedTabs(), simulationStack: 42 })
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 		const targetHash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'test-focus')
 
-		await openNewTab('simulationStack', targetHash)
+		await openExtensionTab('simulationStack', targetHash)
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [{
@@ -149,9 +149,9 @@ describe('open simulation stack tab', () => {
 
 	test('opens and stores a new simulation stack tab when none is tracked', async () => {
 		const { createdTabs, updatedTabs, storageState } = installBrowserMock([], emptyOpenedTabs())
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 
-		await openNewTab('simulationStack')
+		await openExtensionTab('simulationStack')
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/simulationStackV3.html' }])
@@ -160,10 +160,10 @@ describe('open simulation stack tab', () => {
 
 	test('opens a new simulation stack tab with a target hash when none is tracked', async () => {
 		const { createdTabs, updatedTabs, storageState } = installBrowserMock([], emptyOpenedTabs())
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 		const targetHash = getSimulationStackTargetHash({ type: 'Message', messageIdentifier: 2n }, 'test-focus')
 
-		await openNewTab('simulationStack', targetHash)
+		await openExtensionTab('simulationStack', targetHash)
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: `/html3/simulationStackV3.html${ targetHash }` }])
@@ -172,9 +172,9 @@ describe('open simulation stack tab', () => {
 
 	test('opens a replacement tab when the tracked simulation stack tab is gone', async () => {
 		const { createdTabs, updatedTabs, storageState } = installBrowserMock([], { ...emptyOpenedTabs(), simulationStack: 42 })
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 
-		await openNewTab('simulationStack')
+		await openExtensionTab('simulationStack')
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/simulationStackV3.html' }])
@@ -183,9 +183,9 @@ describe('open simulation stack tab', () => {
 
 	test('opens a replacement tab when focusing the tracked simulation stack tab fails', async () => {
 		const { createdTabs, updatedTabs, storageState } = installBrowserMock([{ id: 42 }], { ...emptyOpenedTabs(), simulationStack: 42 }, true)
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 
-		await openNewTab('simulationStack')
+		await openExtensionTab('simulationStack')
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/simulationStackV3.html' }])
@@ -215,9 +215,9 @@ describe('open simulation stack tab', () => {
 	test('clears a stale simulation stack hash when focusing the existing stack tab without a target', async () => {
 		const targetHash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'test-focus')
 		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42, url: `chrome-extension://test-extension/html3/simulationStackV3.html${ targetHash }` }], { ...emptyOpenedTabs(), simulationStack: 42 })
-		const openNewTab = await loadOpenNewTab()
+		const openExtensionTab = await loadOpenExtensionTab()
 
-		await openNewTab('simulationStack')
+		await openExtensionTab('simulationStack')
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/simulationStackV3.html' } }])

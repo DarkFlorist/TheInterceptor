@@ -17,7 +17,7 @@ import { refreshPendingGnosisSafeSignerSelectionErrors, resolvePendingTransactio
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningGnosisSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
@@ -109,7 +109,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingGnosisSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
-		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
+		// Restore this wallet account's most recent EOA-or-Gnosis Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		if (transition.shouldActivate) {
@@ -134,7 +134,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
 			activeSigningSafeAddress: displayedSigningSafe?.address,
 		} })
-		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.
+		// Account-change waiters must only resume after the matching Gnosis Safe-or-EOA selection is fully restored.
 		sendInternalWindowMessage({
 			method: 'window_signer_accounts_changed',
 			data: {
@@ -159,7 +159,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	const settings = await getSettings()
 	const selectedSafe = await getConfiguredSigningGnosisSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
-		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
+		// Gnosis Safe signing is pinned to the Gnosis Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Gnosis Safe.
 		if (oldSignerChain !== signerChain) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -254,7 +254,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			}
 		}
 		const settings = await getSettings()
-		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
+		// Restore cached address consent for ordinary EOAs as well as Gnosis Safe wallets, even without lifecycle observers.
 		if (isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
@@ -262,11 +262,11 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
 			}
 		}
-		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.
+		// A reload clears signer accounts. Refresh approved sites independently of Gnosis Safe consent; publication still checks address access.
 		shouldRefreshSignerAccounts = isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode
 		return await getConnectedToSignerResult()
 	})
-	// Passive account refresh is core signer behavior, independent of Safe Apps compatibility.
+	// Passive account refresh is core signer behavior, independent of Gnosis Safe Apps compatibility.
 	const currentSigner = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	const accountsRequested = shouldRefreshSignerAccounts
 		&& currentSigner?.port === port

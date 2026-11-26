@@ -3,12 +3,11 @@ import { areWeBlocking } from './accessManagement.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
-import { Future } from '../utils/future.js'
 import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { doesTabExist, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 import { getPrettySignerName, isSignerMissing } from '../utils/signerMetadata.js'
@@ -17,7 +16,6 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
-const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'Timed out waiting for tab to finish loading.'
 
 const blockingShieldIcons = {
 	[ICON_ACTIVE]: ICON_ACTIVE_WITH_SHIELD,
@@ -78,37 +76,6 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	}
 }
 
-async function waitForLoadedTab(tabId: number) {
-	const waitForLoadedFuture = new Future<void>
-
-	// wait for the tab to be fully loaded
-	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-		try {
-			if (info.status === 'complete' && tabId === tabIdUpdated) return waitForLoadedFuture.resolve()
-		} finally {
-			checkAndPrintRuntimeLastError()
-		}
-	}
-
-	try {
-		browser.tabs.onUpdated.addListener(listener)
-		const tab = await getTabIfExists(tabId)
-		if (tab === undefined) return undefined
-		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
-		let timeout: ReturnType<typeof setTimeout> | undefined
-		try {
-			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error(WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE)), 60000)
-			await waitForLoadedFuture
-		} finally {
-			if (timeout !== undefined) clearTimeout(timeout)
-		}
-		return await getTabIfExists(tabId)
-	} finally {
-		browser.tabs.onUpdated.removeListener(listener)
-		checkAndPrintRuntimeLastError()
-	}
-}
-
 const runTabIconUpdate = createScopedKeyedSerialExecutor<object, number>()
 
 export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
@@ -154,34 +121,16 @@ export async function updateExtensionBadge() {
 }
 
 export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: string) {
-	let loadedTab
-	try {
-		loadedTab = await waitForLoadedTab(tabId)
-	} catch (error) {
-		if (error instanceof Error && error.message === WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE) return { title: undefined, icon: undefined }
-		if (isMissingBrowserTargetError(error)) return { title: undefined, icon: undefined }
-		throw error
-	}
-	if (loadedTab === undefined) return { title: undefined, icon: undefined }
-
-	if (websiteOrigin !== undefined) {
-		const { cachedIcon, hasStoredWebsiteAccess } = await getCachedWebsiteIcon(tabId, websiteOrigin)
-		if (cachedIcon !== undefined) return { title: loadedTab?.title, icon: cachedIcon }
-		if (!hasStoredWebsiteAccess) return { title: loadedTab?.title, icon: undefined }
-	}
-
-	// if the tab is not ready yet try to wait for a while for it to be ready, if not, we just have no icon to show on firefox
-	let maxRetries = 10
-	// apparently there's a lot bugs in firefox related to getting this favicon. Eve if the tab has loaded, the favicon is not necessary loaded either
-	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
-	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
-	// below is my attempt to try to get favicon...
-	while ((await getTabIfExists(tabId))?.favIconUrl === undefined) {
-		await new Promise(resolve => setTimeout(resolve, 100))
-		maxRetries--
-		if (maxRetries <= 0) break // timeout
-	}
+	// Metadata is cosmetic: a page may keep loading while it waits for wallet RPC, so never wait for tab load or favicon events here.
 	const tab = await getTabIfExists(tabId)
+	if (tab === undefined) return { title: undefined, icon: undefined }
+	const cached = websiteOrigin === undefined ? undefined : await getCachedWebsiteIcon(tabId, websiteOrigin)
+	// A child frame has its own origin. The outer tab's title and favicon must never identify that child in a permission prompt.
+	const matchesTab = websiteOrigin === undefined || (tab.url !== undefined && getHostWithPort(tab.url) === websiteOrigin)
+	if (!matchesTab || tab.status !== 'complete') return { title: undefined, icon: cached?.cachedIcon }
+	if (cached?.cachedIcon !== undefined) return { title: tab.title, icon: cached.cachedIcon }
+	if (cached?.hasStoredWebsiteAccess === false) return { title: tab.title, icon: undefined }
+
 	const pageUrl = tab?.url ?? 'unknown'
 	const failToLoadFavicon = (reason: string) => {
 		console.warn(`Failed to load favicon for tab ${ tabId } (${ pageUrl }): ${ reason }`)

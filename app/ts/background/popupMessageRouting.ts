@@ -1,7 +1,7 @@
 import { PopupMessage, type Settings } from '../types/interceptor-messages.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { isExpectedInfrastructureError } from '../utils/errors.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
@@ -17,6 +17,7 @@ export async function popupMessageHandler(
 	request: unknown,
 	settings: Settings,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
+	sender?: browser.runtime.MessageSender,
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
@@ -31,6 +32,7 @@ export async function popupMessageHandler(
 	}
 	try {
 		const requestReply = await dispatchPopupMessage({
+			sender,
 			websiteTabConnections,
 			simulationServicesOwner,
 			settings,

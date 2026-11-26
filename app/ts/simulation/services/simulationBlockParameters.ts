@@ -11,7 +11,7 @@ export const calculateRealizedEffectiveGasPrice = (transaction: EthereumUnsigned
 	return min(blocksBaseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
-// The base fee of every block a simulation adds on top of the parent block: the parent's, or a fallback for a chain whose blocks have none. A Gnosis Safe execution's executor pays it (prepareSafeExecutionSimulationInput).
+// The base fee of every block a simulation adds on top of the parent block: the parent's, or a fallback for a chain whose blocks have none. A Gnosis Safe execution's executor pays it (prepareGnosisSafeExecutionSimulationInput).
 export const getSimulatedBlockBaseFeePerGas = (parentBlock: { readonly baseFeePerGas?: bigint | undefined }) => parentBlock.baseFeePerGas ?? 15_000_000n
 
 export const getBlockTimeManipulationSeconds = (deltaToAdd: bigint, deltaUnit: BlockTimeManipulationDeltaUnit) => {

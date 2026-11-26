@@ -3,4 +3,5 @@
 /app/vendor/
 /**/node_modules/
 /app/inpage/js/
+/app/shared/js/
 /app/manifest.json

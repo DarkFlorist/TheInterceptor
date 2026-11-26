@@ -57,7 +57,7 @@ import { getReviewedResultId } from '../reviewedResult.js'
 import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
-// Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Safe nonce against the pending proposals stored before it (createSafeSigningRequestForTransaction).
+// Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Gnosis Safe nonce against the pending proposals stored before it (createGnosisSafeSigningRequestForTransaction).
 export const runWithPendingConfirmationLock = async <T>(work: () => Promise<T>) => await pendingConfirmationSemaphore.execute(work)
 const pendingNoResponseRetries = new Map<string, ReturnType<typeof createBackoffRetryScheduler>>()
 
@@ -151,7 +151,7 @@ async function refreshDirectGnosisSafeExecutionSimulation(
 		pending.created,
 		pending.transactionIdentifier,
 		false,
-		getGnosisSafeTransactionFlowGasPayment(flow.kind),
+		{ gasPayment: getGnosisSafeTransactionFlowGasPayment(flow.kind) },
 	)
 	const popupVisualisation = await refreshConfirmTransactionSimulation(
 		ethereum,
@@ -460,7 +460,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 	pendingTransactionOrMessage = safeResolution.pending
 	if (safeResolution.pendingChanged && !await persistGnosisSafeConfirmationRefresh(pendingTransactionOrMessage)) return false
 	if (confirmation.data.action === 'accept') {
-		// The Safe signer refresh and resolution above, or a concurrent result refresh, may have stored new content, so the accept is checked again while claiming the request.
+		// The Gnosis Safe signer refresh and resolution above, or a concurrent result refresh, may have stored new content, so the accept is checked again while claiming the request.
 		const acceptedPending = await claimAcceptedRequest(confirmation.data, pendingTransactionOrMessage)
 		if (acceptedPending === undefined) {
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -724,7 +724,7 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, { gasPayment = 'transaction-sender', safeOperation }: { readonly gasPayment?: TransactionGasPayment, readonly safeOperation?: 1 } = {}): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const paidByExecutor = gasPayment !== 'transaction-sender'
 	const simulationState = simulationMode || paidByExecutor
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
@@ -732,8 +732,8 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	// Defined by the Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe proposal, or in simulation mode a Safe's own call), so this function picks no Safe-specific option or nonce source itself.
-	const executedCallFormation = getExecutedCallFormation(ethereumClientService, gasPayment)
+	// Defined by the Gnosis Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe proposal, or in simulation mode a Gnosis Safe's own call), so this function picks no Gnosis Safe-specific option or nonce source itself.
+	const executedCallFormation = getExecutedCallFormation(ethereumClientService, gasPayment, safeOperation)
 	const transactionCountPromise = silenceChromeUnCaughtPromise(executedCallFormation === undefined
 		? getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from)
 		: executedCallFormation.getNonce(requestAbortController, simulationState, from))
@@ -780,7 +780,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		transactionIdentifier,
 		error: undefined,
 	}
-	// Carried to the confirmation simulation and the simulation stack, which run the Safe's call through its execTransaction.
+	// Carried to the confirmation simulation and the simulation stack, which run the Gnosis Safe's call through its execTransaction.
 	const simulationOptionsField: { readonly simulationOptions?: TransactionSimulationOptions } = executedCallFormation === undefined ? {} : { simulationOptions: executedCallFormation.simulationOptions }
 	if (transactionDetails.gas === undefined) {
 		try {
@@ -992,7 +992,7 @@ async function formPreparedTransaction(
 		created,
 		transactionIdentifier,
 		simulationMode,
-		gasPayment,
+		{ gasPayment, safeOperation: safePreparation.safeOperation },
 	)
 	return await formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
 }
