@@ -747,6 +747,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
+		siteRpcInterceptionEnabled: funtypes.Boolean,
 	})
 })
 
@@ -855,6 +856,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
+		siteRpcInterceptionEnabled: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})

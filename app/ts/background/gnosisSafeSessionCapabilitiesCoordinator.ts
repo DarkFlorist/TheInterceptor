@@ -1,10 +1,9 @@
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { createGnosisSafeAppsCompatibilityFeature } from './gnosisSafeAppsCompatibilityCoordinator.js'
-import { createSiteBehaviorFeature } from './siteBehaviorCoordinator.js'
-import { getGnosisSafeSessionCompatibilityMode } from './settings.js'
+import { createGnosisSafeAppsCompatibilityFeature, initializeGnosisSafeAppsCompatibility } from './gnosisSafeAppsCompatibilityCoordinator.js'
+import { createSiteBehaviorFeature, initializeSiteBehavior } from './siteBehaviorCoordinator.js'
 
-// The session policy intentionally enables SDK hosting and simulated reads together; each owner publishes, retracts and invalidates only its own protocol.
+// Compose lifecycle notifications only; each capability owns its independent preference and initialization.
 export function createGnosisSafeSessionCapabilitiesFeature(connections: WebsiteTabConnections) {
 	const sdk = createGnosisSafeAppsCompatibilityFeature(connections)
 	const site = createSiteBehaviorFeature(connections)
@@ -16,25 +15,15 @@ export function createGnosisSafeSessionCapabilitiesFeature(connections: WebsiteT
 		signerAccountsChanged: async (socket) => { await Promise.all([sdk.lifecycle.signerAccountsChanged?.(socket), site.lifecycle.signerAccountsChanged?.(socket)]) },
 		accessReconciled: async () => { await Promise.all([sdk.lifecycle.accessReconciled?.(), site.lifecycle.accessReconciled?.()]) },
 	}
-	const setEnabled = (enabled: boolean) => { sdk.setEnabled(enabled); site.setEnabled(enabled) }
-	return { lifecycle, setEnabled, dispose: () => setEnabled(false) }
+	return { lifecycle, sdk, site, dispose: () => { sdk.dispose(); site.dispose() } }
 }
 
-export async function initializeGnosisSafeSessionCapabilities(feature: ReturnType<typeof createGnosisSafeSessionCapabilitiesFeature>) {
-	let changedDuringInitialization = false
-	const onChanged = (changes: { readonly safeAppsCompatibilityMode?: browser.storage.StorageChange }, area: string) => {
-		if (area !== 'local' || !('safeAppsCompatibilityMode' in changes)) return
-		changedDuringInitialization = true
-		feature.setEnabled(changes.safeAppsCompatibilityMode?.newValue === true)
+export async function initializeGnosisSafeSessionCapabilities(feature: Pick<ReturnType<typeof createGnosisSafeSessionCapabilitiesFeature>, 'sdk' | 'site'>) {
+	// Wait for both reads to settle before cleanup so a late initializer cannot retain a listener after its peer fails.
+	const results = await Promise.allSettled([initializeGnosisSafeAppsCompatibility(feature.sdk), initializeSiteBehavior(feature.site)])
+	if (results.some((result) => result.status === 'rejected')) {
+		for (const result of results) if (result.status === 'fulfilled') result.value()
+		for (const result of results) if (result.status === 'rejected') throw result.reason
 	}
-	browser.storage.onChanged.addListener(onChanged)
-	try {
-		const enabled = await getGnosisSafeSessionCompatibilityMode()
-		if (!changedDuringInitialization) feature.setEnabled(enabled)
-	} catch (error) {
-		browser.storage.onChanged.removeListener(onChanged)
-		feature.dispose()
-		throw error
-	}
-	return () => { browser.storage.onChanged.removeListener(onChanged); feature.dispose() }
+	return () => { for (const result of results) if (result.status === 'fulfilled') result.value() }
 }

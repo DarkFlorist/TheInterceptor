@@ -24,7 +24,7 @@ test('bundled content script listener has an undefined completion value', async 
 
 test('bundled main-world provider is valid as a classic script', async () => {
 	const buildResult = await Bun.build({
-		entrypoints: [path.resolve('app/inpage/ts/inpage.ts')],
+		entrypoints: [path.resolve('app/inpage/ts/inpageBootstrap.ts')],
 		target: 'browser',
 		format: 'esm',
 		splitting: false,

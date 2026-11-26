@@ -25,8 +25,9 @@ export const startupStorageCodecs = {
 	makeCurrentAddressRich: funtypes.Boolean,
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	signingAddressPreferences: SigningAddressPreferences,
+	siteRpcInterceptionEnabled: funtypes.Boolean,
 }
 
 
-// The historical safeAppsCompatibilityMode wire key now represents Gnosis Safe session compatibility: SDK hosting plus simulated website reads.
+// Existing hosting preferences never opt users into HTTP simulation reads.
 export const hostingStorageCodecs = { safeAppsCompatibilityMode: funtypes.Boolean, userAddressBookEntriesV3: AddressBookEntries }

@@ -37,7 +37,7 @@
 		"inpage/js/inpage-metamask-compatibility.js",
 		"inpage/js/document_start-metamask-compatibility.js",
 		"inpage/js/document_start.js",
-		"inpage/js/inpage.js", "inpage/js/siteBehaviorBootstrap.js"
+		"inpage/js/inpage.js"
 	],
 	"content_security_policy": "object-src 'self'; script-src 'self'"
 }

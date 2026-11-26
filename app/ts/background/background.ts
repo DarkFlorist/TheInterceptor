@@ -1,3 +1,4 @@
+import { getSiteReadRequestAccessContext } from './siteReadRequestAdmission.js'
 import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethods.js'
 import { prepareSiteRpcRequest } from './siteRpcInterception.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
@@ -16,7 +17,7 @@ import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsi
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { verifyRequestAccess } from './requestAccessVerification.js'
-import { resolveRequestAccessContext, hasRequestAccessAddress, type AddressedRequestAccessContext, type RequestAccessContext } from './requestAccessContext.js'
+import { createRequestAccessContextResolver, hasRequestAccessAddress, type AddressedRequestAccessContext, type RequestAccessContext } from './requestAccessContext.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
@@ -351,6 +352,8 @@ async function getActiveAddressForRequest(settings: Settings, websiteTabConnecti
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
+const resolveRequestAccessContext = createRequestAccessContextResolver([{ method: 'site_rpc_request', resolve: getSiteReadRequestAccessContext }])
+
 async function getRequestAddressContext(settings: Settings, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, websiteOrigin: string) {
 	return await resolveRequestAccessContext(websiteTabConnections, socket, request, settings, websiteOrigin, async () => await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId))
 }
@@ -562,7 +565,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 			const settings = await getSettings()
 			const accessContext = routingAttempt === 1 ? accessContextInitiallyVerified : await getAccessContextForReroute(websiteTabConnections, request, website, accessContextInitiallyVerified, settings)
 			// Website metadata and reroutes may wait across navigation or permission changes. Validate the captured authority before execution, without resolving a second native context.
-			if (accessContext === undefined || !hasRequestAccessAddress(accessContext) || !await accessContext.isCurrent(settings)) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
+			if (accessContext === undefined || !hasRequestAccessAddress(accessContext) || accessContext.requireAddressAccess && !await accessContext.isCurrent(settings)) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
 			const { activeAddress } = accessContext
 			const routing = await routeRequest(simulationServicesOwner, websiteTabConnections, request, website, settings, accessContext, publishRpcConnectionStatus)
 			if (routing.kind === 'answeredAtAdmission') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, routing.reply))

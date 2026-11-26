@@ -143,9 +143,10 @@ try {
 			const appUrl = `${ server.url.origin }/?${ new URLSearchParams({ parentOrigin: extensionOrigin }) }`
 			const grants = [{ website: { websiteOrigin: server.url.host }, access: true, addressAccess: [{ address: safeAddress, access: true }] }]
 			await settings.evaluate(`(async () => {
-				await browser.storage.local.set({safeAppsCompatibilityMode:true,simulationMode:true,useSignersAddressAsActiveAddress:false,independentActiveSimulationAddress:'${ safeAddress }',activeSigningSafeAddress:'${ safeAddress }',activeSigningAddress:'${ ownerAddress }',signingAddressPreferences:[{signerAddress:'${ ownerAddress }',selection:'safe',safeAddress:'${ safeAddress }',chainId:'0x1'}],userAddressBookEntriesV3:[{type:'safe',name:'Native host Gnosis Safe',address:'${ safeAddress }',chainId:'0x1',entrySource:'User',useAsActiveAddress:true,askForAddressAccess:false,safeSignerAddresses:['${ ownerAddress }'],safeSimulationSignerAddress:'${ ownerAddress }',safeVersion:'1.4.1'}],websiteAccess:${ JSON.stringify(grants) }});
+				await browser.storage.local.set({safeAppsCompatibilityMode:true,siteRpcInterceptionEnabled:${ httpInterception },simulationMode:true,useSignersAddressAsActiveAddress:false,independentActiveSimulationAddress:'${ safeAddress }',activeSigningSafeAddress:'${ safeAddress }',activeSigningAddress:'${ ownerAddress }',signingAddressPreferences:[{signerAddress:'${ ownerAddress }',selection:'safe',safeAddress:'${ safeAddress }',chainId:'0x1'}],userAddressBookEntriesV3:[{type:'safe',name:'Native host Gnosis Safe',address:'${ safeAddress }',chainId:'0x1',entrySource:'User',useAsActiveAddress:true,askForAddressAccess:false,safeSignerAddresses:['${ ownerAddress }'],safeSimulationSignerAddress:'${ ownerAddress }',safeVersion:'1.4.1'}],websiteAccess:${ JSON.stringify(grants) }});
 				await browser.runtime.sendMessage({method:'popup_changeActiveRpc',data:${ JSON.stringify(network) }});
 			})()`)
+			assert.equal(await settings.evaluate('browser.storage.local.get(\'siteRpcInterceptionEnabled\').then(items => items.siteRpcInterceptionEnabled)'), httpInterception, 'the native-host scenario must test its requested HTTP preference')
 			for (const simulationMode of [true, false]) {
 				stage = `opening source website in ${ simulationMode ? 'simulation' : 'signing' } mode`
 				await settings.evaluate(`browser.storage.local.set({simulationMode:${ simulationMode },websiteAccess:${ JSON.stringify(grants) }})`)
@@ -180,6 +181,12 @@ try {
 								return response.overlay === (simulationMode ? 'true' : null) && response.value?.result === (simulationMode ? '0x0' : '0x2a')
 							}, 'origin-verified native iframe HTTP simulation overlay')
 							console.warn(`${ session.browser } native iframe HTTP read passed: ${ simulationMode ? 'simulation' : 'signing' }`)
+						} else {
+							await command(host, 'disabledHttpBalance', '__nativeHttpBalance')
+							await waitForBrowserCondition(async () => await host.evaluate('nativeHostFixture.at(-1)?.results.disabledHttpBalance !== undefined'), 'disabled native HTTP read releases to the network')
+							const response = await host.evaluate<{ overlay: string | null, value: { result: string } }>('nativeHostFixture.at(-1).results.disabledHttpBalance')
+							assert.equal(response.overlay, null)
+							assert.equal(response.value.result, '0x2a', 'hosting alone must not activate HTTP overlays or strand native startup reads')
 						}
 						if (!httpInterception && simulationMode) {
 							stage = 'preserving the native app through metadata refresh failure and recovery'

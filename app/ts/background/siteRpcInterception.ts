@@ -1,3 +1,4 @@
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import { getUpdatedSimulationStackSnapshot } from './simulationUpdating.js'
@@ -10,13 +11,13 @@ import type { InterceptedRequest } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { InterceptedRequestForward, Settings } from '../types/interceptor-messages.js'
-import { resolveSiteBehavior, SIMULATION_NATIVE_TOKEN_ADDRESS } from '../utils/siteBehaviors.js'
+import { resolveSiteBehavior } from '../utils/siteBehaviors.js'
 import { getConnectionOrigin } from './siteBehaviorContext.js'
-import { getGnosisSafeSessionCompatibilityMode } from './settings.js'
+import { getSiteRpcInterceptionEnabled } from './settings.js'
 import { isGnosisSafeAppsConnectionEligibleForAdmittedAddress } from './gnosisSafeAppsConnectionEligibility.js'
 import type { AddressedRequestAccessContext } from './requestAccessContext.js'
 
-const simulationNativeToken = BigInt(SIMULATION_NATIVE_TOKEN_ADDRESS)
+const simulationNativeToken = ETHEREUM_LOGS_LOGGER_ADDRESS
 
 const SiteRpcEnvelope = funtypes.ReadonlyObject({ chainId: EthereumQuantity, request: funtypes.Union(EthereumJsonRpcRequest, funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationTokens') }), funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationTokenMetadata') })) })
 const rejected = (message: string) => ({ kind: 'rejected' as const, message })
@@ -58,7 +59,7 @@ export async function prepareSiteRpcRequest(ethereum: EthereumClientService, con
 	const socket = request.uniqueRequestIdentifier.requestSocket
 	// The router's effective socket is the approved top-level source for native children; both protocols validate the same admitted account and chain.
 	const eligible = isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, accessContext.accessSocket, settings, { activeAddress, safeSigningMode: false })
-	if (!await getGnosisSafeSessionCompatibilityMode() || !settings.simulationMode || !eligible) return failure('Site RPC interception is not enabled for this connection.')
+	if (!await getSiteRpcInterceptionEnabled() || !settings.simulationMode || !eligible) return failure('Site RPC interception is not enabled for this connection.')
 	const execution = getSiteRpcExecution(request, getConnectionOrigin(connections, socket), settings.simulationMode, settings.activeRpcNetwork.chainId)
 	if (execution === undefined) return failure('Unsupported site RPC request.')
 	if (execution.kind === 'rejected') return failure(execution.message)

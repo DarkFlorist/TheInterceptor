@@ -1,7 +1,6 @@
 // Canonical HTTP behavior policy: page origins select nonstandard RPC envelopes; vendor endpoint routes apply to any page in an approved Gnosis Safe simulation session using those APIs. These descriptors never grant permission.
 
-// Simulation represents the native currency with this sentinel; indexed vendor APIs may map it to their own native address.
-export const SIMULATION_NATIVE_TOKEN_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+export { SIMULATION_NATIVE_TOKEN_ADDRESS } from './simulationNativeToken.js'
 export const SIMULATED_SITE_RPC_METHODS = ['eth_call', 'eth_getBalance', 'eth_getCode', 'eth_getStorageAt', 'eth_getTransactionCount', 'eth_getTransactionReceipt', 'eth_getTransactionByHash', 'eth_blockNumber', 'eth_getBlockByNumber', 'eth_getBlockByHash', 'eth_getLogs', 'eth_estimateGas', 'eth_chainId', 'net_version', 'eth_gasPrice', 'eth_maxPriorityFeePerGas', 'eth_feeHistory'] as const
 export type SiteBehavior = { readonly origin: string, readonly rpcReads: { readonly methods: readonly typeof SIMULATED_SITE_RPC_METHODS[number][], readonly chainRoutedProxyPaths: readonly string[] } }
 // Optional origin-specific transport overrides, not an allowlist. Standard JSON-RPC works on every approved HTTP(S) origin.

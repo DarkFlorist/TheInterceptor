@@ -66,7 +66,7 @@ async function main() {
 		const settings = await session.openExtensionPage('html/popup.html')
 		try {
 			await settings.evaluate(`(async () => {
-				await browser.storage.local.set({ safeAppsCompatibilityMode: true, simulationMode: true, useSignersAddressAsActiveAddress: false,
+				await browser.storage.local.set({ safeAppsCompatibilityMode: false, siteRpcInterceptionEnabled: true, simulationMode: true, useSignersAddressAsActiveAddress: false,
 					independentActiveSimulationAddress: '${ safeAddress }', activeSigningSafeAddress: '${ safeAddress }', activeSigningAddress: '${ ownerAddress }',
 					signingAddressPreferences: [{ signerAddress: '${ ownerAddress }', selection: 'safe', safeAddress: '${ safeAddress }', chainId: '0x1' }],
 					userAddressBookEntriesV3: [{ type: 'safe', name: 'Shared Gnosis Safe', address: '${ safeAddress }', chainId: '0x1', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, safeSignerAddresses: ['${ ownerAddress }'], safeSimulationSignerAddress: '${ ownerAddress }', safeVersion: '1.4.1' }] });
@@ -81,6 +81,15 @@ async function main() {
 					await page.reload()
 					await waitForBrowserCondition(async () => await page.evaluate('window.ethereum?.isInterceptor === true'), 'HTTP fixture provider')
 					assert.equal(await page.evaluate('window.parent === window && window.top === window'), true, 'HTTP overlays must not require a fabricated parent')
+					assert.equal(await page.evaluate(`(() => {
+						let captured = false;
+						const registry = globalThis[Symbol.for('TheInterceptor.pageExtensions')];
+						if (registry && typeof registry.register === 'function') registry.register('hostile-page-probe', requestRpc => {
+							captured = typeof requestRpc === 'function';
+							return { setContext() {}, dispose() {} };
+						});
+						return captured;
+					})()`), false, 'Page code cannot acquire the private internal HTTP RPC transport through a global registry')
 					await page.evaluate(`void ethereum.request({method:'eth_requestAccounts'}).then(accounts=>{globalThis.fixtureAccounts=accounts},error=>{globalThis.fixtureAccessError=String(error)})`)
 					await waitForBrowserCondition(async () => await page.evaluate(`(() => {if(globalThis.fixtureAccessError) throw new Error(globalThis.fixtureAccessError);return globalThis.fixtureAccounts?.[0]?.toLowerCase() === '${ safeAddress }'})()`), 'preapproved provider Gnosis Safe account')
 					if (simulationMode) {

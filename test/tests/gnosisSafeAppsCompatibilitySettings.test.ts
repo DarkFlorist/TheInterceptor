@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { createDeferredSignal, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
-import { exportSettingsAndAddressBook, getGnosisSafeSessionCompatibilityMode, setGnosisSafeSessionCompatibilityMode } from '../../app/ts/background/settings.js'
+import { exportSettingsAndAddressBook, getGnosisSafeAppsCompatibilityMode, setGnosisSafeAppsCompatibilityMode } from '../../app/ts/background/settings.js'
 import { importSettingsAndAddressBook } from '../../app/ts/background/settingsImport.js'
 
 const readsMode = (keys: unknown) => keys === 'safeAppsCompatibilityMode' || (Array.isArray(keys) && keys.includes('safeAppsCompatibilityMode'))
@@ -25,33 +25,33 @@ function holdNextModeRead(mock: ReturnType<typeof installBrowserMock>) {
 
 for (const initial of [false, true]) test(`a later compatibility selection wins while the preceding ${ initial ? 'disable' : 'enable' } read is suspended`, async () => {
 	const mock = installBrowserMock()
-	await setGnosisSafeSessionCompatibilityMode(initial)
+	await setGnosisSafeAppsCompatibilityMode(initial)
 	const gate = holdNextModeRead(mock)
-	const first = setGnosisSafeSessionCompatibilityMode(!initial)
+	const first = setGnosisSafeAppsCompatibilityMode(!initial)
 	await gate.started
-	const last = setGnosisSafeSessionCompatibilityMode(initial)
+	const last = setGnosisSafeAppsCompatibilityMode(initial)
 	gate.release()
 	await Promise.all([first, last])
-	assert.equal(await getGnosisSafeSessionCompatibilityMode(), initial)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), initial)
 	assert.deepEqual(gate.writes, [!initial, initial], 'the later operation must compare with the preceding committed value')
 })
 
 test('concurrent identical compatibility selections emit only one storage transition', async () => {
 	const mock = installBrowserMock()
 	const gate = holdNextModeRead(mock)
-	const first = setGnosisSafeSessionCompatibilityMode(true)
+	const first = setGnosisSafeAppsCompatibilityMode(true)
 	await gate.started
-	const rest = [setGnosisSafeSessionCompatibilityMode(true), setGnosisSafeSessionCompatibilityMode(true)]
+	const rest = [setGnosisSafeAppsCompatibilityMode(true), setGnosisSafeAppsCompatibilityMode(true)]
 	gate.release()
 	await Promise.all([first, ...rest])
-	assert.equal(await getGnosisSafeSessionCompatibilityMode(), true)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
 	assert.deepEqual(gate.writes, [true], 'queued no-op selections must not invalidate the Firefox app session')
 })
 
 test('compatibility selections share the settings-import transaction lock', async () => {
 	const mock = installBrowserMock()
 	const disabledSettings = await exportSettingsAndAddressBook()
-	await setGnosisSafeSessionCompatibilityMode(true)
+	await setGnosisSafeAppsCompatibilityMode(true)
 	const started = createDeferredSignal()
 	const release = createDeferredSignal()
 	let modeReads = 0
@@ -65,14 +65,14 @@ test('compatibility selections share the settings-import transaction lock', asyn
 	})
 	const importing = importSettingsAndAddressBook(disabledSettings)
 	await started.promise
-	const enabling = setGnosisSafeSessionCompatibilityMode(true)
+	const enabling = setGnosisSafeAppsCompatibilityMode(true)
 	try {
 		assert.equal(modeReads, 0, 'a selection cannot read through an unfinished settings import')
 	} finally {
 		release.resolve()
 		await Promise.all([importing, enabling])
 	}
-	assert.equal(await getGnosisSafeSessionCompatibilityMode(), true)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
 })
 
 test('a failed compatibility write releases the transaction for subsequent selections', async () => {
@@ -84,11 +84,45 @@ test('a failed compatibility write releases the transaction for subsequent selec
 		fail = false
 		throw failure
 	} })
-	const [enable, disable] = await Promise.allSettled([setGnosisSafeSessionCompatibilityMode(true), setGnosisSafeSessionCompatibilityMode(false)])
+	const [enable, disable] = await Promise.allSettled([setGnosisSafeAppsCompatibilityMode(true), setGnosisSafeAppsCompatibilityMode(false)])
 	assert.ok(enable?.status === 'rejected')
 	assert.equal(enable.reason, failure)
 	assert.equal(disable?.status, 'fulfilled')
-	assert.equal(await getGnosisSafeSessionCompatibilityMode(), false)
-	await setGnosisSafeSessionCompatibilityMode(true)
-	assert.equal(await getGnosisSafeSessionCompatibilityMode(), true)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), false)
+	await setGnosisSafeAppsCompatibilityMode(true)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
+})
+
+for (const hosting of [false, true]) for (const reads of [false, true]) test(`settings export and import preserve independent hosting=${ hosting }, HTTP reads=${ reads }`, async () => {
+	installBrowserMock()
+	const { getSiteRpcInterceptionEnabled, setSiteRpcInterceptionEnabled } = await import('../../app/ts/background/settings.js')
+	await setGnosisSafeAppsCompatibilityMode(hosting)
+	await setSiteRpcInterceptionEnabled(reads)
+	const exported = await exportSettingsAndAddressBook()
+	assert.equal(exported.version, '1.8')
+	if (exported.version !== '1.8') throw new Error('Expected current settings format')
+	assert.equal(exported.settings.siteRpcInterceptionEnabled, reads)
+	await setGnosisSafeAppsCompatibilityMode(!hosting)
+	await setSiteRpcInterceptionEnabled(!reads)
+	await importSettingsAndAddressBook(exported)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), hosting)
+	assert.equal(await getSiteRpcInterceptionEnabled(), reads)
+})
+
+test('old backups reset HTTP reads to off even when the hosting flag or an unknown HTTP flag is true', async () => {
+	installBrowserMock()
+	const { getSiteRpcInterceptionEnabled, setSiteRpcInterceptionEnabled } = await import('../../app/ts/background/settings.js')
+	const { ExportedSettings, CurrentExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	await setGnosisSafeAppsCompatibilityMode(true)
+	await setSiteRpcInterceptionEnabled(true)
+	const exported = await exportSettingsAndAddressBook()
+	if (exported.version !== '1.8') throw new Error('Expected current settings format')
+	const serialized = CurrentExportedSettings.serialize(exported)
+	for (const version of ['1.6', '1.7']) {
+		await setSiteRpcInterceptionEnabled(true)
+		const legacy = ExportedSettings.parse({ ...serialized, version })
+		await importSettingsAndAddressBook(legacy)
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
+		assert.equal(await getSiteRpcInterceptionEnabled(), false)
+	}
 })

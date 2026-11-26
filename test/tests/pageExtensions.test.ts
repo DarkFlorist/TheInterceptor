@@ -1,52 +1,30 @@
 import * as assert from 'node:assert/strict'
 import { test } from 'bun:test'
-import { createPageExtensions, registerPageExtension } from '../../app/inpage/ts/pageExtensions.js'
+import { createPageExtensions } from '../../app/inpage/ts/pageExtensions.js'
 
-// The core can start without any HTTP extension and never needs a fetch implementation.
-test('page extension registration delivers current and later context through one read-only transport', async () => {
-	const host = {}
+test('private composition delivers context and RPC only to its supplied factories', async () => {
 	const requests: unknown[] = []
-	const manager = createPageExtensions(host, async (chain, request) => { requests.push({ chain, request }); return 'result' })
-	const initial = { rpcInterception: { chainId: '0x1' } }
-	manager.setContext(initial)
 	const contexts: unknown[] = []
-	let installs = 0
 	let disposed = 0
-	registerPageExtension(host, 'http', (requestRpc) => {
-		installs++
-		void requestRpc('0x1', { method: 'eth_getBalance' })
+	const manager = createPageExtensions(async (request) => { requests.push(request); return 'result' }, [(requestRpc) => {
+		void requestRpc({ method: 'read' })
 		return { setContext: (value) => { contexts.push(value) }, dispose: () => { disposed++ } }
-	})
-	registerPageExtension(host, 'http', () => { throw new Error('Duplicate installation') })
+	}])
+	assert.equal('register' in manager, false, 'page scripts have no dynamic registration entrypoint')
+	assert.deepEqual(contexts, [], 'no implicit disabled context before the first publication')
+	manager.setContext({ enabled: true })
 	manager.setContext(undefined)
-	assert.deepEqual(contexts, [initial, undefined])
-	assert.deepEqual(requests, [{ chain: '0x1', request: { method: 'eth_getBalance' } }])
-	assert.equal(installs, 1)
+	assert.deepEqual(contexts, [{ enabled: true }, undefined])
+	assert.deepEqual(requests, [{ method: 'read' }])
 	manager.dispose()
-	manager.setContext(initial)
-	assert.deepEqual(contexts, [initial, undefined])
+	manager.dispose()
+	manager.setContext('late')
 	assert.equal(disposed, 1)
-	assert.throws(() => registerPageExtension(host, 'http', () => { throw new Error('Should not install') }), /provider must initialize/)
+	assert.deepEqual(contexts, [{ enabled: true }, undefined])
 })
 
-test('page extension teardown does not remove a replacement provider registration', () => {
-	const host = {}
-	const first = createPageExtensions(host, async () => undefined)
-	const second = createPageExtensions(host, async () => undefined)
-	first.dispose()
-	const contexts: unknown[] = []
-	registerPageExtension(host, 'http', () => ({ setContext: (value) => { contexts.push(value) }, dispose: () => undefined }))
-	second.setContext('current')
-	assert.deepEqual(contexts, ['current'])
-})
-
-
-test('registration preserves startup waiting until the first explicit context publication', () => {
-	const host = {}
-	const manager = createPageExtensions(host, async () => undefined)
-	const contexts: unknown[] = []
-	registerPageExtension(host, 'http', () => ({ setContext: (value) => { contexts.push(value) }, dispose: () => undefined }))
-	assert.deepEqual(contexts, [], 'absence of a publication must not release a native host startup read to the network')
+test('the core can initialize and publish without any HTTP extension or page registration', () => {
+	const manager = createPageExtensions(async () => undefined, [])
 	manager.setContext(undefined)
-	assert.deepEqual(contexts, [undefined], 'an actual disabled/revoked publication must still release native reads')
+	manager.dispose()
 })

@@ -14,7 +14,7 @@ const compileClassicScript = async (sourcePath: string) => ts.transpileModule(aw
 }).outputText
 
 // Bundle each compatibility mode's provider with its shared policies exactly as the build does.
-const bundleProviderFromSource = async (metamaskCompatibilityMode: boolean) => await bundlePageWorldProvider(new URL('../../app/inpage/ts/inpage.ts', import.meta.url).pathname, metamaskCompatibilityMode)
+const bundleProviderFromSource = async (metamaskCompatibilityMode: boolean) => await bundlePageWorldProvider(new URL('../../app/inpage/ts/inpage.ts', import.meta.url).pathname, metamaskCompatibilityMode, new URL('../../app/inpage/ts/inpageBootstrap.ts', import.meta.url).pathname)
 
 const generateArtifactsFromSources = async (extensions: readonly { readonly source: string, readonly scriptPath: string }[] = []) => {
 	const pageWorldProviders = new Map([[false, await bundleProviderFromSource(false)], [true, await bundleProviderFromSource(true)]])
@@ -162,7 +162,7 @@ test('independent page extensions follow the core provider inline and through or
 		assert.equal(Reflect.get(inline.pageWindow, 'extensionSawProvider'), true)
 		assert.equal(inline.insertedScripts.length, 2)
 		const blocked = runDocumentStart(documentStart.source, { pageCspBlocksInlineScripts: true })
-		assert.deepEqual(blocked.queuedExternalScripts, getPageWorldScriptPaths(mode).map((file) => ({ src: `moz-extension://interceptor/${ file }`, async: false })))
+		assert.deepEqual(blocked.queuedExternalScripts, [...getPageWorldScriptPaths(mode), scriptPath].map((file) => ({ src: `moz-extension://interceptor/${ file }`, async: false })))
 	}
 })
 

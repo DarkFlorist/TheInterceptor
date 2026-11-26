@@ -41,12 +41,12 @@ const websiteMetaData: WebsiteMetaData = {
 	'app.aave.com': {
 		name: 'Aave',
 		externalRpc: true,
-		simulationSupportNote: 'With Gnosis Safe session compatibility enabled for an approved Gnosis Safe, supported Aave browser RPC reads use the simulation. Other networks and external services may still show live data.',
+		simulationSupportNote: 'With simulated website HTTP reads enabled for an approved Gnosis Safe, supported Aave browser RPC reads use the simulation. Other networks and external services may still show live data.',
 	},
 	'stake.lido.fi': {
 		name: 'Lido',
 		externalRpc: true,
-		simulationSupportNote: 'With Gnosis Safe session compatibility enabled for an approved Gnosis Safe, supported Lido browser RPC reads, including ether and token balances, use the simulation. External services may still show live data.',
+		simulationSupportNote: 'With simulated website HTTP reads enabled for an approved Gnosis Safe, supported Lido browser RPC reads, including ether and token balances, use the simulation. External services may still show live data.',
 	},
 	'app.compound.finance': {
 		name: 'Compound',

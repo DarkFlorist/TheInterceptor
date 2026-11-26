@@ -16,7 +16,7 @@ async function harness() {
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port } = createPort(1)
 	const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: origin, approved: true, wantsToConnect: true } } }]])
-	const context: AddressedRequestAccessContext = { activeAddress: address(1n), accessSocket: socket, accessOrigin: origin, requireAddressAccess: false, isCurrent: async () => true }
+	const context: AddressedRequestAccessContext = { activeAddress: address(1n), accessSocket: socket, accessOrigin: origin, requireAddressAccess: false }
 	const request = (method: string) => ({ method, interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } })
 	return { settings: await modules.getSettings(), socket, connections, context, request }
 }

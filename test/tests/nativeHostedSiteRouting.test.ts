@@ -1,4 +1,5 @@
-import { hasRequestAccessAddress, resolveRequestAccessContext } from '../../app/ts/background/requestAccessContext.js'
+import { getSiteReadRequestAccessContext } from '../../app/ts/background/siteReadRequestAdmission.js'
+import { hasRequestAccessAddress, createRequestAccessContextResolver } from '../../app/ts/background/requestAccessContext.js'
 import * as assert from 'assert'
 import { spyOn, test } from 'bun:test'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -7,6 +8,8 @@ import { createGnosisSafeSessionCapabilitiesFeature, initializeGnosisSafeSession
 import { nativeGnosisSafeAppsHostUrl } from '../../app/ts/utils/nativeGnosisSafeAppsHost.js'
 import { createPort, createDeferredValue, createEthereumWithGetBlockCounter, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
+const resolveRequestAccessContext = createRequestAccessContextResolver([{ method: 'site_rpc_request', resolve: getSiteReadRequestAccessContext }])
+
 async function harness() {
 	installBrowserMock()
 	Object.assign(browser.runtime, { id: 'test-extension', getURL: (path: string) => new URL(path, 'moz-extension://test-extension/').href })
@@ -14,7 +17,8 @@ async function harness() {
 	const address = 0x6868686868686868686868686868686868686868n
 	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
 	await modules.setUseSignersAddressAsActiveAddress(false)
-	await modules.setGnosisSafeSessionCompatibilityMode(true)
+	await modules.setGnosisSafeAppsCompatibilityMode(true)
+	await modules.setSiteRpcInterceptionEnabled(true)
 	await modules.updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Simulated Gnosis Safe', address, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
 	const website = { websiteOrigin: 'app.aave.com', title: undefined, icon: undefined }
 	await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }] }])
@@ -90,7 +94,8 @@ test('source lifecycle refreshes only its native children and preserves revocati
 	const h = await harness()
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	try {
-		feature.setEnabled(true)
+		feature.sdk.setEnabled(true)
+		feature.site.setEnabled(true)
 		for (const target of [h.source, h.child, h.unrelatedSource, h.unrelatedChild]) await waitForPortMessageCount(target.messages, 'site_behavior', 1)
 		const unrelatedCount = h.unrelatedChild.messages.length
 		const unrelatedSourceCount = h.unrelatedSource.messages.length
@@ -132,7 +137,8 @@ test('global access reconciliation refreshes every native source while read admi
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	try {
 		assert.equal((await h.send(h.child, 'site_rpc_request', [{ chainId: '0x89', request: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] } }]))?.error?.code, -32602)
-		feature.setEnabled(true)
+		feature.sdk.setEnabled(true)
+		feature.site.setEnabled(true)
 		for (const target of [h.child, h.unrelatedChild]) await waitForPortMessageCount(target.messages, 'site_behavior', 1)
 		const counts = [h.child, h.unrelatedChild].map((target) => target.messages.filter((message) => message.method === 'site_behavior').length)
 		await h.updateWebsiteAccess(() => [{ website: h.website, access: false }])
@@ -155,7 +161,8 @@ test('a newly ready native child is indexed before its source disconnects', asyn
 	h.connections.delete(h.child.socket.tabId)
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	try {
-		feature.setEnabled(true)
+		feature.sdk.setEnabled(true)
+		feature.site.setEnabled(true)
 		await waitForPortMessageCount(h.unrelatedChild.messages, 'site_behavior', 1)
 		h.connections.set(h.child.socket.tabId, childTab)
 		feature.lifecycle.connectionReady?.(h.child.socket)
@@ -171,18 +178,20 @@ test('a newly ready native child is indexed before its source disconnects', asyn
 })
 
 
-test('the compatibility setting owns both Gnosis Safe Apps and simulation HTTP session lifetimes', async () => {
+test('hosting revocation retracts native children while ordinary HTTP capability remains independently enabled', async () => {
 	const h = await harness()
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	const dispose = await initializeGnosisSafeSessionCapabilities(feature)
 	try {
 		await waitForPortMessageCount(h.child.messages, 'site_behavior', 1)
 		assert.ok(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception)
-		await h.setGnosisSafeSessionCompatibilityMode(false)
+		const childPublications = h.child.messages.filter((message) => message.method === 'site_behavior').length
+		await h.setGnosisSafeAppsCompatibilityMode(false)
+		await waitForPortMessageCount(h.child.messages, 'site_behavior', childPublications + 1)
 		assert.equal(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception, undefined)
 		assert.equal(h.source.messages.filter((message) => message.method === 'safe_apps_compatibility').at(-1)?.result?.enabled, false)
 		const publications = h.child.messages.filter((message) => message.method === 'site_behavior').length
-		await h.setGnosisSafeSessionCompatibilityMode(true)
+		await h.setGnosisSafeAppsCompatibilityMode(true)
 		await waitForPortMessageCount(h.child.messages, 'site_behavior', publications + 1)
 		assert.ok(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception)
 		assert.equal(h.child.connection.approved, false)
@@ -220,7 +229,8 @@ test('Gnosis Safe session capabilities exclude EOA simulation even when the comp
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	try {
 		await h.updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Ordinary account', address: h.address, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
-		feature.setEnabled(true)
+		feature.sdk.setEnabled(true)
+		feature.site.setEnabled(true)
 		for (const target of [h.source, h.child]) await waitForPortMessageCount(target.messages, 'site_behavior', 1)
 		assert.equal(h.source.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception, undefined)
 		assert.equal(h.child.messages.filter((message) => message.method === 'site_behavior').at(-1)?.result?.rpcInterception, undefined)
@@ -285,7 +295,8 @@ test('native capability publication resolves one context per child refresh', asy
 	const resolve = spyOn(owner, 'getNativeHostedSiteContext')
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	try {
-		feature.setEnabled(true)
+		feature.sdk.setEnabled(true)
+		feature.site.setEnabled(true)
 		for (const target of [h.child, h.unrelatedChild]) await waitForPortMessageCount(target.messages, 'site_behavior', 1)
 		assert.equal(resolve.mock.calls.filter((args) => args[1] === h.child.socket).length, 1)
 		feature.lifecycle.signerAccountsChanged?.(h.source.socket)
@@ -315,7 +326,8 @@ test('native publication tokens discard an earlier valid context after source an
 		})
 		const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 		try {
-			feature.setEnabled(true)
+			feature.sdk.setEnabled(true)
+			feature.site.setEnabled(true)
 			await captured.promise
 			if (change === 'approval') { h.source.connection.approved = false; feature.lifecycle.approvalChanged?.(h.source.socket, false) }
 			if (change === 'permission') { await h.updateWebsiteAccess(() => [{ website: h.website, access: false }]); feature.lifecycle.accessReconciled?.() }
@@ -327,7 +339,7 @@ test('native publication tokens discard an earlier valid context after source an
 				feature.lifecycle.accessReconciled?.()
 			}
 			if (change === 'selected-address') { await h.changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined }); feature.lifecycle.accessReconciled?.() }
-			if (change === 'disabled') feature.setEnabled(false)
+			if (change === 'disabled') { feature.sdk.setEnabled(false); feature.site.setEnabled(false) }
 			await waitForPortMessageCount(h.child.messages, 'site_behavior', 1)
 			const publications = h.child.messages.filter((message) => message.method === 'site_behavior')
 			assert.equal(publications.at(-1)?.result?.rpcInterception, undefined, change)
@@ -354,6 +366,7 @@ test('site admission owns complete token replies and leaves ordinary reads as sh
 		const address = context.activeAddress
 		assert.ok(address)
 		assert.ok(hasRequestAccessAddress(context))
+		assert.ok(context.requireAddressAccess)
 		assert.equal(await context.isCurrent(settings), true)
 		const read = await prepareSiteRpcRequest(h.ethereum, h.connections, request, settings, context)
 		assert.equal(read.kind, 'execute')
@@ -412,7 +425,8 @@ test('global reconciliation skips unrelated unapproved subframes without native 
 	h.connections.set(socket.tabId, { connections: { [h.websiteSocketToString(socket)]: connection } })
 	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
 	try {
-		feature.setEnabled(true)
+		feature.sdk.setEnabled(true)
+		feature.site.setEnabled(true)
 		await waitForPortMessageCount(h.child.messages, 'site_behavior', 1)
 		h.tabReads.length = 0
 		await feature.lifecycle.accessReconciled?.()
@@ -456,4 +470,35 @@ for (const hosted of [false, true]) test(`SDK and HTTP admission share account, 
 		assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(h.connections, context.accessSocket, settings, { activeAddress: context.activeAddress, safeSigningMode: false }), false)
 		assert.deepEqual(await prepareSiteRpcRequest(h.ethereum, h.connections, request, settings, context), refused, 'an earlier admitted context cannot bypass current source approval')
 	} finally { h.restore() }
+})
+
+for (const hosting of [false, true]) for (const reads of [false, true]) test(`real capability publication respects independent hosting=${ hosting }, HTTP reads=${ reads } preferences`, async () => {
+	const h = await harness()
+	await h.setGnosisSafeAppsCompatibilityMode(hosting)
+	await h.setSiteRpcInterceptionEnabled(reads)
+	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
+	const dispose = await initializeGnosisSafeSessionCapabilities(feature)
+	try {
+		if (hosting) await waitForPortMessageCount(h.source.messages, 'safe_apps_compatibility', 1)
+		if (reads) for (const target of [h.source, h.child]) await waitForPortMessageCount(target.messages, 'site_behavior', 1)
+		assert.equal(h.source.messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), hosting)
+		assert.equal(h.source.messages.some((message) => message.method === 'site_behavior' && message.result?.rpcInterception !== undefined), reads, 'approved top-level reads are independent of SDK hosting')
+		assert.equal(h.child.messages.some((message) => message.method === 'site_behavior' && message.result?.rpcInterception !== undefined), hosting && reads, 'native iframe reads additionally require their legitimate SDK host context')
+	} finally { dispose(); h.restore() }
+})
+
+
+test('known-disabled HTTP publication releases native startup reads without publishing a premature startup decision', async () => {
+	const h = await harness()
+	const feature = createGnosisSafeSessionCapabilitiesFeature(h.connections)
+	try {
+		await feature.site.lifecycle.connectionReady?.(h.child.socket)
+		assert.equal(h.child.messages.filter((message) => message.method === 'site_behavior').length, 0, 'an unresolved preference must keep startup reads waiting')
+		feature.site.setEnabled(false)
+		await waitForPortMessageCount(h.child.messages, 'site_behavior', 1)
+		assert.equal(h.child.messages.find((message) => message.method === 'site_behavior')?.result?.rpcInterception, undefined)
+		await feature.site.lifecycle.connectionReady?.(h.child.socket)
+		await waitForPortMessageCount(h.child.messages, 'site_behavior', 2)
+		assert.equal(h.tabReads.length, 0, 'disabled publication does not resolve a privileged native source')
+	} finally { feature.dispose(); h.restore() }
 })

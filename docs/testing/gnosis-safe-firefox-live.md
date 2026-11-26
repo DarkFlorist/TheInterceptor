@@ -1,5 +1,7 @@
 # Gnosis Safe live Firefox checks
 
+> Historical prototype observations: these checks predate the extension-owned iframe architecture. See [the current native host design and limitations](native-gnosis-safe-host.md); production code does not emulate parent, referrer or timers.
+
 Tested 2026-11-24 with Firefox 153.7.0 (MV2), fresh isolated profiles, Gnosis Safe Apps compatibility enabled, and public Ethereum Gnosis Safe addresses. This report covers the stacked hosting and RPC-interception branches (#1616 and #1791 together).
 
 | Website | Simulation mode | Signing mode | Scope / observed restrictions |

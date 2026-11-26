@@ -340,6 +340,13 @@ async function waitFor(condition: () => boolean, timeoutMs = 2000) {
 	}
 }
 
+async function initializeInpageModule(importPath: string) {
+	const provider = await import(importPath)
+	// Explicit initialization queues bridge messages; settle them as the old side-effect import did.
+	provider.injectInterceptor()
+	await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeWindow>['fakeWindow'], importPath: string, runTest: () => Promise<T>) {
 	const previousWindow = (globalThis as { window?: unknown }).window
 	const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
@@ -355,7 +362,7 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 		}
 	}
 	try {
-		await import(importPath)
+		await initializeInpageModule(importPath)
 		return await runTest()
 	} finally {
 		;(globalThis as { window?: unknown }).window = previousWindow
@@ -1909,7 +1916,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js')
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
 			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
@@ -4176,7 +4183,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?json-rpc-error-data')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?json-rpc-error-data')
 			await waitFor(() => signerRequests.length >= 1)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
@@ -4269,7 +4276,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?signer-json-rpc-error-data')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?signer-json-rpc-error-data')
 			await waitFor(() => signerRequests.length >= 1)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
@@ -4319,7 +4326,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?signer-chain-id-error')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?signer-chain-id-error')
 			await waitFor(() => interceptorErrorPayloads.length === 1)
 
 			assert.deepEqual(signerRequests, ['eth_chainId'])
@@ -4364,7 +4371,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?locked-compatibility')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?locked-compatibility')
 			await waitFor(() => 'isInterceptor' in (fakeWindow.ethereum as Record<string, unknown>))
 			assert.equal((fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress, undefined)
 			assert.deepEqual(warnings, [])
@@ -4489,7 +4496,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
 			await waitFor(() => connectedToSigner)
 			sendBackgroundMessage({
 				interceptorApproved: true,
@@ -4539,7 +4546,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 			sendBackgroundMessage({
 				interceptorApproved: true,

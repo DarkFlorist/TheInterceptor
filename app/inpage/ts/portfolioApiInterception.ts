@@ -1,3 +1,4 @@
+import { aggregatePortfolioGroup, applyPortfolioValueDelta, portfolioQuantityAmount, portfolioQuantityValue, portfolioValueDelta, type PortfolioValueContribution } from './portfolioAggregation.js'
 import { nextSiteHttpApiRequestId } from './siteHttpApiRequestId.js'
 import { SIMULATION_NATIVE_TOKEN_ADDRESS, type SiteHttpApiRouteMatch } from '../../shared/ts/siteBehaviorPolicy.js'
 import type { ApplyPreparedSiteHttpApiInterception, SiteHttpApiContext } from './siteHttpApiInterception.js'
@@ -22,7 +23,7 @@ const withoutPositionChanges = (value: JsonObject) => {
 	return result
 }
 const hidden = (value: unknown) => field(value, 'isHidden') === true
-const valueUsd = (value: unknown) => hidden(value) ? 0 : numeric(field(value, 'valueUsd'))
+const contribution = (row: BalanceRow): PortfolioValueContribution => ({ chainId: row.token.chainId, isHidden: hidden(row.source), valueUsd: numeric(field(row.source, 'valueUsd')) })
 
 function parseBalance(value: unknown, tokenValue: unknown): BalanceRow | undefined {
 	if (!isJsonRecord(value)) return undefined
@@ -36,14 +37,7 @@ function parseBalance(value: unknown, tokenValue: unknown): BalanceRow | undefin
 
 const parseBalances = (rows: readonly unknown[] | undefined) => rows?.map((row) => parseBalance(row, field(row, 'token')))
 
-function humanAmount(raw: bigint, decimals: number) {
-	const digits = raw.toString().padStart(decimals + 1, '0')
-	if (decimals === 0) return digits
-	const fraction = digits.slice(-decimals).replace(/0+$/, '')
-	return digits.slice(0, -decimals) + (fraction.length === 0 ? '' : `.${ fraction }`)
-}
-
-const amount = (raw: bigint, decimals: number) => ({ raw: raw.toString(), amount: Number(humanAmount(raw, decimals)) })
+const amount = (raw: bigint, decimals: number) => ({ raw: raw.toString(), amount: portfolioQuantityAmount({ raw, decimals }) })
 
 // Indexed portfolio APIs carry amounts in several views. Update only the selected account and chain, preserve other chains and hidden holdings, and derive aggregates from the same balance changes.
 export async function preparePortfolioApiInterception(request: Request, context: SiteHttpApiContext, matchedRoute: SiteHttpApiRouteMatch): Promise<ApplyPreparedSiteHttpApiInterception | undefined> {
@@ -92,7 +86,7 @@ export async function preparePortfolioApiInterception(request: Request, context:
 		}
 		const updatedRows = await Promise.all([...parsed, ...newTokens.map((token) => parseBalance({ amount: { raw: '0' } }, { chainId, address: apiAddress(token.address), decimals: Number(BigInt(token.decimals)), name: token.name, symbol: token.symbol, type: apiAddress(token.address) === nativeAddress ? 'TOKEN_TYPE_NATIVE' : 'TOKEN_TYPE_ERC20' }))].map(async (row) => {
 			if (row === undefined) throw new Error('Invalid simulated portfolio balance row.')
-			if (row.token.chainId !== chainId) return row.source
+			if (row.token.chainId !== chainId) return row
 			const tokenAddress = apiAddress(row.token.address)
 			const reply = await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method: tokenAddress === nativeAddress ? 'eth_getBalance' : 'eth_call', params: tokenAddress === nativeAddress ? [selectedAddress, 'latest'] : [{ to: tokenAddress, data: `0x70a08231${ selectedAddress.slice(2).padStart(64, '0') }` }, 'latest'] })
 			if (typeof reply !== 'string' || !/^0x[0-9a-f]{1,64}$/i.test(reply)) throw new Error('Invalid simulated portfolio balance.')
@@ -101,22 +95,22 @@ export async function preparePortfolioApiInterception(request: Request, context:
 			if (isNew !== undefined && raw === 0n) return undefined
 			const quantity = amount(raw, row.token.decimals)
 			const price = finite(field(row.source, 'priceUsd')) ? field(row.source, 'priceUsd') : prices.get(tokenAddress)
-			const nextValue = finite(price) ? quantity.amount * price : undefined
-			if (nextValue !== undefined && !finite(nextValue)) throw new Error('The simulated portfolio value exceeds the indexed API number range.')
+			const nextValue = portfolioQuantityValue({ raw, decimals: row.token.decimals }, finite(price) ? price : undefined)
 			const sourceToken = field(row.source, 'token')
 			const updated = { ...withoutPositionChanges(row.source), token: { ...(isJsonRecord(sourceToken) ? sourceToken : isNew), ...row.token, ...(isNew === undefined ? {} : { name: isNew.name, symbol: isNew.symbol, type: tokenAddress === nativeAddress ? 'TOKEN_TYPE_NATIVE' : 'TOKEN_TYPE_ERC20' }) }, amount: quantity, ...(finite(price) ? { priceUsd: price, valueUsd: nextValue } : {}) }
 			if (!finite(price)) Reflect.deleteProperty(updated, 'valueUsd')
-			return updated
+			return { ...row, source: updated, raw: raw.toString() }
 		}))
-		const balances = updatedRows.filter(isJsonRecord)
-		const deltaUsd = balances.filter((row) => field(field(row, 'token'), 'chainId') === chainId).reduce((sum, row) => sum + valueUsd(row), 0) - parsed.reduce((sum, row) => sum + (row?.token.chainId === chainId ? valueUsd(row.source) : 0), 0)
-		const total = Math.max(0, numeric(field(portfolio, 'totalValueUsd')) + deltaUsd)
+		const updatedBalances = updatedRows.filter((row) => row !== undefined)
+		const balances = updatedBalances.map((row) => row.source)
+		const deltaUsd = portfolioValueDelta(chainId, parsed.filter((row) => row !== undefined).map(contribution), updatedBalances.map(contribution))
+		const total = applyPortfolioValueDelta(numeric(field(portfolio, 'totalValueUsd')), deltaUsd)
 		if (summary) {
 			const balance = field(data, 'balance')
 			const tokens = field(balance, 'tokens')
 			const all = field(balance, 'total')
 			if (!isJsonRecord(balance) || !isJsonRecord(tokens) || !isJsonRecord(all)) return response
-			return simulatedApiResponse(response, request.url, { ...data, balance: { ...balance, tokens: { ...withoutPositionChanges(tokens), valueUsd: Math.max(0, numeric(field(tokens, 'valueUsd')) + deltaUsd) }, total: { ...withoutPositionChanges(all), valueUsd: Math.max(0, numeric(field(all, 'valueUsd')) + deltaUsd) } } })
+			return simulatedApiResponse(response, request.url, { ...data, balance: { ...balance, tokens: { ...withoutPositionChanges(tokens), valueUsd: applyPortfolioValueDelta(numeric(field(tokens, 'valueUsd')), deltaUsd) }, total: { ...withoutPositionChanges(all), valueUsd: applyPortfolioValueDelta(numeric(field(all, 'valueUsd')), deltaUsd) } } })
 		}
 		if (groups === undefined) return simulatedApiResponse(response, request.url, { ...data, portfolio: { ...withoutPositionChanges(portfolio), balances, totalValueUsd: total } })
 		const remaining = new Set(balances.filter((row) => field(field(row, 'token'), 'chainId') === chainId))
@@ -129,10 +123,13 @@ export async function preparePortfolioApiInterception(request: Request, context:
 				remaining.delete(updated)
 				return { ...withoutPositionChanges(row), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') }
 			})
-			const visible = chainBalances.filter((row) => !hidden(row) && !hidden(group))
-			const decimals = Math.max(0, ...visible.map((row) => numeric(field(row, 'decimals'))))
-			const raw = visible.reduce<bigint>((sum, row) => sum + BigInt(String(field(field(row, 'amount'), 'raw'))) * 10n ** BigInt(decimals - numeric(field(row, 'decimals'))), 0n)
-			return { ...withoutPositionChanges(group), chainBalances, totalAmount: amount(raw, decimals), totalValueUsd: visible.reduce<number>((sum, row) => sum + valueUsd(row), 0) }
+			const totals = aggregatePortfolioGroup(chainBalances.map((row) => ({
+				raw: BigInt(String(field(field(row, 'amount'), 'raw'))),
+				decimals: numeric(field(row, 'decimals')),
+				isHidden: hidden(row) || hidden(group),
+				valueUsd: numeric(field(row, 'valueUsd')),
+			})))
+			return { ...withoutPositionChanges(group), chainBalances, totalAmount: amount(totals.quantity.raw, totals.quantity.decimals), totalValueUsd: totals.valueUsd }
 		})
 		for (const row of remaining) {
 			const token = field(row, 'token')

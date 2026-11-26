@@ -231,13 +231,22 @@ export const getMetamaskCompatibilityMode = async() => (await browserStorageLoca
 export const metamaskCompatibilityModeStorageWrite = (metamaskCompatibilityMode: boolean): StorageWrite => ({ metamaskCompatibilityMode })
 export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet(metamaskCompatibilityModeStorageWrite(metamaskCompatibilityMode))
 
-// This session mode enables SDK hosting and simulated website reads together. Keep the SDK-era storage/export key for existing preferences and backups.
-export const getGnosisSafeSessionCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
-export const gnosisSafeSessionCompatibilityModeStorageWrite = (enabled: boolean): StorageWrite => ({ safeAppsCompatibilityMode: enabled })
-export const setGnosisSafeSessionCompatibilityMode = async(enabled: boolean) => {
+// The historical preference controls Gnosis Safe Apps SDK hosting only; website HTTP reads require their own explicit opt-in.
+export const getGnosisSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
+export const gnosisSafeAppsCompatibilityModeStorageWrite = (enabled: boolean): StorageWrite => ({ safeAppsCompatibilityMode: enabled })
+export const setGnosisSafeAppsCompatibilityMode = async(enabled: boolean) => {
 	// Serialize comparison and write with imports so later selections win, while skipping no-op writes that Firefox announces as context changes.
 	await runSettingsStorageTransaction(async () => ({
-		writes: await getGnosisSafeSessionCompatibilityMode() === enabled ? [] : [gnosisSafeSessionCompatibilityModeStorageWrite(enabled)],
+		writes: await getGnosisSafeAppsCompatibilityMode() === enabled ? [] : [gnosisSafeAppsCompatibilityModeStorageWrite(enabled)],
+		result: undefined,
+	}))
+}
+
+export const getSiteRpcInterceptionEnabled = async() => (await browserStorageLocalGet('siteRpcInterceptionEnabled'))?.siteRpcInterceptionEnabled ?? false
+export const siteRpcInterceptionEnabledStorageWrite = (enabled: boolean): StorageWrite => ({ siteRpcInterceptionEnabled: enabled })
+export const setSiteRpcInterceptionEnabled = async(enabled: boolean) => {
+	await runSettingsStorageTransaction(async () => ({
+		writes: await getSiteRpcInterceptionEnabled() === enabled ? [] : [siteRpcInterceptionEnabledStorageWrite(enabled)],
 		result: undefined,
 	}))
 }
@@ -258,7 +267,8 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 		addressBookEntries: await getUserAddressBookEntries(),
 		useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 		metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-		safeAppsCompatibilityMode: await getGnosisSafeSessionCompatibilityMode(),
+		safeAppsCompatibilityMode: await getGnosisSafeAppsCompatibilityMode(),
+		siteRpcInterceptionEnabled: await getSiteRpcInterceptionEnabled(),
 	}, exportDate)
 }
 

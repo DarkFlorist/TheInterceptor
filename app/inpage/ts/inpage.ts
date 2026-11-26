@@ -2,7 +2,7 @@ import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethod
 import { INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, isGnosisSafeAppsCancellation } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
-import { createPageExtensions } from './pageExtensions.js'
+import { createPageExtensions, type PageExtension, type PageExtensionFactory } from './pageExtensions.js'
 import { GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS, GNOSIS_SAFE_APPS_RESPONSE_VERSION, createGnosisSafeAppsErrorResponse, isGnosisSafeAppsDiscoveryMethod, parseGnosisSafeAppsRequest, type ParsedGnosisSafeAppsRequest, type GnosisSafeAppsRequest, type GnosisSafeAppsResponse } from '../../shared/ts/gnosisSafeAppsProtocol.js'
 import { createGnosisSafeAppsRequestQueue } from '../../shared/ts/gnosisSafeAppsRequestQueue.js'
 import { createGnosisSafeAppsTransport, type GnosisSafeAppsWindow } from '../../shared/ts/gnosisSafeAppsTransport.js'
@@ -711,7 +711,7 @@ class InterceptorMessageListener {
 	private requestId = 0
 	private metamaskCompatibilityMode = metamaskCompatibilityModeAtPageLoad
 	// Native extension-parent ancestry is only an early-capture hint. The background validates this extension's host and approved source before any overlay; ordinary web iframes wait for context.
-	private readonly pageExtensions = createPageExtensions(window, async (chainId, request) => await this.sendInternalMessageToBackgroundPage({ method: 'site_rpc_request', params: [{ chainId, request }] }))
+	private readonly pageExtensions: PageExtension
 	// The page owns SDK settings; every signing request carries its mode across background port recreation.
 	private readonly gnosisSafeAppsBridge = createGnosisSafeAppsBridge(inpageWindow, createGnosisSafeAppsRequestHandler(
 		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
@@ -759,7 +759,8 @@ class InterceptorMessageListener {
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: Promise<SignerAccountsResolution> | undefined = undefined
 
-	public constructor() {
+	public constructor(extensions: readonly PageExtensionFactory[]) {
+		this.pageExtensions = createPageExtensions(async (request) => await this.sendInternalMessageToBackgroundPage(request), extensions)
 		window.addEventListener('eip6963:announceProvider', this.replaceMetaMaskAnnouncementForCompatibilityMode, { capture: true })
 		this.connectToContentScript()
 		this.injectEthereumIntoWindow()
@@ -2028,13 +2029,11 @@ class InterceptorMessageListener {
 	}
 }
 
-function injectInterceptor() {
-	const interceptorMessageListener = new InterceptorMessageListener()
+export function injectInterceptor(extensions: readonly PageExtensionFactory[] = []) {
+	const interceptorMessageListener = new InterceptorMessageListener(extensions)
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 
 	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
 	window.addEventListener('ethereum#initialized', interceptorMessageListener.handleEthereumInitialized)
 	window.dispatchEvent(new Event('ethereum#initialized'))
 }
-
-injectInterceptor()

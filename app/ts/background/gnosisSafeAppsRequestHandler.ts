@@ -13,7 +13,7 @@ import { fetchGnosisSafeAppsBalances } from './gnosisSafeAppsBalances.js'
 import { createGnosisSafeAppsMessageServices } from './gnosisSafeAppsMessages.js'
 import { getGnosisSafeAppsRequestCommand, isGnosisSafeAppsRequestPolicyError } from './gnosisSafeAppsRequestPolicy.js'
 import { fetchGnosisSafeAppsTransaction } from './gnosisSafeAppsTransactions.js'
-import { getGnosisSafeSessionCompatibilityMode } from './settings.js'
+import { getGnosisSafeAppsCompatibilityMode } from './settings.js'
 
 type GnosisSafeAppsAdmission = { readonly kind: 'execute', readonly context: RpcRequestContext } | { readonly kind: 'reply', readonly reply: InterceptedRequestForward }
 
@@ -22,7 +22,7 @@ export async function prepareGnosisSafeAppsRequest(services: SimulationServicesS
 	const { ethereum, gnosisSafeAppsSimulationMetadata } = services
 	const reply = (message: InterceptedRequestForward): GnosisSafeAppsAdmission => ({ kind: 'reply', reply: message })
 	const failure = (code: number, message: string) => reply({ type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code, message } })
-	const enabled = await getGnosisSafeSessionCompatibilityMode()
+	const enabled = await getGnosisSafeAppsCompatibilityMode()
 	const connectionEligible = enabled && isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, request.uniqueRequestIdentifier.requestSocket, settings, { activeAddress, safeSigningMode })
 	if (!connectionEligible) return failure(-32602, 'Interceptor Gnosis Safe Apps compatibility is not enabled for this connection.')
 	try {

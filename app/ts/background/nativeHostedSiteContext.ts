@@ -6,7 +6,7 @@ import { getTabIfExists } from '../utils/requests.js'
 import { isNativeGnosisSafeAppsLaunchValidationError, parseNativeGnosisSafeAppsLaunch } from '../utils/nativeGnosisSafeAppsHost.js'
 import { getWebsiteSocketConnection, isTopFramePort } from './backgroundUtils.js'
 import { isGnosisSafeAppsConnectionEligible, isGnosisSafeAppsConnectionEligibleForAdmittedAddress } from './gnosisSafeAppsConnectionEligibility.js'
-import { getGnosisSafeSessionCompatibilityMode } from './settings.js'
+import { getGnosisSafeAppsCompatibilityMode } from './settings.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { getHtmlPageUrl } from '../utils/htmlPages.js'
 
@@ -18,7 +18,7 @@ type NativeHostedSiteDependencies = {
 }
 
 async function getEligibleSourceAddress(connections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
-	if (!await getGnosisSafeSessionCompatibilityMode() || !await isGnosisSafeAppsConnectionEligible(connections, socket, settings)) return undefined
+	if (!await getGnosisSafeAppsCompatibilityMode() || !await isGnosisSafeAppsConnectionEligible(connections, socket, settings)) return undefined
 	const source = getWebsiteSocketConnection(connections, socket)
 	return source === undefined ? undefined : await getWebsiteActiveAddress(connections, source.websiteOrigin, settings, socket)
 }

@@ -6,5 +6,5 @@ export const INPAGE_SCRIPTS = {
 
 export const INJECTABLE_SITES_WILDCARD = ['file://*/*', 'http://*/*', 'https://*/*']
 
-// Separate MAIN-world feature bundles, registered after the core provider in both browsers.
-export const PAGE_WORLD_EXTENSIONS = ['inpage/js/siteBehaviorBootstrap.js'] as const
+// The child composes its HTTP feature privately into the provider artifact; no page-global registration or second privileged entrypoint is exposed.
+export const PAGE_WORLD_EXTENSIONS: readonly string[] = []

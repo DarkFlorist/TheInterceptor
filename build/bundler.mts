@@ -435,9 +435,9 @@ function getExistingRuntimeEntrypointPaths() {
 }
 
 // Fill the compatibility marker as Bun loads the provider source, before comments are removed from its classic IIFE bundle.
-export async function bundlePageWorldProvider(inpagePath: string, metamaskCompatibilityMode: boolean) {
+export async function bundlePageWorldProvider(inpagePath: string, metamaskCompatibilityMode: boolean, compositionPath = inpagePath) {
 	const buildResult = await Bun.build({
-		entrypoints: [inpagePath],
+		entrypoints: [compositionPath],
 		target: 'browser',
 		format: 'iife',
 		splitting: false,
@@ -463,6 +463,7 @@ type RuntimeBundleOptions = {
 	readonly root: string
 	readonly outdir: string
 	readonly inpagePath: string
+	readonly inpageCompositionPath?: string
 	readonly documentStartPath: string
 	readonly pageWorldExtensions?: readonly { readonly scriptPath: string, readonly entrypointPath: string }[]
 	readonly inpageSourcePath?: string
@@ -505,7 +506,7 @@ export async function buildRuntimeEntrypoints(entrypoints: readonly string[], op
 	if (documentStart === undefined && !hasProvider) return bundledEntrypoints
 	if (documentStart === undefined || !hasProvider) throw new Error('The provider and document-start bundles are generated together.')
 	const pageWorldProviders = new Map<boolean, string>()
-	for (const metamaskCompatibilityMode of [false, true]) pageWorldProviders.set(metamaskCompatibilityMode, await bundlePageWorldProvider(options.inpageSourcePath ?? options.inpagePath, metamaskCompatibilityMode))
+	for (const metamaskCompatibilityMode of [false, true]) pageWorldProviders.set(metamaskCompatibilityMode, await bundlePageWorldProvider(options.inpageSourcePath ?? options.inpagePath, metamaskCompatibilityMode, options.inpageCompositionPath))
 	// The MV2 document-start scripts embed the exact provider bytes that MV3 registers.
 	const generatedArtifacts = generateInpageArtifacts(fs.readFileSync(documentStart.bundledEntrypointPath, 'utf8'), (metamaskCompatibilityMode) => {
 		const source = pageWorldProviders.get(metamaskCompatibilityMode)
@@ -531,6 +532,7 @@ async function bundleRuntimeEntrypoints() {
 			root: appDirectory,
 			outdir: bundledOutputDirectory,
 			inpagePath: inpageProviderPath,
+			inpageCompositionPath: path.join(appDirectory, 'inpage/ts/inpageBootstrap.ts'),
 			documentStartPath: inpageDocumentStartPath,
 			pageWorldExtensions: pageWorldExtensionEntrypoints,
 			inpageSourcePath: path.join(appDirectory, 'inpage', 'ts', 'inpage.ts'),

@@ -1,3 +1,4 @@
+import { initializeFeaturePreference } from './featurePreference.js'
 import { verifyAccess } from './accessManagement.js'
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -6,7 +7,7 @@ import { resolveConfiguredGnosisSafeForMode, getConfiguredGnosisSafeEntryForMode
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { getSettings } from './settings.js'
+import { getSettings, getGnosisSafeAppsCompatibilityMode } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
@@ -143,3 +144,5 @@ export function createGnosisSafeAppsCompatibilityFeature(connections: WebsiteTab
 	}
 	return { lifecycle, setEnabled, dispose: () => setEnabled(false) }
 }
+
+export const initializeGnosisSafeAppsCompatibility = async (feature: Pick<ReturnType<typeof createGnosisSafeAppsCompatibilityFeature>, 'setEnabled' | 'dispose'>) => await initializeFeaturePreference(feature, 'safeAppsCompatibilityMode', getGnosisSafeAppsCompatibilityMode)

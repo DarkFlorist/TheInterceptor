@@ -71,3 +71,11 @@ describe('local storage codecs', () => {
 		await assert.rejects(browserStorageLocalGet2Result('pendingTransactionsAndMessages'), /Storage temporarily unavailable/)
 	})
 })
+
+
+test('corrupt website HTTP read startup preferences repair to the explicit disabled default', async () => {
+	const { getStartupStorageValueOrDefault } = await import('../../app/ts/utils/storageUtils.js')
+	const value = await getStartupStorageValueOrDefault({ siteRpcInterceptionEnabled: 'true' }, 'siteRpcInterceptionEnabled', false)
+	assert.equal(value, false)
+	assert.deepEqual(writes.at(-1), { siteRpcInterceptionEnabled: false })
+})

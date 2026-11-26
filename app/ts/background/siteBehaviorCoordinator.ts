@@ -1,3 +1,4 @@
+import { initializeFeaturePreference } from './featurePreference.js'
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -8,25 +9,26 @@ import { isGnosisSafeAppsConnectionEligible } from './gnosisSafeAppsConnectionEl
 import { createNativeHostedSiteChildIndex } from './nativeHostedSiteChildIndex.js'
 import { getNativeHostedSiteContext, getNativeHostedSiteSourceTabId } from './nativeHostedSiteContext.js'
 import { publishSiteBehaviors } from './siteBehaviorContext.js'
-import { getSettings } from './settings.js'
+import { getSettings, getSiteRpcInterceptionEnabled } from './settings.js'
 
 // Site HTTP capability publication owns its generations and native-child relationships; it never publishes Gnosis Safe Apps discovery replies or grants a connection approval.
 export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
-	let active = false
+	let active: boolean | undefined
 	const tokens = new Map<string, object>()
 	const nativeChildren = createNativeHostedSiteChildIndex()
 	const begin = (socket: WebsiteSocket) => {
 		const key = websiteSocketToString(socket)
 		const token = {}
 		tokens.set(key, token)
-		return () => active && tokens.get(key) === token
+		return () => active === true && tokens.get(key) === token
 	}
 	const isRelevant = (socket: WebsiteSocket) => {
 		const connection = getWebsiteSocketConnection(connections, socket)
 		return connection !== undefined && (isTopFramePort(connection.port) ? connection.approved : getNativeHostedSiteSourceTabId(connections, socket) !== undefined)
 	}
 	const refresh = async (socket: WebsiteSocket) => {
-		if (!active) return
+		if (active === undefined) return
+		if (!active) { retract(socket); return }
 		nativeChildren.track(connections, socket)
 		if (!isRelevant(socket)) { retract(socket); return }
 		const current = begin(socket)
@@ -56,9 +58,8 @@ export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
 	const refreshChildren = (sourceTabId: number) => { for (const child of nativeChildren.getChildren(sourceTabId)) queueRefresh(child) }
 	const retract = (socket: WebsiteSocket) => {
 		const key = websiteSocketToString(socket)
-		if (!tokens.has(key)) return
-		tokens.delete(key)
-		publishSiteBehaviors(connections, socket)
+		const published = tokens.delete(key)
+		if (published || isRelevant(socket)) publishSiteBehaviors(connections, socket)
 	}
 	const refreshAll = async () => {
 		if (!active) return
@@ -95,4 +96,19 @@ export function createSiteBehaviorFeature(connections: WebsiteTabConnections) {
 		nativeChildren.clear()
 	}
 	return { lifecycle, setEnabled, dispose: () => setEnabled(false) }
+}
+
+export async function initializeSiteBehavior(feature: Pick<ReturnType<typeof createSiteBehaviorFeature>, 'setEnabled' | 'dispose' | 'lifecycle'>) {
+	// Native children additionally depend on their SDK host context; ordinary top-level pages keep their independent HTTP preference.
+	const onHostingChanged = (changes: Record<string, browser.storage.StorageChange>, area: string) => {
+		if (area === 'local' && 'safeAppsCompatibilityMode' in changes) feature.lifecycle.accessReconciled?.()
+	}
+	browser.storage.onChanged.addListener(onHostingChanged)
+	try {
+		const dispose = await initializeFeaturePreference(feature, 'siteRpcInterceptionEnabled', getSiteRpcInterceptionEnabled)
+		return () => { browser.storage.onChanged.removeListener(onHostingChanged); dispose() }
+	} catch (error) {
+		browser.storage.onChanged.removeListener(onHostingChanged)
+		throw error
+	}
 }
