@@ -342,6 +342,8 @@ describe('active address selection', () => {
 test('configured Gnosis Safe mode selection is chain-pinned and signer-independent only in simulation', () => {
 	const simulation = { simulationMode: true, activeSimulationAddress: GNOSIS_SAFE_ADDRESS, activeSigningSafeAddress: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS, activeRpcNetwork: { chainId: 1n } }
 	assert.equal(getConfiguredGnosisSafeEntryForMode(simulation, activeAddresses)?.address, GNOSIS_SAFE_ADDRESS)
+ assert.equal(getConfiguredGnosisSafeEntryForMode({ ...simulation, useSignersAddressAsActiveAddress: true }, activeAddresses), undefined)
+ assert.equal(resolveConfiguredGnosisSafeForMode({ ...simulation, useSignersAddressAsActiveAddress: true }, activeAddresses, [EOA_ADDRESS]), undefined)
 	assert.equal(resolveConfiguredGnosisSafeForMode(simulation, activeAddresses, [])?.address, GNOSIS_SAFE_ADDRESS)
 	assert.equal(resolveConfiguredGnosisSafeForMode({ ...simulation, activeSimulationAddress: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS }, activeAddresses, []), undefined)
 	const signing = { ...simulation, simulationMode: false, activeSigningSafeAddress: GNOSIS_SAFE_ADDRESS }

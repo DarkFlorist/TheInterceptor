@@ -1,5 +1,6 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { trackGnosisSafeAppsExecution, settleGnosisSafeAppsExecution } from './gnosisSafeAppsCommandBinding.js'
 import { getNativeGnosisSafeAppsConnectionRegistration } from './nativeGnosisSafeAppsConnectionRegistration.js'
 import { isNativeGnosisSafeAppsPreparationError } from './nativeGnosisSafeAppsSessions.js'
 import { attachNativeGnosisSafeAppsHostContext } from './nativeGnosisSafeAppsHostContext.js'
@@ -198,32 +199,39 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					checkAndThrowRuntimeLastError()
 				})
 				if (delivery === 'duplicate') return
-				if (delivery === 'invalid') {
-					port.postMessage(serializeInpageReply({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'Invalid request ID: expected a non-negative safe integer.' } }))
-					checkAndThrowRuntimeLastError()
-					return
-				}
-				const { simulationServicesOwner } = await getConnectionInitializationPromise()
-				const context = await contextPromise
-				if (context === undefined) return
-				const { nativeRegistration, websiteOrigin, websitePromise } = context
-				try { await nativeRegistration?.beforeRequest?.() } catch (error: unknown) {
-					if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
-					port.postMessage(serializeInpageReply({ type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, interceptorApproved: true, bridgeRequestSettled: true, error: { code: 4900, message: error.message } }))
-					return
-				}
-				await pendingRequestLimiter.execute(async () => {
-					const request = {
-						method: rawMessage.method,
-						...'params' in rawMessage ? { params: rawMessage.params } : {},
-						interceptorRequest: rawMessage.interceptorRequest,
-						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
+				try {
+					if (delivery === 'invalid') {
+						port.postMessage(serializeInpageReply({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'Invalid request ID: expected a non-negative safe integer.' } }))
+						checkAndThrowRuntimeLastError()
+						return
 					}
-					// A connected port outlives RPC switches; each request stage selects services from the owner.
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
-				})
+					if (rawMessage.method === 'safe_apps_request') trackGnosisSafeAppsExecution(port, rawMessage.requestId, 'params' in rawMessage ? rawMessage.params?.[0] : undefined)
+					const { simulationServicesOwner } = await getConnectionInitializationPromise()
+					const context = await contextPromise
+					if (context === undefined) { settleGnosisSafeAppsExecution(port, rawMessage.requestId, undefined); return }
+					const { nativeRegistration, websiteOrigin, websitePromise } = context
+					try { await nativeRegistration?.beforeRequest?.() } catch (error: unknown) {
+						settleGnosisSafeAppsExecution(port, rawMessage.requestId, undefined)
+						if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
+						port.postMessage(serializeInpageReply({ type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, interceptorApproved: true, bridgeRequestSettled: true, error: { code: 4900, message: error.message } }))
+						return
+					}
+					await pendingRequestLimiter.execute(async () => {
+						const request = {
+							method: rawMessage.method,
+							...'params' in rawMessage ? { params: rawMessage.params } : {},
+							interceptorRequest: rawMessage.interceptorRequest,
+							usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
+							uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+							...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
+						}
+						// A connected port outlives RPC switches; each request stage selects services from the owner.
+						return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+					})
+				} catch (error: unknown) {
+					settleGnosisSafeAppsExecution(port, rawMessage.requestId, undefined)
+					throw error
+				}
 			})
 		},
 		checkAndThrowRuntimeLastError,

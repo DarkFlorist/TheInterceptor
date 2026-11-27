@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import type { GnosisSafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import { confirmedSignerOwnership, createPort, createEthereumWithGetBlockCounter, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
+import { waitForPortMessageCount, confirmedSignerOwnership, createPort, createEthereumWithGetBlockCounter, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 
 test('discovery resolves a configured simulation account while admitted execution keeps and checks that account', async () => {
 	installBrowserMock()
@@ -18,6 +18,7 @@ test('discovery resolves a configured simulation account while admitted executio
 	const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
 	const settings = await getSettings()
 	assert.equal(await isGnosisSafeAppsConnectionEligible(connections, socket, settings), true)
+	assert.equal(await isGnosisSafeAppsConnectionEligible(connections, socket, { ...settings, useSignersAddressAsActiveAddress: true }), false)
 	assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, settings, { activeAddress, safeSigningMode: false }), true)
 	for (const changedAddress of [{ ...activeAddress, chainId: 10n }, { ...activeAddress, address: 1n }]) {
 		assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, settings, { activeAddress: changedAddress, safeSigningMode: true }), false)
@@ -109,4 +110,25 @@ test('signing discovery feeds its resolved ownership into the same admitted conf
 	}
 	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [2n], activeSigningAddress: 2n }))
 	assert.equal(await isGnosisSafeAppsConnectionEligible(connections, socket, settings), false, 'discovery still resolves live signer ownership')
+})
+
+test('signer-as-simulation-address cannot approve or advertise a stale Safe', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const safe = { type: 'safe', name: 'Stale Safe', address: 0x6868686868686868686868686868686868686868n, chainId: 1n, entrySource: 'User', useAsActiveAddress: true } as const
+	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: safe.address })
+	await browser.storage.local.set({ useSignersAddressAsActiveAddress: true, safeAppsCompatibilityMode: true })
+	await modules.updateUserAddressBookEntries(() => [safe])
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(1, undefined, 0)
+	const websiteOrigin = 'stale-safe.example'
+	await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true, addressAccess: [{ address: safe.address, access: true }] }])
+	const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+	const connections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	const feature = modules.createGnosisSafeAppsCompatibilityFeature(connections)
+	feature.setEnabled(true)
+	await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+	assert.equal(connection.approved, false)
+	assert.ok(messages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'safe_apps_compatibility' && 'result' in message && typeof message.result === 'object' && message.result !== null && 'canRequestAccess' in message.result && message.result.canRequestAccess === false))
+	feature.dispose()
 })

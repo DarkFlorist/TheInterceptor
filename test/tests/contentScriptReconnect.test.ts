@@ -1,4 +1,4 @@
-import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/shared/ts/bridgeWireProtocol.js'
+import { INTERCEPTOR_BRIDGE_READY_MESSAGE, INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/shared/ts/bridgeWireProtocol.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
@@ -580,20 +580,20 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 				const receive = runtimeMessageListeners[0]
 				assert.ok(receive)
 				for (const id of ['test-extension', 'another-extension']) assert.equal(await receive({ method: 'interceptor_native_gnosis_safe_source_request', origin: 'https://bridge.example', request: { id: 'retired', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } } }, { id }), undefined)
-				assert.deepEqual(postedWindowMessages, [{ type: 'interceptor_bridge_ready' }])
+				assert.deepEqual(postedWindowMessages, [{ type: INTERCEPTOR_BRIDGE_READY_MESSAGE }])
 			})
 		})
 	}
 	for (const source of ['standalone-listener', 'manifest-v2-document-start'] as const) {
 		test(`${ source } announces startup readiness and answers only its own window's readiness requests`, async () => {
 			await withContentScriptMock(source, async ({ eventListeners, postedWindowMessages }) => {
-				assert.deepEqual(postedWindowMessages, [{ type: 'interceptor_bridge_ready' }])
-				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_ready_request' } }))
+				assert.deepEqual(postedWindowMessages, [{ type: INTERCEPTOR_BRIDGE_READY_MESSAGE }])
+				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE } }))
 				assert.equal(postedWindowMessages.length, 2)
-				const foreignOrigin = new MessageEvent('message', { data: { type: 'interceptor_bridge_ready_request' }, origin: 'https://foreign.example' })
+				const foreignOrigin = new MessageEvent('message', { data: { type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE }, origin: 'https://foreign.example' })
 				Object.defineProperty(foreignOrigin, 'source', { value: globalThis })
 				dispatchWindowMessage(eventListeners, foreignOrigin, false)
-				const foreignSource = new MessageEvent('message', { data: { type: 'interceptor_bridge_ready_request' }, origin: 'https://bridge.example' })
+				const foreignSource = new MessageEvent('message', { data: { type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE }, origin: 'https://bridge.example' })
 				Object.defineProperty(foreignSource, 'source', { value: {} })
 				dispatchWindowMessage(eventListeners, foreignSource, false)
 				assert.equal(postedWindowMessages.length, 2)

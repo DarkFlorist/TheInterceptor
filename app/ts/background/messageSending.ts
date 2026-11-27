@@ -1,3 +1,4 @@
+import { settleGnosisSafeAppsExecution } from './gnosisSafeAppsCommandBinding.js'
 import { type InterceptedRequestForward, serializeInpageReply, serializeInpageCallback, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -31,6 +32,7 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
+		if (message.type === 'result') settleGnosisSafeAppsExecution(connection.port, message.uniqueRequestIdentifier.requestId, 'error' in message ? undefined : message.result)
 		const reply = {
 			...message,
 			interceptorApproved: true as const,

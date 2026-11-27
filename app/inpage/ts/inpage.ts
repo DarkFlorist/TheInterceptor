@@ -1,6 +1,6 @@
 import { createGnosisSafeAppsRequestHandler } from '../../shared/ts/gnosisSafeAppsClient.js'
 import { NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK, NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY, parseNativeGnosisSafeAppsSignerRequest } from '../../shared/ts/nativeGnosisSafeAppsSignerProtocol.js'
-import { INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
+import { INTERCEPTOR_BRIDGE_READY_MESSAGE, INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE, INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, isGnosisSafeAppsCancellation } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import { GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS, GNOSIS_SAFE_APPS_RESPONSE_VERSION, createGnosisSafeAppsErrorResponse, isGnosisSafeAppsDiscoveryMethod, parseGnosisSafeAppsRequest, type ParsedGnosisSafeAppsRequest, type GnosisSafeAppsRequest, type GnosisSafeAppsResponse } from '../../shared/ts/gnosisSafeAppsProtocol.js'
@@ -254,9 +254,6 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
-
-const INTERCEPTOR_BRIDGE_READY_MESSAGE = 'interceptor_bridge_ready'
-const INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE = 'interceptor_bridge_ready_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 // Account connections wait for signer ownership; reads can proceed independently. The shared account-method policy is bundled into this classic provider.
 

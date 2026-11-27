@@ -1,4 +1,6 @@
-export const isPublicGnosisSafeAppsMethod = (method: string) => new Set(['getEnvironmentInfo', 'getChainInfo', 'getSafeInfo', 'signMessage', 'signTypedMessage', 'getOffChainSignature', 'getTxBySafeTxHash', 'getSafeBalances', 'wallet_getPermissions', 'wallet_requestPermissions', 'rpcCall', 'sendTransactions']).has(method)
+const publicGnosisSafeAppsMethods = ['getEnvironmentInfo', 'getChainInfo', 'getSafeInfo', 'signMessage', 'signTypedMessage', 'getOffChainSignature', 'getTxBySafeTxHash', 'getSafeBalances', 'wallet_getPermissions', 'wallet_requestPermissions', 'rpcCall', 'sendTransactions'] as const
+export type PublicGnosisSafeAppsMethod = typeof publicGnosisSafeAppsMethods[number]
+export const isPublicGnosisSafeAppsMethod = (method: string): method is PublicGnosisSafeAppsMethod => publicGnosisSafeAppsMethods.some((candidate) => candidate === method)
 
 import type { GnosisSafeAppsRequest } from './gnosisSafeAppsProtocol.js'
 

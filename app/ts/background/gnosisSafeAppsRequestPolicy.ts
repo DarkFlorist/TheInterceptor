@@ -1,3 +1,4 @@
+import { isPublicGnosisSafeAppsMethod } from '../../shared/ts/gnosisSafeAppsClient.js'
 import { GnosisSafeReviewInput } from '../types/gnosisSafeReview.js'
 import { encodeGnosisSafeBatch, GNOSIS_SAFE_MULTI_SEND_CALL_ONLY } from '../gnosisSafe/gnosisSafeDelegateCalls.js'
 import { buildGnosisSafeMessageApproval } from '../gnosisSafe/gnosisSafeMessageApproval.js'
@@ -172,11 +173,13 @@ export function getGnosisSafeAppsChainInfo(rpcNetwork: RpcNetwork): GnosisSafeAp
 
 export async function getGnosisSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getGnosisSafeContractState: () => Promise<GnosisSafeContractState>, services: GnosisSafeAppsRequestServices): Promise<GnosisSafeAppsRequestCommand> {
 	const request = parseGnosisSafeAppsRequest(value)
+	const method = request.method
+	if (!isPublicGnosisSafeAppsMethod(method) && method !== 'submitOffChainMessage') throw gnosisSafeAppsPolicyError(`Unsupported Gnosis Safe Apps method: ${ method }.`)
 	const offChainSigning = request.offChainSigning ?? true
 	if (services.mode === 'simulation' && (request.method === 'signMessage' || request.method === 'signTypedMessage') && offChainSigning) throw gnosisSafeAppsPolicyError('Off-chain Gnosis Safe message services are unavailable in simulation mode. Disable off-chain signing in the app to simulate an on-chain message approval.')
 	const safeAddress = addressString(activeSafeAddress)
 	const chainInfo = getGnosisSafeAppsChainInfo(rpcNetwork)
-	switch (request.method) {
+	switch (method) {
 		case 'getEnvironmentInfo': return { kind: 'result', value: { origin: websiteOrigin } }
 		case 'getChainInfo': return { kind: 'result', value: { chainName: chainInfo.name, chainId: chainInfo.chainId, shortName: chainInfo.name, nativeCurrency: { name: chainInfo.currencyName, symbol: chainInfo.currencyTicker, decimals: 18, logoUri: chainInfo.currencyLogoUri ?? '' }, blockExplorerUriTemplate: { address: '', txHash: '', api: chainInfo.blockExplorerApiUrl ?? '' } } }
 		case 'getSafeInfo': {
@@ -246,6 +249,9 @@ export async function getGnosisSafeAppsRequestCommand(value: unknown, websiteOri
 			const { transaction, batch } = parseGnosisSafeTransaction(request.params, safeAddress)
 			return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [transaction], safeRequestContext: { operation: batch ? 1 : 0 }, mapResult: 'safeTxHash' }
 		}
-		default: throw gnosisSafeAppsPolicyError(`Unsupported Gnosis Safe Apps method: ${ request.method }.`)
+		default: {
+			const unhandled: never = method
+			throw gnosisSafeAppsPolicyError(`Unsupported Gnosis Safe Apps method: ${ unhandled }.`)
+		}
 	}
 }
