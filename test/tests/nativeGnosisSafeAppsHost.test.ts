@@ -95,3 +95,10 @@ test('background context projection ignores cosmetic writes and non-local change
 test('same-value storage writes do not request an app reconnection', () => {
 	assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ simulationMode: { oldValue: false, newValue: false }, activeSigningSafeAddress: { oldValue: '0x1234', newValue: '0x1234' } }, 'local'), [])
 })
+
+test('canonical hosting settings enumerate every context invalidation field', async () => {
+	const { automaticGnosisSafeAppsHostingSettingsKeys } = await import('../../app/ts/types/contentScriptSettings.js')
+	const keys = ['safeAppsCompatibilityMode', 'simulationMode', 'activeSigningSafeAddress', 'independentActiveSimulationAddress', 'useSignersAddressAsActiveAddress', 'activeRpcNetwork', 'websiteAccess', 'signingAddressPreferences', 'userAddressBookEntriesV3']
+	assert.deepEqual([...automaticGnosisSafeAppsHostingSettingsKeys].sort(), [...keys].sort())
+	for (const key of keys) assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ [key]: { newValue: 'changed' } }, 'local'), [key])
+})

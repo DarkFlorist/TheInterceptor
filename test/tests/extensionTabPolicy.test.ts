@@ -24,15 +24,11 @@ test('untargeted simulation stack reuse clears stale routes but avoids reloading
 	}
 })
 
-test('a native host only reuses the exact launch, preserving live drafts on different launches', () => {
-	for (const root of ['chrome-extension://extension/', 'moz-extension://extension/']) {
-		const targetSuffix = '?sourceTabId=23&appUrl=https%3A%2F%2Fapp.example%2F'
-		const targetUrl = `/html/gnosisSafeAppsHost.html${ targetSuffix }`
-		const resolvedTargetUrl = new URL(targetUrl, root)
-		const context = { targetUrl, resolvedTargetUrl, targetSuffix }
-		assert.deepEqual(getExtensionTabReuse('gnosisSafeAppsHost', { ...context, currentTabUrl: resolvedTargetUrl.href }), { action: 'reuse' })
-		for (const currentTabUrl of [undefined, resolvedTargetUrl.href.replace('sourceTabId=23', 'sourceTabId=24'), resolvedTargetUrl.href.replace('app.example', 'another.example')]) {
-			assert.deepEqual(getExtensionTabReuse('gnosisSafeAppsHost', { ...context, currentTabUrl }), { action: 'open' })
-		}
-	}
+test('native host page identity is separate from reusable tabs and stored tab ids', async () => {
+	const { PartialIdsOfOpenedTabs } = await import('../../app/ts/utils/storageUtils.js')
+	const { getHtmlFile } = await import('../../app/ts/utils/htmlPages.js')
+	const hostIsReusable: 'gnosisSafeAppsHost' extends Parameters<typeof import('../../app/ts/background/extensionTabs.js').openExtensionTab>[0] ? true : false = false
+	assert.equal(hostIsReusable, false)
+	assert.equal('gnosisSafeAppsHost' in PartialIdsOfOpenedTabs.fields, false)
+	assert.equal(getHtmlFile('gnosisSafeAppsHost', 3), '/html3/gnosisSafeAppsHostV3.html')
 })

@@ -27,7 +27,6 @@ const IdsOfOpenedTabs = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		simulationStack: funtypes.Union(funtypes.Undefined, funtypes.Number),
-		gnosisSafeAppsHost: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	}),
 )
 
@@ -37,7 +36,6 @@ export const PartialIdsOfOpenedTabs = funtypes.ReadonlyPartial({
 	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	websiteAccess: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	simulationStack: funtypes.Union(funtypes.Undefined, funtypes.Number),
-	gnosisSafeAppsHost: funtypes.Union(funtypes.Undefined, funtypes.Number),
 })
 
 export type OldActiveAddressEntry = funtypes.Static<typeof OldActiveAddressEntry>

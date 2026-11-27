@@ -1,4 +1,4 @@
-export type ExtensionTabName = 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack' | 'gnosisSafeAppsHost'
+export type ExtensionTabName = 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack'
 
 type TabReuseContext = {
 	readonly targetUrl: string
@@ -27,17 +27,11 @@ const simulationStackReuse: TabReusePolicy = (context) => {
 	return clearTarget ? { action: 'reuse', url: context.targetUrl } : { action: 'reuse' }
 }
 
-// A host retains drafts and pending approvals: only an identical launch can reuse that session, without navigation.
-const gnosisSafeAppsHostReuse: TabReusePolicy = ({ currentTabUrl, resolvedTargetUrl }) => currentTabUrl === resolvedTargetUrl.href
-	? { action: 'reuse' }
-	: { action: 'open' }
-
 const tabReusePolicies: Readonly<Record<ExtensionTabName, TabReusePolicy>> = {
 	settingsView: focusOrNavigate,
 	addressBook: focusOrNavigate,
 	websiteAccess: focusOrNavigate,
 	simulationStack: simulationStackReuse,
-	gnosisSafeAppsHost: gnosisSafeAppsHostReuse,
 }
 
 export const getExtensionTabReuse = (tabName: ExtensionTabName, context: TabReuseContext): TabReuse => tabReusePolicies[tabName](context)
