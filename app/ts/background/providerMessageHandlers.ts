@@ -16,7 +16,8 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { refreshPendingGnosisSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { routeProviderReply } from './providerReplyRouting.js'
 import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
@@ -359,7 +360,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			}
 		}
 		if (native !== undefined) {
-			replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_reply', uniqueRequestIdentifier, ...(params.success ? { result: params.reply } : { error: params.error }) })
+			routeProviderReply(websiteTabConnections, { type: 'result', method: 'signer_reply', uniqueRequestIdentifier, ...(params.success ? { result: params.reply } : { error: params.error }) })
 			return complete
 		}
 		if (params.success) return { type: 'result' as const, method: 'signer_reply' as const, result: params.reply }

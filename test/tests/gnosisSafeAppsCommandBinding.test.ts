@@ -4,7 +4,8 @@ import { test } from 'bun:test'
 import * as assert from 'node:assert/strict'
 import { bindGnosisSafeAppsCommand, admitGnosisSafeAppsPrivateCommand, trackGnosisSafeAppsExecution, settleGnosisSafeAppsExecution } from '../../app/ts/background/gnosisSafeAppsCommandBinding.js'
 import { createGnosisSafeAppsRequestHandler } from '../../app/shared/ts/gnosisSafeAppsClient.js'
-import { createPort } from './backgroundEthAccountsTestHarness.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { createPort, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 
 test('public SDK rejects private commands before any background or Ethereum call', async () => {
 	let calls = 0
@@ -67,4 +68,26 @@ test('submission waits for successful execution settlement and is single-use', (
 	assert.equal(admitGnosisSafeAppsPrivateCommand(port, { ...submit, params: { ...submit.params, message: 'changed' } }), false)
 	assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), true)
 	assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), false)
+})
+
+
+test('provider routing settles tracked signer replies and generic transport stays feature-independent', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { routeProviderReply } = await import('../../app/ts/background/providerReplyRouting.js')
+	const { port } = createPort(7)
+	const socket = { tabId: 7, connectionName: BigInt(port.name) }
+	const connections: WebsiteTabConnections = new Map([[7, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'app.example', approved: true, wantsToConnect: true } } }]])
+	for (const success of [false, true]) {
+		const command = bindGnosisSafeAppsCommand(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'retain', isTypedData: false } }, mapResult: 'safeMessage', message: 'retain', safeAddress: '0x123', chainId: '1' })
+		const execute = { method: 'execute', params: command }
+		const submit = { method: 'submitOffChainMessage', params: { ...command, signature: `0x${ '11'.repeat(65) }` } }
+		trackGnosisSafeAppsExecution(port, 1, execute)
+		assert.equal(admitGnosisSafeAppsPrivateCommand(port, execute), true)
+		assert.equal(routeProviderReply(connections, { type: 'result', method: 'signer_reply', uniqueRequestIdentifier: { requestSocket: socket, requestId: 1 }, ...(success ? { result: `0x${ '11'.repeat(65) }` } : { error: { code: 4001, message: 'Rejected' } }) }), true)
+		assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), success)
+		assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), false)
+	}
+	assert.doesNotMatch(await Bun.file('app/ts/background/messageSending.ts').text(), /gnosisSafeAppsCommandBinding|settleGnosisSafeAppsExecution/)
+	assert.match(await Bun.file('app/ts/background/terminalReplyDelivery.ts').text(), /routeProviderReply/)
 })
