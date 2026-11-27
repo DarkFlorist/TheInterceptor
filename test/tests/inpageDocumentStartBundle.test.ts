@@ -67,7 +67,7 @@ test('runtime generation can run twice after copying artifacts over the compiled
 	try {
 		fs.mkdirSync(path.dirname(inpagePath), { recursive: true })
 		for (const file of [inpagePath, documentStartPath]) fs.writeFileSync(file, '// Compiled runtime destination, not a marker-bearing input.\n')
-		const options = { root: process.cwd(), outdir, inpagePath, documentStartPath, inpageSourcePath, documentStartSourcePath }
+		const options = { root: process.cwd(), outdir, inpagePath, documentStartPath, inpageSourcePath, documentStartSourcePath, inpageCompositionPath: path.join(process.cwd(), 'app/inpage/ts/inpageBootstrap.ts') }
 		const generate = async () => {
 			const artifacts = await buildRuntimeEntrypoints([inpagePath, documentStartPath], options)
 			// Map the generated extension paths into the temporary app root, like production's copy step.
@@ -92,5 +92,17 @@ test('re-bundling keeps rewritten vendored runtime imports external', async () =
 			copyRuntimeEntrypoints(bundles)
 			assert.match(fs.readFileSync(entrypoint, 'utf8'), /import.*browser-polyfill\.js/)
 		}
+	} finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+
+test('provider generation rejects a missing composition root before writing artifacts', async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'interceptor-missing-composition-'))
+	const outdir = path.join(root, 'out')
+	const inpagePath = path.join(root, 'inpage.js')
+	const documentStartPath = path.join(root, 'document_start.js')
+	try {
+		await assert.rejects(buildRuntimeEntrypoints([inpagePath, documentStartPath], { root, outdir, inpagePath, documentStartPath }), /provider composition entrypoint is required/)
+		assert.equal(fs.existsSync(outdir), false)
 	} finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
