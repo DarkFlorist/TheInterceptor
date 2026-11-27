@@ -14,11 +14,11 @@ async function harness() {
 	installBrowserMock()
 	const modules = await loadModules()
 	const socket = { tabId: 1, connectionName: 0n }
-	const { port } = createPort(1)
+	const { port, messages } = createPort(1)
 	const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: origin, approved: true, wantsToConnect: true } } }]])
 	const context: AddressedRequestAccessContext = { activeAddress: address(1n), accessSocket: socket, accessOrigin: origin, requireAddressAccess: false }
 	const request = (method: string) => ({ method, interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } })
-	return { settings: await modules.getSettings(), socket, connections, context, request }
+	return { settings: await modules.getSettings(), socket, connections, context, request, messages }
 }
 
 for (const method of ['eth_requestAccounts', 'wallet_requestPermissions', 'eth_call', 'eth_simulateV1']) test(`${ method } can request initial consent but a reroute onto another account never prompts`, async () => {
@@ -54,4 +54,18 @@ test('background routing keeps request authorization in the shared access policy
 	const routing = await Bun.file('app/ts/background/background.ts').text()
 	assert.doesNotMatch(routing, /\bverifyAccess\s*\(/u)
 	assert.match(routing, /from '\.\/requestAccessVerification\.js'/u)
+})
+
+
+test('repeated hosted reads validate stored consent without repeating provider connection events', async () => {
+	const h = await harness()
+	const context = { ...h.context, requireAddressAccess: true }
+	const settings = { ...h.settings, websiteAccess: [{ website, access: true, addressAccess: [{ address: context.activeAddress.address, access: true }] }] }
+	for (let index = 0; index < 10; index++) {
+		assert.equal(verifyRequestAccess(h.connections, h.request('site_rpc_request'), context, settings, { kind: 'initial' }), 'hasAccess')
+		assert.equal(verifyRequestAccess(h.connections, h.request('site_rpc_request'), context, settings, { kind: 'reroute', previouslyVerified: context }), 'hasAccess')
+	}
+	assert.deepEqual(h.messages, [], 'read authorization must not emit connect, account or chain callbacks')
+	assert.equal(verifyRequestAccess(h.connections, h.request('site_rpc_request'), context, { ...settings, websiteAccess: [] }, { kind: 'initial' }), 'noAccess')
+	assert.deepEqual(h.messages, [], 'revocation must not prompt or reannounce the host')
 })

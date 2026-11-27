@@ -60,13 +60,14 @@ async function harness() {
 	return { ...modules, ethereum: services.ethereum, address, website, connections, urls, tabReads, source, child, unrelatedSource, unrelatedChild, send, restore: () => { getTab.mockRestore(); frame.mockRestore() } }
 }
 
-test('native HTTP reads share the provider access gate while keeping the child unapproved', async () => {
+test('native HTTP reads enforce stored consent without reconnecting the host or approving the child', async () => {
 	const h = await harness()
-	const accessManagement = await import('../../app/ts/background/accessManagement.js')
-	const verify = spyOn(accessManagement, 'verifyAccess')
+	const accessVerification = await import('../../app/ts/background/requestAccessVerification.js')
+	const verify = spyOn(accessVerification, 'verifyRequestAccess')
 	try {
 		assert.equal((await h.send(h.child))?.result, '0x1')
-		assert.ok(verify.mock.calls.some((args) => args[1] === h.source.socket && args[4]?.address === h.address && args[6]?.ignoreConnectionApproval === true), 'native reads use the shared access verifier on their verified source')
+		assert.ok(verify.mock.calls.some((args) => args[2].accessSocket === h.source.socket && args[2].activeAddress?.address === h.address && args[2].requireAddressAccess), 'native reads check stored address consent on their captured source')
+		assert.deepEqual(h.source.messages, [], 'borrowed authority must not publish host connection callbacks')
 		assert.equal(h.child.connection.approved, false)
 		assert.equal(h.connections.get(h.child.socket.tabId)?.signerStateOwner, undefined)
 		assert.equal((await h.send(h.source, 'eth_chainId', []))?.result, '0x1')
@@ -262,20 +263,22 @@ test('native HTTP execution reuses one admitted authority and validates its capt
 test('captured native authority fails closed when its source changes while website metadata is pending', async () => {
 	for (const change of ['approval', 'permission', 'source-navigation', 'host-navigation', 'source-replacement', 'selected-address']) {
 		const h = await harness()
-		const accessManagement = await import('../../app/ts/background/accessManagement.js')
+		const accessVerification = await import('../../app/ts/background/requestAccessVerification.js')
 		const nativeOwner = await import('../../app/ts/background/nativeHostedSiteContext.js')
-		const originalVerify = accessManagement.verifyAccess
+		const originalVerify = accessVerification.verifyRequestAccess
 		const admitted = createDeferredValue<void>()
 		const website = createDeferredValue<typeof h.website>()
-		const verify = spyOn(accessManagement, 'verifyAccess').mockImplementation((...args) => {
+		const verify = spyOn(accessVerification, 'verifyRequestAccess').mockImplementation((...args) => {
 			const result = originalVerify(...args)
-			if (args[1] === h.source.socket && result === 'hasAccess') admitted.resolve(undefined)
+			if (args[2].accessSocket === h.source.socket && args[2].requireAddressAccess && result === 'hasAccess') admitted.resolve(undefined)
 			return result
 		})
 		const resolve = spyOn(nativeOwner, 'getNativeHostedSiteContext')
 		try {
 			const pending = h.send(h.child, 'site_rpc_request', [{ chainId: '0x1', request: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] } }], website.promise)
+			// Pause after pure consent admission at the real website-metadata await, before execution revalidates the captured proof.
 			await admitted.promise
+			assert.deepEqual(h.source.messages, [], 'admission must not reconnect the source')
 			if (change === 'approval') h.source.connection.approved = false
 			if (change === 'permission') await h.updateWebsiteAccess(() => [{ website: h.website, access: false }])
 			if (change === 'source-navigation') h.urls.set(h.source.socket.tabId, 'https://attacker.example/')
