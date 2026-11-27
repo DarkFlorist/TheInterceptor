@@ -21,7 +21,7 @@ import { createRequestAccessContextResolver, hasRequestAccessAddress, type Addre
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
-import { replyToInterceptedRequest } from './messageSending.js'
+import { routeProviderReply } from './providerReplyRouting.js'
 import { EthereumJsonRpcRequest, type EthGetStorageAtParams, findEthereumJsonRpcRequestCodec, type SendRawTransactionParams, type SendTransactionParams, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
@@ -240,11 +240,11 @@ function getProviderHandler(method: string) {
 }
 
 function replyWithEmptyAccounts(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	return routeProviderReply(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 }
 
 function replyWithEmptyPermissions(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_getPermissions' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	return routeProviderReply(websiteTabConnections, { type: 'result', method: 'wallet_getPermissions' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 }
 
 function replyWithoutActiveAccount(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
@@ -261,7 +261,7 @@ function getRequestWithDefinedParams(request: InterceptedRequest) {
 }
 
 function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	return replyToInterceptedRequest(websiteTabConnections, {
+	return routeProviderReply(websiteTabConnections, {
 		type: 'result',
 		method: request.method,
 		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
@@ -344,7 +344,7 @@ function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabCo
 	if (maybeParsedRequest.success) return maybeParsedRequest.value
 	console.warn(maybeParsedRequest.fullError)
 	// Any page may revoke its own permissions, so this runs before the access check; the readable error only describes wallet_revokePermissions, whose parameters are the public EIP-2255 shape.
-	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	routeProviderReply(websiteTabConnections, { ...getInvalidRpcParamsReply(request), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	return undefined
 }
 
@@ -391,7 +391,7 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 	const publicError = isAccountConnectionMethod(request.method) && isSignerProviderDisconnectedError(error)
 		? { ...error, code: METAMASK_ERROR_USER_REJECTED_REQUEST }
 		: error
-	return replyToInterceptedRequest(websiteTabConnections, {
+	return routeProviderReply(websiteTabConnections, {
 		type: 'result',
 		...getRequestWithDefinedParams(request),
 		error: publicError,
@@ -404,7 +404,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
 		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
-		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
+		return routeProviderReply(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
@@ -421,19 +421,19 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
-		return replyToInterceptedRequest(websiteTabConnections, message)
+		return routeProviderReply(websiteTabConnections, message)
 	}
 	const requestAccessContext = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
 	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = requestAccessContext
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
-		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
+		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return routeProviderReply(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
 	const verifyInitialAccess = () => verifyRequestAccess(websiteTabConnections, request, requestAccessContext, settings, { kind: 'initial' })
 	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyInitialAccess) : verifyInitialAccess()
-	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
+	if (access === 'interceptorDisabled') return routeProviderReply(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
 		if (requestedSignerAccountsForAddressConsent) return refuseAccess(websiteTabConnections, request)
@@ -474,8 +474,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
 			case 'wallet_getPermissions': return replyWithEmptyPermissions(websiteTabConnections, request)
 			// if user has not given access, assume we are on chain 1
-			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'eth_chainId': return routeProviderReply(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'net_version': return routeProviderReply(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 			default: break
 		}
 	}
@@ -559,7 +559,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 	try {
 		if (!hasRequestAccessAddress(accessContextInitiallyVerified)) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const refuseModeChange = () => replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
+		const refuseModeChange = () => replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
 		for (let routingAttempt = 1; routingAttempt <= MAX_REQUEST_ROUTING_ATTEMPTS; routingAttempt++) {
 			const simulationModeGuard = captureSimulationModeGuard()
 			const settings = await getSettings()
@@ -568,10 +568,10 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 			if (accessContext === undefined || !hasRequestAccessAddress(accessContext) || accessContext.requireAddressAccess && !await accessContext.isCurrent(settings)) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
 			const { activeAddress } = accessContext
 			const routing = await routeRequest(simulationServicesOwner, websiteTabConnections, request, website, settings, accessContext, publishRpcConnectionStatus)
-			if (routing.kind === 'answeredAtAdmission') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, routing.reply))
+			if (routing.kind === 'answeredAtAdmission') return replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, routing.reply))
 			const { resolved, afterReplyDelivered } = routing
 			if (resolved.type === 'forwardToSigner') {
-				const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
+				const forward = simulationModeGuard.postSignerForwardIfAllowed(() => routeProviderReply(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
 				if (forward.posted) return { replyDelivered: forward.result, afterReplyDelivered }
 				if (!await simulationModeGuard.waitForPendingWrites()) return refuseModeChange()
 				continue
@@ -586,18 +586,18 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 				activeAddress.address,
 			)
 			replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-			return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
+			return { replyDelivered: routeProviderReply(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
 		}
 		return refuseModeChange()
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
-			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))
+			return replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))
 		}
 		if (error instanceof JsonRpcResponseError) {
-			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() }))
+			return replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() }))
 		}
 		await reportUnexpectedError(error)
-		return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, {
+		return replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, {
 			type: 'result',
 			...getRequestWithDefinedParams(request),
 			error: {
@@ -609,7 +609,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 }
 
 export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	return replyToInterceptedRequest(websiteTabConnections, {
+	return routeProviderReply(websiteTabConnections, {
 		type: 'result',
 		...request,
 		error: {

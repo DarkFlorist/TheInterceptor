@@ -25,8 +25,8 @@ async function harness() {
 	Object.assign(hostPort.sender?.tab ?? {}, { url: hostUrl })
 	Object.assign(childPort.sender ?? {}, { id: 'test-extension', url: `${ origin }/swap` })
 	Object.assign(childPort.sender?.tab ?? {}, { url: hostUrl })
-	const host = { port: hostPort, socket: hostSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: true, wantsToConnect: false, nativeGnosisSafeAppOrigin: origin }
-	const child = { port: childPort, socket: childSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: false, wantsToConnect: false, nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: hostPort }
+	const host = { port: hostPort, socket: hostSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: true, wantsToConnect: false, nativeSafeRole: { kind: 'host' as const } }
+	const child = { port: childPort, socket: childSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: false, wantsToConnect: false, nativeSafeRole: { kind: 'signer' as const, session: { port: hostPort, origin } } }
 	const connections: WebsiteTabConnections = new Map([
 		[20, { connections: { [websiteSocketToString(hostSocket)]: host, [websiteSocketToString(childSocket)]: child } }],
 	])
@@ -82,7 +82,7 @@ test('native iframe HTTP context rejects forged senders, host/host navigation an
 		(h) => { h.urls.set(20, 'moz-extension://test-extension/html/gnosisSafeAppsHost.html?hostTabId=10&appUrl=invalid'); Object.assign(h.child.port.sender?.tab ?? {}, { url: h.urls.get(20) }) },
 		(h) => { h.connections.delete(20) },
 		(h) => { h.urls.set(20, 'https://attacker.example/') },
-		(h) => { h.child.nativeGnosisSafeAppsSigner = false },
+		(h) => { Object.assign(h.child, { nativeSafeRole: undefined }) },
 		(h) => { registerNativeGnosisSafeAppsSession(h.connections, 20, h.child.port, h.origin) },
 		(h) => { h.host.approved = false },
 		(h) => { h.host.requestOrigin = 'https://attacker.example' },

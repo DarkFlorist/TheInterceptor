@@ -41,7 +41,7 @@ function getHttpOrigin(value: string | undefined) {
 // Registration marks browser-verified direct children even when no signer wallet is installed. This classifies a hosted frame; it grants no read authority.
 export function isNativeHostedSiteChild(connections: WebsiteTabConnections, childSocket: WebsiteSocket) {
 	const child = getWebsiteSocketConnection(connections, childSocket)
-	if (child?.nativeGnosisSafeAppsSigner !== true || isTopFramePort(child.port)) return false
+	if (child?.nativeSafeRole?.kind !== 'signer' || isTopFramePort(child.port)) return false
 	const launch = getNativeGnosisSafeAppsChildLaunch(child.port.sender)
 	return launch !== undefined && child.requestOrigin === launch.appUrl.origin && child.websiteOrigin === launch.appUrl.host
 }
@@ -58,16 +58,16 @@ export async function getNativeHostedSiteContext(connections: WebsiteTabConnecti
 	const origin = launch.appUrl.origin
 	const hostUrl = sender.tab.url
 	const host = Object.values(connections.get(childSocket.tabId)?.connections ?? {}).find((connection) => {
-		if (connection.nativeGnosisSafeAppOrigin !== origin || !isTopFramePort(connection.port) || connection.port.sender?.url !== hostUrl || connection.websiteOrigin !== launch.appUrl.host || connection.requestOrigin !== origin) return false
+		if (connection.nativeSafeRole?.kind !== 'host' || !isTopFramePort(connection.port) || connection.port.sender?.url !== hostUrl || connection.websiteOrigin !== launch.appUrl.host || connection.requestOrigin !== origin) return false
 		return getNativeGnosisSafeAppsHostLaunch(connection.port.sender)?.appUrl.href === launch.appUrl.href
 	})
-	if (host === undefined || !host.approved || getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.port !== host.port || child.nativeGnosisSafeAppsHostPort !== host.port) return undefined
+	if (host === undefined || !host.approved || getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.port !== host.port || (child.nativeSafeRole?.kind !== 'signer' || child.nativeSafeRole.session.port !== host.port)) return undefined
 	const activeAddress = await dependencies.getEligibleHostAddress(connections, host.socket, settings)
 	if (activeAddress?.type !== 'safe' || !isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, host.socket, settings, { activeAddress, safeSigningMode: false })) return undefined
 	const connectionsAreCurrent = () => getWebsiteSocketConnection(connections, childSocket) === child
 		&& getWebsiteSocketConnection(connections, host.socket) === host
-		&& getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.port === host.port && child.nativeGnosisSafeAppsHostPort === host.port
-		&& child.nativeGnosisSafeAppsSigner === true && host.nativeGnosisSafeAppOrigin === origin
+		&& getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.port === host.port && child.nativeSafeRole?.kind === 'signer' && child.nativeSafeRole.session.port === host.port
+		&& host.nativeSafeRole?.kind === 'host' && getNativeGnosisSafeAppsSession(connections, childSocket.tabId)?.origin === origin
 		&& host.approved && isTopFramePort(host.port) && !isTopFramePort(child.port)
 		&& child.requestOrigin === origin && host.requestOrigin === origin
 		&& child.websiteOrigin === launch.appUrl.host && host.websiteOrigin === launch.appUrl.host

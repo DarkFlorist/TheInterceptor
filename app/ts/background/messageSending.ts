@@ -31,7 +31,6 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		if (message.type === 'forwardToSigner' && connection.forwardToSigner !== undefined) return connection.forwardToSigner(message)
 		const reply = {
 			...message,
 			interceptorApproved: true as const,

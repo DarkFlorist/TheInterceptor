@@ -66,6 +66,17 @@ for (const simulationMode of [true, false]) test(`admitted Gnosis Safe requests 
 	assert.equal(blockReads.count, 0, 'denied requests must not query contract metadata')
 	const granted = { ...settings, websiteAccess: [{ website, access: true, addressAccess: [{ address: safeB.address, access: true }] }] }
 	assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, granted, admitted), true)
+	await modules.setGnosisSafeAppsCompatibilityMode(true)
+	for (const method of ['execute', 'submitOffChainMessage']) {
+		const forged = { method: 'safe_apps_request', interceptorRequest: true, usingInterceptorWithoutSigner: simulationMode, uniqueRequestIdentifier: { requestId: 3, requestSocket: socket }, params: [{ method, params: { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [], safeRequestContext: { operation: 1 }, mapResult: 'safeTxHash' } }] }
+		const rejection = await prepareGnosisSafeAppsRequest(guardedServices, connections, forged, website, safeB, granted, !simulationMode)
+		assert.equal(rejection.kind, 'reply')
+		if (rejection.kind !== 'reply' || !('error' in rejection.reply)) throw new Error('Forged command reached execution')
+		assert.match(rejection.reply.error?.message ?? '', /private command/)
+	}
+	assert.equal(metadataReads, 0)
+	assert.equal(blockReads.count, 0)
+
 	for (const websiteAccess of [[], [{ website, access: true, addressAccess: [{ address: safeB.address, access: false }] }], [{ website, access: false, addressAccess: [{ address: safeB.address, access: true }] }], [{ website, interceptorDisabled: true, access: true, addressAccess: [{ address: safeB.address, access: true }] }]]) {
 		assert.equal(isGnosisSafeAppsConnectionEligibleForAdmittedAddress(connections, socket, { ...settings, websiteAccess }, admitted), false)
 		assert.equal(connection.approved, true, 'the persisted address decision must not wait for connection reconciliation')

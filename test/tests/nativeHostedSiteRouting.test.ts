@@ -41,7 +41,7 @@ async function harness() {
 		Object.assign(result.port.sender?.tab ?? {}, { url })
 		urls.set(tabId, url)
 		const connection = { port: result.port, socket, websiteOrigin: website.websiteOrigin, requestOrigin: 'https://app.aave.com', approved: frameId === 0, wantsToConnect: false }
-		Object.assign(connection, frameId === 0 ? { nativeGnosisSafeAppOrigin: 'https://app.aave.com' } : { nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: getNativeGnosisSafeAppsSession(connections, tabId)?.port })
+		Object.assign(connection, frameId === 0 ? { nativeSafeRole: { kind: 'host' } } : { nativeSafeRole: { kind: 'signer', session: getNativeGnosisSafeAppsSession(connections, tabId) } })
 		connections.set(tabId, { connections: { ...connections.get(tabId)?.connections, [modules.websiteSocketToString(socket)]: connection } })
 		Object.assign(result.port, { onDisconnect: { addListener: () => undefined, removeListener: () => undefined } })
 		if (frameId === 0) registerNativeGnosisSafeAppsSession(connections, tabId, result.port, 'https://app.aave.com')

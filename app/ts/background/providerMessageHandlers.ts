@@ -33,7 +33,7 @@ function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, po
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
 	// A reload can leave the old owner token alive briefly; its child may no longer belong to the current host session.
-	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeGnosisSafeAppsSigner === true && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return undefined
+	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeSafeRole?.kind === 'signer' && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
@@ -206,7 +206,7 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 
 export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
-	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeGnosisSafeAppsSigner === true && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return returnValue
+	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeSafeRole?.kind === 'signer' && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
@@ -218,7 +218,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	const nativeSigner = isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)
 	const isTopFrame = isTopFramePort(port) || nativeSigner
-	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeGnosisSafeAppsSigner === true && !nativeSigner) return await getConnectedToSignerResult()
+	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeSafeRole?.kind === 'signer' && !nativeSigner) return await getConnectedToSignerResult()
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()

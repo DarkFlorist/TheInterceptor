@@ -36,8 +36,8 @@ async function setup() {
 	Object.assign(hostPort.sender?.tab ?? {}, { url: hostUrl })
 	Object.assign(signerPort.sender ?? {}, { id: 'extension-id', url: `${ origin }/swap` })
 	Object.assign(signerPort.sender?.tab ?? {}, { url: hostUrl })
-	const host = { port: hostPort, socket: hostSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true, nativeGnosisSafeAppOrigin: origin }
-	const signer = { port: signerPort, socket: signerSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true, nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: hostPort }
+	const host = { port: hostPort, socket: hostSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true, nativeSafeRole: { kind: 'host' as const } }
+	const signer = { port: signerPort, socket: signerSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true, nativeSafeRole: { kind: 'signer' as const, session: { port: hostPort, origin } } }
 	const signerStateOwner = { confirmed: true, connectionName: 2n, generation: 1, providerGeneration: 1 }
 	const connections: WebsiteTabConnections = new Map([[7, { signerStateOwner, connections: { [modules.websiteSocketToString(hostSocket)]: host, [modules.websiteSocketToString(signerSocket)]: signer } }]])
 	registerNativeGnosisSafeAppsSession(connections, hostSocket.tabId, hostPort, origin)
@@ -129,7 +129,7 @@ test('native signer callback tokens cannot be consumed by a different frame or g
 
 test('ordinary child frames cannot own native-host signer callbacks even with persisted origin approval', async () => {
 	const h = await setup()
-	h.signer.nativeGnosisSafeAppsSigner = false
+	Object.assign(h.signer, { nativeSafeRole: undefined })
 	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, h.signerPort), false)
 	assert.equal(forwardNativeGnosisSafeAppsSignerRequest(h.connections, h.forward, h.send), false)
 })
@@ -156,7 +156,7 @@ test('same-URL host reload rejects the previous child and its pending signer rep
 	const { port: newChild } = createPort(7, undefined, 2, newChildSocket.connectionName)
 	Object.assign(newChild.sender ?? {}, { id: 'extension-id', url: `${ h.origin }/swap` })
 	Object.assign(newChild.sender?.tab ?? {}, { url: h.hostUrl })
-	tab.connections[h.modules.websiteSocketToString(newChildSocket)] = { ...h.signer, socket: newChildSocket, port: newChild, nativeGnosisSafeAppsHostPort: replacement }
+	tab.connections[h.modules.websiteSocketToString(newChildSocket)] = { ...h.signer, socket: newChildSocket, port: newChild, nativeSafeRole: { kind: 'signer', session: { port: replacement, origin: h.origin } } }
 	tab.signerStateOwner = { confirmed: true, connectionName: newChildSocket.connectionName, generation: 2, providerGeneration: 1 }
 	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, newChild), true)
 	assert.equal(forwardNativeGnosisSafeAppsSignerRequest(h.connections, forward, (port) => { assert.equal(port, newChild); return true }), true)

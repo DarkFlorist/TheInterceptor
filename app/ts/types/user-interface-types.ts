@@ -9,7 +9,7 @@ import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessT
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
 import { type RpcEntries, type RpcEntry, RpcNetwork } from './rpc.js'
-import type { InterceptedRequestForward, TransactionOrMessageIdentifier } from './interceptor-messages.js'
+import type { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import type { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 import type { ReadonlySignal, Signal } from '@preact/signals'
@@ -137,12 +137,7 @@ export type NonLogAnalysisParams = {
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
 type SocketConnection = {
-	// Background-authenticated host origin and direct-child signer role; never supplied by page messages.
-	readonly nativeGnosisSafeAppOrigin?: string
-	readonly nativeGnosisSafeAppsSigner?: boolean
-	readonly nativeGnosisSafeAppsHostPort?: browser.runtime.Port
-	// A connection may delegate wallet delivery while retaining its own request/reply identity.
-	readonly forwardToSigner?: (message: Extract<InterceptedRequestForward, { readonly type: 'forwardToSigner' }>) => boolean,
+	readonly nativeSafeRole?: { readonly kind: 'host' } | { readonly kind: 'signer', readonly session: { readonly port: browser.runtime.Port, readonly origin: string } }
 	// Captured with websiteOrigin when the port connects; absent origins fail the SIWE check closed.
 	readonly requestOrigin?: string,
 	port: browser.runtime.Port,

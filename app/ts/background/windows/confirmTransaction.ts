@@ -19,7 +19,7 @@ import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulati
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
+import { routeProviderReply } from '../providerReplyRouting.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -554,7 +554,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 		let simulationModeEnabledBeforeDelivery = false
 		const requestWasForwarded = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, forward, () => {
 			// The guard checks and posts in one synchronous step, so simulation mode was either enabled before the check or only after the request was posted. This also runs before the retry after a Manifest V2 content script reconnect.
-			const delivery = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, forward))
+			const delivery = simulationModeGuard.postSignerForwardIfAllowed(() => routeProviderReply(websiteTabConnections, forward))
 			if (delivery.posted) return delivery.result
 			simulationModeEnabledBeforeDelivery = true
 			// Only a false result makes the reconnect helper retry, so returning undefined ends the delivery without posting.

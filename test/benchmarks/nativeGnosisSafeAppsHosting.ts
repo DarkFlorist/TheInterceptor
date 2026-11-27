@@ -322,7 +322,8 @@ try {
 						const hostTabId = await host.evaluate<number>('browser.tabs.getCurrent().then(tab=>tab.id)')
 						await host.reload()
 						await observeHostFixture(host)
-						await waitForBrowserCondition(async () => await host.evaluate('document.querySelector("[role=status]")?.textContent?.includes("handshake received")'), 'native session reconnects after reload without a source tab')
+						// A successful metadata refresh can replace the handshake status before the harness observes it. Both statuses require a received handshake; the fresh SDK request below proves usable authority after reload.
+						await waitForBrowserCondition(async () => await host.evaluate('(() => {const status=document.querySelector("[role=status]")?.textContent;return status?.includes("handshake received")||status?.includes("The app connection is still active.")})()'), 'native session reconnects after reload without a source tab')
 						await command(host, 'afterReload', 'getSafeInfo')
 						await waitForBrowserCondition(async () => await host.evaluate('nativeHostFixture.at(-1)?.results.afterReload?.success===true'), 'native SDK request after host reload')
 						assert.equal(await host.evaluate('browser.tabs.getCurrent().then(tab=>tab.id)'), hostTabId, 'Reload retains the host session tab')
