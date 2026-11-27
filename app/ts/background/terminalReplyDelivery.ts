@@ -4,7 +4,7 @@ import { reportLocalRecovery } from '../utils/errors.js'
 import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
-import { replyToInterceptedRequest } from './messageSending.js'
+import { routeProviderReply } from './providerReplyRouting.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
 import { createBackoffRetryScheduler } from '../utils/retryScheduler.js'
@@ -48,7 +48,7 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 	const production = (async () => {
 		const deliver = async () => await terminalReplySemaphore.execute(async () => {
 			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
-			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
+			const delivery = routeProviderReply(websiteTabConnections, message)
 			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
 			return delivery
 		})
@@ -80,7 +80,7 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 				await removePendingTerminalReply(reply.uniqueRequestIdentifier)
 				continue
 			}
-			if (replyToInterceptedRequest(websiteTabConnections, reply) !== true) continue
+			if (routeProviderReply(websiteTabConnections, reply) !== true) continue
 			await recordSuccessfulTerminalReplyDelivery(identifier, reply, terminalReplyProductions.has(identifier) || terminalReplyReservations.has(identifier))
 			deliveredReplies += 1
 		}
