@@ -190,7 +190,7 @@ test('only signer replies update a pending request found by its request id alone
 	assert.notEqual(usesByFile.length, 0, 'the signer reply path is covered')
 	for (const [file, use] of usesByFile) {
 		assert.equal(file, signerReplyFile)
-		assert.deepEqual(use, signerReplyCall)
+		assert.deepEqual(use, { enclosingFunction: 'applySignerReply', isCall: true })
 	}
 })
 
