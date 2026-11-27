@@ -89,16 +89,17 @@ const legacySettingsFormats = [
 	}),
 	defineSettingsFormat('1.5', safeExportedSettingsFields),
 	defineSettingsFormat('1.6', { ...safeExportedSettingsFields, safeAppsCompatibilityMode: funtypes.Boolean }),
+	defineSettingsFormat('1.7', { ...safeExportedSettingsFields, safeAppsCompatibilityMode: funtypes.Boolean }),
 ]
 
-export const CURRENT_EXPORTED_SETTINGS_VERSION = '1.7'
+export const CURRENT_EXPORTED_SETTINGS_VERSION = '1.8'
 
 export type CurrentExportedSettings = funtypes.Static<typeof CurrentExportedSettings>
 export const CurrentExportedSettings = funtypes.ReadonlyObject({
 	...exportedSettingsEnvelopeFields,
 	version: funtypes.Literal(CURRENT_EXPORTED_SETTINGS_VERSION),
 	// Unknown fields from intermediate builds, including retired manual hosting lists, are discarded at this boundary.
-	settings: funtypes.ReadonlyObject({ ...safeExportedSettingsFields, safeAppsCompatibilityMode: funtypes.Boolean }),
+	settings: funtypes.ReadonlyObject({ ...safeExportedSettingsFields, safeAppsCompatibilityMode: funtypes.Boolean, siteRpcInterceptionEnabled: funtypes.Boolean }),
 })
 
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
@@ -126,5 +127,6 @@ export function normalizeImportedSettings(exported: ExportedSettings, defaults: 
 		useTabsInsteadOfPopup: settings.useTabsInsteadOfPopup,
 		metamaskCompatibilityMode: 'metamaskCompatibilityMode' in settings ? settings.metamaskCompatibilityMode : undefined,
 		safeAppsCompatibilityMode: 'safeAppsCompatibilityMode' in settings ? settings.safeAppsCompatibilityMode : false,
+		siteRpcInterceptionEnabled: 'siteRpcInterceptionEnabled' in settings ? settings.siteRpcInterceptionEnabled : false,
 	}
 }

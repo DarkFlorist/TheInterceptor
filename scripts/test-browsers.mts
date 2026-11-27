@@ -6,8 +6,13 @@ export const sharedBrowserScenarios = [
 	{ id: 'browser-harness-contract', script: 'test:browser:harness-contract', args: [] },
 	{ id: 'provider-injection', script: 'test:browser:provider-injection', args: [] },
 	{ id: 'wallet-signing', script: 'test:browser:wallet-signing', args: [] },
+	{ id: 'site-read-settings', script: 'test:browser:site-read-settings', args: [] },
 	{ id: 'gnosis-safe-hosting', script: 'test:browser:native-hosting', args: [] },
 	{ id: 'rpc-communication', script: 'test:browser:rpc-communication', args: [] },
+	{ id: 'generic-rpc-interception', script: 'test:browser:rpc-interception', args: ['--rpc-site=generic'] },
+	{ id: 'aave-rpc-interception', script: 'test:browser:rpc-interception', args: ['--rpc-site=aave'] },
+	{ id: 'lido-rpc-interception', script: 'test:browser:rpc-interception', args: ['--rpc-site=lido'] },
+	{ id: 'native-host-rpc-interception', script: 'test:browser:native-hosting', args: ['--http-interception'] },
 ] as const
 
 export const browserSpecificChecks = [

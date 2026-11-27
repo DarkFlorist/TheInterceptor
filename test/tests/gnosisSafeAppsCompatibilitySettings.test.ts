@@ -92,3 +92,37 @@ test('a failed compatibility write releases the transaction for subsequent selec
 	await setGnosisSafeAppsCompatibilityMode(true)
 	assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
 })
+
+for (const hosting of [false, true]) for (const reads of [false, true]) test(`settings export and import preserve independent hosting=${ hosting }, HTTP reads=${ reads }`, async () => {
+	installBrowserMock()
+	const { getSiteRpcInterceptionEnabled, setSiteRpcInterceptionEnabled } = await import('../../app/ts/background/settings.js')
+	await setGnosisSafeAppsCompatibilityMode(hosting)
+	await setSiteRpcInterceptionEnabled(reads)
+	const exported = await exportSettingsAndAddressBook()
+	assert.equal(exported.version, '1.8')
+	if (exported.version !== '1.8') throw new Error('Expected current settings format')
+	assert.equal(exported.settings.siteRpcInterceptionEnabled, reads)
+	await setGnosisSafeAppsCompatibilityMode(!hosting)
+	await setSiteRpcInterceptionEnabled(!reads)
+	await importSettingsAndAddressBook(exported)
+	assert.equal(await getGnosisSafeAppsCompatibilityMode(), hosting)
+	assert.equal(await getSiteRpcInterceptionEnabled(), reads)
+})
+
+test('old backups reset HTTP reads to off even when the hosting flag or an unknown HTTP flag is true', async () => {
+	installBrowserMock()
+	const { getSiteRpcInterceptionEnabled, setSiteRpcInterceptionEnabled } = await import('../../app/ts/background/settings.js')
+	const { ExportedSettings, CurrentExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	await setGnosisSafeAppsCompatibilityMode(true)
+	await setSiteRpcInterceptionEnabled(true)
+	const exported = await exportSettingsAndAddressBook()
+	if (exported.version !== '1.8') throw new Error('Expected current settings format')
+	const serialized = CurrentExportedSettings.serialize(exported)
+	for (const version of ['1.6', '1.7']) {
+		await setSiteRpcInterceptionEnabled(true)
+		const legacy = ExportedSettings.parse({ ...serialized, version })
+		await importSettingsAndAddressBook(legacy)
+		assert.equal(await getGnosisSafeAppsCompatibilityMode(), true)
+		assert.equal(await getSiteRpcInterceptionEnabled(), false)
+	}
+})

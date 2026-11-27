@@ -218,7 +218,12 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
-	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
+	if (!isTopFrame) {
+		if (!isCurrentWebsiteConnection(websiteTabConnections.get(socket.tabId), socket, port)) return await getConnectedToSignerResult()
+		// A real child bridge can consume passive capabilities even though it must never claim tab-wide signer state.
+		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.connectionReady, socket)
+		if (!isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
+	}
 	if (!announceSignerProviderGeneration(websiteTabConnections, socket, port, signerProviderGeneration)) return await getConnectedToSignerResult()
 	let shouldRefreshSignerAccounts = false
 	const result = await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {

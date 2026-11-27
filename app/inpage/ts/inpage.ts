@@ -1,8 +1,10 @@
+import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethods.js'
 import { createGnosisSafeAppsRequestHandler } from '../../shared/ts/gnosisSafeAppsClient.js'
 import { NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK, NATIVE_GNOSIS_SAFE_APPS_SIGNER_REPLY, parseNativeGnosisSafeAppsSignerRequest } from '../../shared/ts/nativeGnosisSafeAppsSignerProtocol.js'
 import { INTERCEPTOR_BRIDGE_READY_MESSAGE, INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE, INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { isAccountConnectionMethod } from '../../shared/ts/accountRequestMethods.js'
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, isGnosisSafeAppsCancellation } from '../../shared/ts/gnosisSafeAppsBridgeProtocol.js'
+import type { PageExtension, PageExtensionFactory } from './pageExtensions.js'
 import { GNOSIS_SAFE_APPS_REQUEST_TIMEOUT_MS, GNOSIS_SAFE_APPS_RESPONSE_VERSION, createGnosisSafeAppsErrorResponse, isGnosisSafeAppsDiscoveryMethod, parseGnosisSafeAppsRequest, type ParsedGnosisSafeAppsRequest, type GnosisSafeAppsRequest, type GnosisSafeAppsResponse } from '../../shared/ts/gnosisSafeAppsProtocol.js'
 import { createGnosisSafeAppsRequestQueue } from '../../shared/ts/gnosisSafeAppsRequestQueue.js'
 import { createGnosisSafeAppsTransport, type GnosisSafeAppsWindow } from '../../shared/ts/gnosisSafeAppsTransport.js'
@@ -215,18 +217,6 @@ type MessageMethodAndParams = {
 	readonly params?: readonly unknown[]
 	readonly internal?: true
 }
-
-const INTERNAL_BACKGROUND_METHODS = [
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'InterceptorError',
-	'safe_apps_request',
-	'signer_chainChanged',
-	'signer_reply',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const isInternalBackgroundMethod = (method: string) => INTERNAL_BACKGROUND_METHODS.some((internalMethod) => internalMethod === method)
 
 type InterceptedRequestBase = {
 	readonly walletSwitchRequestId?: string,
@@ -679,6 +669,8 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = metamaskCompatibilityModeAtPageLoad
+	// Native extension-parent ancestry is only an early-capture hint. The background validates this extension's host and approved source before any overlay; ordinary web iframes wait for context.
+	private readonly pageExtension: PageExtension | undefined
 	// The page owns SDK settings; every signing request carries its mode across background port recreation.
 	private readonly gnosisSafeAppsBridge = createGnosisSafeAppsBridge(inpageWindow, createGnosisSafeAppsRequestHandler(
 		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
@@ -726,7 +718,8 @@ class InterceptorMessageListener {
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: Promise<SignerAccountsResolution> | undefined = undefined
 
-	public constructor() {
+	public constructor(extensionFactory?: PageExtensionFactory) {
+		this.pageExtension = extensionFactory?.(async (request) => await this.sendInternalMessageToBackgroundPage(request))
 		window.addEventListener('eip6963:announceProvider', this.replaceMetaMaskAnnouncementForCompatibilityMode, { capture: true })
 		this.connectToContentScript()
 		this.injectEthereumIntoWindow()
@@ -920,7 +913,7 @@ class InterceptorMessageListener {
 	// sends a message to interceptors background script
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: InterceptorEthereumRequestParameters }) => {
 		try {
-			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
+			if (isInternalProviderMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
 			// Startup can receive a fresh signer-status request while the initial report is in flight. Dispatch account connections only after the latest report, so background ownership checks do not reject initialization as a wallet replacement.
 			if (isAccountConnectionMethod(methodAndParams.method)) await this.waitForLatestSignerConnectionTransition()
@@ -1623,6 +1616,10 @@ class InterceptorMessageListener {
 					}
 					return
 				}
+				case 'site_behavior': {
+					this.pageExtension?.setContext(replyRequest.result)
+					return
+				}
 				case 'safe_apps_compatibility': {
 					const safeAppsCompatibility = parseGnosisSafeAppsCompatibility(replyRequest.result)
 					if (safeAppsCompatibility !== undefined) {
@@ -2005,13 +2002,11 @@ class InterceptorMessageListener {
 	}
 }
 
-function injectInterceptor() {
-	const interceptorMessageListener = new InterceptorMessageListener()
+export function injectInterceptor(extensionFactory?: PageExtensionFactory) {
+	const interceptorMessageListener = new InterceptorMessageListener(extensionFactory)
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 
 	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
 	window.addEventListener('ethereum#initialized', interceptorMessageListener.handleEthereumInitialized)
 	window.dispatchEvent(new Event('ethereum#initialized'))
 }
-
-injectInterceptor()

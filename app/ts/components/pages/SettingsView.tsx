@@ -147,6 +147,7 @@ export function SettingsView() {
 	const useTabsInsteadOfPopup = useSignal<boolean>(false)
 	const metamaskCompatibilityMode = useSignal<boolean>(false)
 	const safeAppsCompatibilityMode = useSignal<boolean>(false)
+	const siteRpcInterceptionEnabled = useSignal<boolean>(false)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -160,6 +161,7 @@ export function SettingsView() {
 			if (parsed.method !== 'popup_requestSettingsReply') return false
 			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
 			safeAppsCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
+			siteRpcInterceptionEnabled.value = parsed.data.siteRpcInterceptionEnabled
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
@@ -180,11 +182,16 @@ export function SettingsView() {
 			data: { metamaskCompatibilityMode: checked }
 		})
 	}
-	async function requestToGnosisSafeAppsCompatibilityMode(checked: boolean) {
+	async function requestToSafeAppsCompatibilityMode(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
 			data: { safeAppsCompatibilityMode: checked }
 		})
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+	}
+
+	async function requestToSiteRpcInterceptionEnabled(checked: boolean) {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_ChangeSettings', data: { siteRpcInterceptionEnabled: checked } })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}
 
@@ -217,9 +224,14 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Enable Gnosis Safe Apps hosting in a real iframe (experimental).' }
+							text = { 'Enable Gnosis Safe App hosting (experimental).' }
 							checked = { safeAppsCompatibilityMode.value }
-							onInput = { requestToGnosisSafeAppsCompatibilityMode }
+							onInput = { requestToSafeAppsCompatibilityMode }
+						/>
+						<CheckBoxSetting
+							text = { 'Enable simulated website HTTP reads for approved Gnosis Safe simulation sessions on all HTTP(S) websites (experimental).' }
+							checked = { siteRpcInterceptionEnabled.value }
+							onInput = { requestToSiteRpcInterceptionEnabled }
 						/>
 						<GnosisSafeAppsHostingSettings />
 					</li>

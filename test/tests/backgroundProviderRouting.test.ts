@@ -675,6 +675,7 @@ describe('background eth_accounts', () => {
 
 		for (const [index, method] of [
 			'connected_to_signer',
+			'site_rpc_request',
 			'eth_accounts_reply',
 			'InterceptorError',
 			'signer_chainChanged',

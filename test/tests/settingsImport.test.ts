@@ -278,7 +278,7 @@ describe('settings import', () => {
 		const { exportSettingsAndAddressBook, getGnosisSafeAppsCompatibilityMode, readRetiredHostingOriginsStorage, importSettingsAndAddressBook, setGnosisSafeAppsCompatibilityMode, seedRetiredHostingOriginsStorage } = await settingsModulePromise
 		await setGnosisSafeAppsCompatibilityMode(true)
 		const exported = await exportSettingsAndAddressBook()
-		if (exported.version !== '1.7') throw new Error('Expected current settings export version')
+		if (exported.version !== '1.8') throw new Error('Expected current settings export version')
 		const legacy = { ...exported, version: '1.6' }
 		const originalJson = JSON.stringify(legacy, (_key, value: unknown) => typeof value === 'bigint' ? `0x${ value.toString(16) }` : value)
 		await seedRetiredHostingOriginsStorage(['https://old-selection.example'])
@@ -297,7 +297,7 @@ describe('settings import', () => {
 		}
 	})
 
-	test('round-trips Gnosis Safe settings in version 1.7 exports', async () => {
+	test('round-trips Gnosis Safe settings in version 1.8 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getGnosisSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setGnosisSafeAppsCompatibilityMode } = await settingsModulePromise
@@ -323,8 +323,8 @@ describe('settings import', () => {
 		await seedRetiredHostingOriginsStorage(['https://safe-app.example', 'https://another.example:8443'])
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.7')
-		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.8')
+		if (exportedSettings.version !== '1.8') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
@@ -679,6 +679,11 @@ describe('settings import', () => {
 				assert.deepEqual(await settings.readRetiredHostingOriginsStorage(), preImportSafeAppsHostOrigins, 'version 1.6 has no hosting selection, so the stored one is kept')
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 			} },
+			{ exportedSettings: { ...version15Import, version: '1.7', settings: { ...version15Import.settings, safeAppsCompatibilityMode: true } }, assertImportedValues: async () => {
+				assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), true)
+				assert.equal(await settings.getSiteRpcInterceptionEnabled(), false)
+				assert.deepEqual(await settings.getSigningAddressPreferences(), [version15SigningPreference])
+			} },
 			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 				assert.equal(await settings.getGnosisSafeAppsCompatibilityMode(), false)
@@ -731,7 +736,7 @@ describe('settings import', () => {
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
-		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
+		if (currentVersionExport?.version !== '1.8') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
 			settings: {
@@ -899,7 +904,7 @@ test('imports discard retired hosting fields of any shape without replacing iner
 	const { CurrentExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
 	const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await settingsModulePromise
 	const exported = await exportSettingsAndAddressBook()
-	if (exported.version !== '1.7') throw new Error('Expected current settings export version')
+	if (exported.version !== '1.8') throw new Error('Expected current settings export version')
 	const serialized = serialize(CurrentExportedSettings, exported)
 	const existing = ['https://inert-existing.example']
 	await browser.storage.local.set({ safeAppsHostOrigins: existing })

@@ -23,7 +23,7 @@ const safePendingFlowSource = await Bun.file(new URL('../../app/ts/gnosisSafe/gn
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
-const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
+const gnosisSafeSessionCapabilitiesCoordinatorSource = await Bun.file(new URL('../../app/ts/background/gnosisSafeSessionCapabilitiesCoordinator.ts', import.meta.url)).text()
 const accessManagementSource = await Bun.file(new URL('../../app/ts/background/accessManagement.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
 const websiteActiveAddressSource = await Bun.file(new URL('../../app/ts/background/websiteActiveAddress.ts', import.meta.url)).text()
@@ -68,7 +68,7 @@ const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
 }
 
 const confirmationPersistenceDefinition = /function persistGnosisSafeConfirmationRefresh/u
-const peerCoordinatorImport = /gnosisSafeAppsCompatibilityCoordinator/u
+const peerCoordinatorImport = /gnosisSafeSessionCapabilitiesCoordinator/u
 
 test('simulation service keeps compatibility exports backed by focused signing modules', () => {
 	assert.equal(simulationFacade.mockSignTransaction, simulationTransactionSigning.mockSignTransaction)
@@ -77,16 +77,18 @@ test('simulation service keeps compatibility exports backed by focused signing m
 	assert.equal(simulationFacade.simulatePersonalSign, simulationPersonalSigning.simulatePersonalSign)
 })
 
-test('Gnosis Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
-	assert.match(safeAppsCompatibilityCoordinatorSource, /function createGnosisSafeAppsCompatibilityCoordinator/u)
+test('Gnosis Safe session capabilities lifecycle has a peer-level coordinator', () => {
+	assert.match(gnosisSafeSessionCapabilitiesCoordinatorSource, /createGnosisSafeAppsCompatibilityFeature/u)
+	assert.match(gnosisSafeSessionCapabilitiesCoordinatorSource, /createSiteBehaviorFeature/u)
+	assert.doesNotMatch(gnosisSafeSessionCapabilitiesCoordinatorSource, /safe_apps_compatibility|site_behavior|sendSubscriptionReplyOrCallBack|getNativeHostedSiteContext/u)
 	assert.match(websiteTabConnectionsSource, /from '\.\/websiteLifecycle\.js'/u)
-	assert.match('import { value } from \'./gnosisSafeAppsCompatibilityCoordinator.js\'', peerCoordinatorImport)
+	assert.match('import { value } from \'./gnosisSafeSessionCapabilitiesCoordinator.js\'', peerCoordinatorImport)
 	assert.doesNotMatch(accessManagementSource, peerCoordinatorImport)
 	assert.doesNotMatch(websiteTabConnectionsSource, /from '\.\/accessManagement\.js'/u)
-	assert.doesNotMatch(accessManagementSource, /function createGnosisSafeAppsCompatibilityCoordinator/u)
+	assert.doesNotMatch(accessManagementSource, /function createGnosisSafeSessionCapabilitiesCoordinator/u)
 	assert.match(backgroundUtilsSource, /export const getWebsiteSocketConnection/u)
 	assert.match(websiteActiveAddressSource, /export async function getWebsiteActiveAddress/u)
-	assert.doesNotMatch(safeAppsCompatibilityCoordinatorSource, /function getConnectionDetails|function getActiveAddressForDomain/u)
+	assert.doesNotMatch(gnosisSafeSessionCapabilitiesCoordinatorSource, /function getConnectionDetails|function getActiveAddressForDomain/u)
 	assert.doesNotMatch(accessManagementSource, /function getConnectionDetails|function getActiveAddressForDomain/u)
 })
 
@@ -238,5 +240,5 @@ test('website lifecycle dependencies are explicit callbacks rather than a global
 	const startupSource = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
 	assert.doesNotMatch(lifecycleSource, /new (?:WeakMap|Map|Set)|subscribeWebsiteLifecycle|publishWebsiteLifecycle/u)
 	assert.match(accessManagementSource, /notifyWebsiteLifecycle\(websiteTabConnections\.lifecycle\?\.accessReconciled\)/u)
-	assert.match(startupSource, /lifecycle: safeAppsCompatibility\.lifecycle/u)
+	assert.match(startupSource, /lifecycle: gnosisSafeSessionCapabilities\.lifecycle/u)
 })

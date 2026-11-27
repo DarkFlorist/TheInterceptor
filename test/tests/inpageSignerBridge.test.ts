@@ -1,3 +1,4 @@
+import type { PageExtensionFactory } from '../../app/inpage/ts/pageExtensions.js'
 import { createGnosisSafeAppsSigningServices } from '../fixtures/gnosisSafeAppsRequestServices.js'
 import { createGnosisSafeAppsBridgeMessage, parseGnosisSafeAppsBridgeMessage, createGnosisSafeAppsCancellation } from '../../app/shared/ts/gnosisSafeAppsBridgeProtocol.js'
 import * as assert from 'assert'
@@ -340,7 +341,14 @@ async function waitFor(condition: () => boolean, timeoutMs = 2000) {
 	}
 }
 
-async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeWindow>['fakeWindow'], importPath: string, runTest: () => Promise<T>) {
+async function initializeInpageModule(importPath: string, extensionFactory?: PageExtensionFactory) {
+	const provider = await import(importPath)
+	// Explicit initialization queues bridge messages; settle them as the old side-effect import did.
+	provider.injectInterceptor(extensionFactory)
+	await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeWindow>['fakeWindow'], importPath: string, runTest: () => Promise<T>, extensionFactory?: PageExtensionFactory) {
 	const previousWindow = (globalThis as { window?: unknown }).window
 	const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 	;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
@@ -355,7 +363,7 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 		}
 	}
 	try {
-		await import(importPath)
+		await initializeInpageModule(importPath, extensionFactory)
 		return await runTest()
 	} finally {
 		;(globalThis as { window?: unknown }).window = previousWindow
@@ -1972,7 +1980,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js')
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
 			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
@@ -1989,6 +1997,7 @@ describe('inpage signer bridge', () => {
 				if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
 				assert.equal(error.code, -32004)
 			}
+			await assert.rejects(provider.request({ method: 'site_rpc_request', params: [] }), /Method not supported/)
 			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: null })
 			let batchCallbackCount = 0
 			const batchReply = await new Promise<unknown>((resolve, reject) => {
@@ -4238,7 +4247,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?json-rpc-error-data')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?json-rpc-error-data')
 			await waitFor(() => signerRequests.length >= 1)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
@@ -4331,7 +4340,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?signer-json-rpc-error-data')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?signer-json-rpc-error-data')
 			await waitFor(() => signerRequests.length >= 1)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
@@ -4381,7 +4390,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?signer-chain-id-error')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?signer-chain-id-error')
 			await waitFor(() => interceptorErrorPayloads.length === 1)
 
 			assert.deepEqual(signerRequests, ['eth_chainId'])
@@ -4426,7 +4435,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?locked-compatibility')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?locked-compatibility')
 			await waitFor(() => 'isInterceptor' in (fakeWindow.ethereum as Record<string, unknown>))
 			assert.equal((fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress, undefined)
 			assert.deepEqual(warnings, [])
@@ -4551,7 +4560,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
 			await waitFor(() => connectedToSigner)
 			sendBackgroundMessage({
 				interceptorApproved: true,
@@ -4601,7 +4610,7 @@ describe('inpage signer bridge', () => {
 		}
 
 		try {
-			await import('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
+			await initializeInpageModule('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 			sendBackgroundMessage({
 				interceptorApproved: true,
@@ -4927,4 +4936,33 @@ test('private bridge wrappers correlate malformed SDK rejections without adding 
 			{ type: 'interceptor_gnosis_safe_apps_bridge', bridgeToken: 'private-token', envelope: { id: 'bad-method', success: false, error: 'Gnosis Safe Apps method must be a string.', version: '9.1.0' } },
 		])
 	})
+})
+
+ test('private optional factory receives context retractions and uses only internal RPC', async () => {
+	const contexts: unknown[] = []
+	let send: ((data: unknown) => void) | undefined
+	let internalRequest = false
+	let result: unknown
+	const { fakeWindow } = createFakeWindow({ handleRequest(request, reply) {
+		send = reply
+		if (request.method !== 'site_rpc_request') return false
+		internalRequest = request.internal === true
+		reply({ interceptorApproved: true, type: 'result', method: request.method, requestId: request.requestId, result: 'private result' })
+		return true
+	} })
+	const factory: PageExtensionFactory = (requestRpc) => ({ setContext(context) {
+		contexts.push(context)
+		if (context !== undefined) void requestRpc({ method: 'site_rpc_request', params: [] }).then((reply) => { result = reply })
+	} })
+	await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?single-private-factory', async () => {
+		await waitFor(() => send !== undefined)
+		send?.({ interceptorApproved: true, type: 'result', method: 'site_behavior', result: { enabled: true } })
+		await waitFor(() => contexts.length === 1)
+		await waitFor(() => result === 'private result')
+		assert.equal(internalRequest, true)
+		send?.({ interceptorApproved: true, type: 'result', method: 'site_behavior', result: undefined })
+		await waitFor(() => contexts.length === 2)
+		assert.deepEqual(contexts, [{ enabled: true }, undefined])
+		assert.equal(Reflect.has(fakeWindow, Symbol.for('TheInterceptor.pageExtensions')), false)
+	}, factory)
 })

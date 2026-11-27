@@ -324,3 +324,9 @@ export const getSocketFromPort = (port: browser.runtime.Port) => {
 
 // MV2 ports may omit frameId; preserve their top-frame fallback consistently for ownership and eligibility.
 export const isTopFramePort = (port: browser.runtime.Port) => port.sender?.frameId === undefined || port.sender.frameId === 0
+
+// Reuse the original browser-derived full frame origin recorded at connection registration, just like signing-origin checks. Never reparse a later port URL or accept an origin selected by the page.
+export function getConnectionOrigin(connections: WebsiteTabConnections, socket: WebsiteSocket) {
+	const connection = getWebsiteSocketConnection(connections, socket)
+	return connection === undefined ? undefined : getWebsiteSocketRequestOrigin(connections, socket, connection.websiteOrigin)
+}

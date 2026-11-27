@@ -432,10 +432,11 @@ function getExistingRuntimeEntrypointPaths() {
 	return runtimeEntrypointPaths.filter((entrypointPath) => fs.existsSync(entrypointPath))
 }
 
-// Bun drops comments while bundling, so the compatibility-mode marker comment is filled in as Bun loads the provider source. Only the provider needs an isolated IIFE scope.
-export async function bundlePageWorldProvider(inpagePath: string, metamaskCompatibilityMode: boolean) {
+// Fill the compatibility marker as Bun loads the provider source, before comments are removed from its classic IIFE bundle.
+export async function bundlePageWorldProvider(inpagePath: string, metamaskCompatibilityMode: boolean, compositionPath: string) {
+	if (typeof compositionPath !== 'string' || compositionPath.length === 0) throw new Error('A provider composition entrypoint is required.')
 	const buildResult = await Bun.build({
-		entrypoints: [inpagePath],
+		entrypoints: [compositionPath],
 		target: 'browser',
 		format: 'iife',
 		splitting: false,
@@ -461,6 +462,7 @@ type RuntimeBundleOptions = {
 	readonly root: string
 	readonly outdir: string
 	readonly inpagePath: string
+	readonly inpageCompositionPath?: string
 	readonly documentStartPath: string
 	readonly inpageSourcePath?: string
 	readonly documentStartSourcePath?: string
@@ -468,6 +470,7 @@ type RuntimeBundleOptions = {
 
 // Keep marker-bearing inputs separate from generated runtime paths, so repeated bundles never consume their own output.
 export async function buildRuntimeEntrypoints(entrypoints: readonly string[], options: RuntimeBundleOptions): Promise<RuntimeEntrypointCopy[]> {
+	if (entrypoints.includes(options.inpagePath) && options.inpageCompositionPath === undefined) throw new Error('A provider composition entrypoint is required.')
 	// Content-script entrypoints remain classic scripts; extension pages use module bundles.
 	const moduleEntrypoints = entrypoints.filter((entrypoint) => entrypoint !== options.inpagePath)
 	const sourcePath = (entrypoint: string) => entrypoint === options.documentStartPath ? options.documentStartSourcePath ?? entrypoint : entrypoint
@@ -485,8 +488,10 @@ export async function buildRuntimeEntrypoints(entrypoints: readonly string[], op
 	const hasProvider = entrypoints.includes(options.inpagePath)
 	if (documentStart === undefined && !hasProvider) return bundledEntrypoints
 	if (documentStart === undefined || !hasProvider) throw new Error('The provider and document-start bundles are generated together.')
+	const compositionPath = options.inpageCompositionPath
+	if (compositionPath === undefined) throw new Error('A provider composition entrypoint is required.')
 	const pageWorldProviders = new Map<boolean, string>()
-	for (const metamaskCompatibilityMode of [false, true]) pageWorldProviders.set(metamaskCompatibilityMode, await bundlePageWorldProvider(options.inpageSourcePath ?? options.inpagePath, metamaskCompatibilityMode))
+	for (const metamaskCompatibilityMode of [false, true]) pageWorldProviders.set(metamaskCompatibilityMode, await bundlePageWorldProvider(options.inpageSourcePath ?? options.inpagePath, metamaskCompatibilityMode, compositionPath))
 	// The MV2 document-start scripts embed the exact provider bytes that MV3 registers.
 	const generatedArtifacts = generateInpageArtifacts(fs.readFileSync(documentStart.bundledEntrypointPath, 'utf8'), (metamaskCompatibilityMode) => {
 		const source = pageWorldProviders.get(metamaskCompatibilityMode)
@@ -512,6 +517,7 @@ async function bundleRuntimeEntrypoints() {
 			root: appDirectory,
 			outdir: bundledOutputDirectory,
 			inpagePath: inpageProviderPath,
+			inpageCompositionPath: path.join(appDirectory, 'inpage/ts/inpageBootstrap.ts'),
 			documentStartPath: inpageDocumentStartPath,
 			inpageSourcePath: path.join(appDirectory, 'inpage', 'ts', 'inpage.ts'),
 			documentStartSourcePath: path.join(appDirectory, 'inpage', 'ts', 'document_start.ts'),

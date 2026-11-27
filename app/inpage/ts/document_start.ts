@@ -1,4 +1,4 @@
-function injectPageWorldScripts() {
+function injectPageWorldProvider() {
 	if (Reflect.get(globalThis, 'interceptorInjected') === true) return
 
 	const checkAndThrowRuntimeLastError = () => {
@@ -19,14 +19,15 @@ function injectPageWorldScripts() {
 		const pageWorldProviderSource = '[[pageWorldProviderSource]]'
 		const pageWorldProviderScriptPath = '[[pageWorldProviderScriptPath]]'
 		const providerRanAttribute = 'data-interceptor-provider-ran'
-		const inlineProviderScript = document.createElement('script')
-		inlineProviderScript.textContent = `document.currentScript.setAttribute('${ providerRanAttribute }', '');\n${ pageWorldProviderSource }`
-		insertAndRemoveScript(inlineProviderScript)
-		if (!inlineProviderScript.hasAttribute(providerRanAttribute)) {
-			// Firefox exempts extension resources from the page CSP, so the provider still loads from its URL there, though asynchronously.
-			const externalProviderScript = document.createElement('script')
-			externalProviderScript.src = browser.runtime.getURL(pageWorldProviderScriptPath)
-			insertAndRemoveScript(externalProviderScript)
+		const inlineScript = document.createElement('script')
+		inlineScript.textContent = `document.currentScript.setAttribute('${ providerRanAttribute }', '');\n${ pageWorldProviderSource }`
+		insertAndRemoveScript(inlineScript)
+		if (!inlineScript.hasAttribute(providerRanAttribute)) {
+			// A page CSP can block inline execution; load the same provider from its extension URL.
+			const externalScript = document.createElement('script')
+			externalScript.async = false
+			externalScript.src = browser.runtime.getURL(pageWorldProviderScriptPath)
+			insertAndRemoveScript(externalScript)
 		}
 		Reflect.set(globalThis, 'interceptorInjected', true)
 		checkAndThrowRuntimeLastError()
@@ -36,4 +37,4 @@ function injectPageWorldScripts() {
 	}
 }
 
-injectPageWorldScripts()
+injectPageWorldProvider()

@@ -133,9 +133,10 @@ test('native signer callback tokens cannot be consumed by a different frame or g
 
 test('ordinary child frames cannot own native-host signer callbacks even with persisted origin approval', async () => {
 	const h = await setup()
-	const ordinary = new Map(h.connections)
-	h.connections = ordinary
-	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, h.signerPort), false)
+	const ordinary = createPort(7, undefined, 2, h.signer.socket.connectionName).port
+	Object.assign(ordinary, { sender: h.signerPort.sender })
+	h.signer.port = ordinary
+	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, ordinary), false)
 	assert.equal(forwardNativeGnosisSafeAppsSignerRequest(h.connections, h.forward, h.send), false)
 })
 

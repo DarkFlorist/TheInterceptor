@@ -11,3 +11,14 @@ for (const hostUrl of ['chrome-extension://extension-id/html3/gnosisSafeAppsHost
 		assert.equal(getAuthorizedNativeGnosisSafeAppsHostSenderUrl(sender, 'extension-id', [hostUrl]), undefined)
 	}
 })
+
+for (const hostUrl of ['chrome-extension://extension-id/html3/gnosisSafeAppsHostV3.html', 'moz-extension://extension-uuid/html/gnosisSafeAppsHost.html']) test(`child transport authorizes its browser-reported host page separately from its website URL: ${ hostUrl }`, () => {
+	const child = { id: 'extension-id', url: 'https://app.example/swap' }
+	const launchUrl = `${ hostUrl }?sourceTabId=12#session`
+	assert.equal(getAuthorizedNativeGnosisSafeAppsHostSenderUrl(child, 'extension-id', [hostUrl]), undefined)
+	assert.equal(getAuthorizedNativeGnosisSafeAppsHostSenderUrl(child, 'extension-id', [hostUrl], launchUrl), launchUrl)
+	assert.equal(getAuthorizedNativeGnosisSafeAppsHostSenderUrl({ ...child, id: 'other-extension' }, 'extension-id', [hostUrl], launchUrl), undefined)
+	for (const pageUrl of [`${ hostUrl }/lookalike`, hostUrl.replace('gnosisSafeAppsHost', 'settingsView'), `https://app.example/?host=${ hostUrl }`]) {
+		assert.equal(getAuthorizedNativeGnosisSafeAppsHostSenderUrl(child, 'extension-id', [hostUrl], pageUrl), undefined)
+	}
+})

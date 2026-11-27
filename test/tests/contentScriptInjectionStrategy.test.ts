@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
-import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { getManifestV2IsolatedWorldInjections } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
 type RuntimeMessage = {
@@ -687,7 +687,7 @@ describe('content script injection strategy', () => {
 	test('exposes every manifest v3 main-world script to Chromium', () => {
 		const webAccessibleResources = getManifestV3WebAccessibleResources()
 		for (const metamaskCompatibilityMode of [false, true]) {
-			for (const scriptPath of getPageWorldScriptPaths(metamaskCompatibilityMode)) assert.equal(webAccessibleResources.includes(scriptPath), true)
+			for (const scriptPath of (metamaskCompatibilityMode ? ['inpage/js/inpage-metamask-compatibility.js'] : ['inpage/js/inpage.js'])) assert.equal(webAccessibleResources.includes(scriptPath), true)
 		}
 	})
 
@@ -752,7 +752,7 @@ describe('content script injection strategy', () => {
 		]
 		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
 		const configuredInjectedFiles = [false, true].flatMap((metamaskCompatibilityMode) => getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode).map((injection) => injection.file))
-		const configuredPageWorldScripts = [...getPageWorldScriptPaths(false), ...getPageWorldScriptPaths(true)]
+		const configuredPageWorldScripts = ['inpage/js/inpage.js', 'inpage/js/inpage-metamask-compatibility.js']
 		assert.deepEqual(getManifestV2WebAccessibleResources().sort(), [...new Set([...configuredInjectedFiles, ...configuredPageWorldScripts])].sort())
 	})
 
@@ -764,7 +764,7 @@ describe('content script injection strategy', () => {
 			await updateContentScriptInjectionStrategyManifestV3()
 
 			const mainWorldRegistration = getRegisteredContentScripts().find((registration) => registration.id === 'inpage')
-			assert.deepEqual(mainWorldRegistration?.js, [metamaskCompatibilityMode ? '/inpage/js/inpage-metamask-compatibility.js' : '/inpage/js/inpage.js'])
+			assert.deepEqual(mainWorldRegistration?.js, (metamaskCompatibilityMode ? ['/inpage/js/inpage-metamask-compatibility.js'] : ['/inpage/js/inpage.js']))
 		}
 	})
 

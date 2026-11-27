@@ -1,6 +1,7 @@
+import { getInternalRequestAdmission, internalRequestAccessContextOwners } from './internalRequestAdmissions.js'
+import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethods.js'
 import { connectedToSigner, signerReply } from './nativeGnosisSafeAppsProviderAdapter.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
-import { prepareGnosisSafeAppsRequest } from './gnosisSafeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -11,9 +12,11 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
 import { withSuppressedUnscopedConnectionEventsForSocket } from './websiteConnectionEvents.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
+import { verifyRequestAccess } from './requestAccessVerification.js'
+import { createRequestAccessContextResolver, hasRequestAccessAddress, type AddressedRequestAccessContext, type RequestAccessContext } from './requestAccessContext.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
@@ -40,18 +43,6 @@ import { getInvalidRpcParamsReply } from './rpcParseFailureReply.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const INTERNAL_PROVIDER_METHODS = [
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'InterceptorError',
-	'safe_apps_request',
-	'signer_chainChanged',
-	'signer_reply',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
-
 // A reply plus optional work that may only run once the page has it, e.g. notifications for a subscription id the reply carries; keeping the work beside the reply keeps RPCReply plain, serializable wire data. Only handleContentScriptMessage delivers these, right after handling: replies sent later (confirmation windows, MV2 reconnect retries, persisted terminal replies) answer requests whose handler returned doNotReply, so they never have follow-up work.
 type HandledRpcRequest = { readonly reply: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
 // May be async, so its failures are caught whether it throws or rejects.
@@ -360,6 +351,12 @@ async function getActiveAddressForRequest(settings: Settings, websiteTabConnecti
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
+const resolveRequestAccessContext = createRequestAccessContextResolver(internalRequestAccessContextOwners)
+
+async function getRequestAddressContext(settings: Settings, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, websiteOrigin: string) {
+	return await resolveRequestAccessContext(websiteTabConnections, socket, request, settings, websiteOrigin, async () => await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId))
+}
+
 async function discoverAccountRequestAddressContext(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
@@ -367,18 +364,19 @@ async function discoverAccountRequestAddressContext(
 	websiteOrigin: string,
 ) {
 	const settings = await getSettings()
-	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
-	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
-	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	const authority = await getRequestAddressContext(settings, websiteTabConnections, socket, request, websiteOrigin)
+	const { activeAddress } = authority
+	if (activeAddress !== undefined) return { ...authority, settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (!isAccountConnectionMethod(request.method)) return { ...authority, settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 	const websiteAccess = getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin)
-	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { ...authority, settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
-	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	if (refreshedActiveAddress !== undefined) return { ...authority, settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getWalletActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
-	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	return { ...authority, settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 }
 
 const isSignerProviderDisconnectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_PROVIDER_DISCONNECTED
@@ -407,8 +405,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
 		return routeProviderReply(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
-	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
+	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
@@ -424,26 +422,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return routeProviderReply(websiteTabConnections, message)
 	}
-	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	const requestAccessContext = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = requestAccessContext
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return routeProviderReply(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
-	const accountIdentityRequest = isAccountOnlyMethod(request.method)
-	const verifyRequestAccess = () => verifyAccess(
-		websiteTabConnections,
-		socket,
-		accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1',
-		websiteOrigin,
-		activeAddress,
-		settings,
-		{
-			ignoreConnectionApproval: accountIdentityRequest,
-		},
-	)
-	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
+	const verifyInitialAccess = () => verifyRequestAccess(websiteTabConnections, request, requestAccessContext, settings, { kind: 'initial' })
+	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyInitialAccess) : verifyInitialAccess()
 	if (access === 'interceptorDisabled') return routeProviderReply(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
@@ -474,9 +462,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
+		const refreshedContext = { ...requestAccessContext, activeAddress: refreshedActiveAddress }
+		const refreshedAccess = verifyRequestAccess(websiteTabConnections, request, refreshedContext, refreshedSettings, { kind: 'initial' })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
-		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus)
+		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedContext, publishRpcConnectionStatus)
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
@@ -500,14 +489,14 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 			const website = await websitePromise
-			return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+			return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, requestAccessContext, publishRpcConnectionStatus)
 		}
 		default: assertNever(access)
 	}
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
-	const { replyDelivered, afterReplyDelivered } = await replyToContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, accessContext: RequestAccessContext, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	const { replyDelivered, afterReplyDelivered } = await replyToContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, accessContext, publishRpcConnectionStatus)
 	// Follow-up messages, such as notifications for a subscription id the reply carries, only make sense to a page that received the reply.
 	if (replyDelivered === true && afterReplyDelivered !== undefined) await runAfterReplyDelivered(afterReplyDelivered)
 	return replyDelivered
@@ -533,13 +522,15 @@ type RequestRouting =
 	| { readonly kind: 'resolved', readonly resolved: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
 
 // One routing decision on the given settings. A re-route repeats all of it because every step depends on the mode: the Gnosis Safe signing state, Gnosis Safe Apps admission and rpcContext, the simulation overlay, and the services handleRPCRequest selects.
-async function routeRequest(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<RequestRouting> {
+async function routeRequest(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, settings: Settings, accessContext: AddressedRequestAccessContext, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<RequestRouting> {
+	const { activeAddress } = accessContext
 	const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const safeSigningMode = isActiveSigningGnosisSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 	let rpcContext: RpcRequestContext = { request }
-	if (request.method === 'safe_apps_request') {
-		const admission = await prepareGnosisSafeAppsRequest(simulationServicesOwner.getCurrent(), websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+	const admissionOwner = getInternalRequestAdmission(request.method)
+	if (admissionOwner !== undefined) {
+		const admission = await admissionOwner.prepare({ services: simulationServicesOwner.getCurrent(), connections: websiteTabConnections, request, website, settings, accessContext, safeSigningMode })
 		if (admission.kind === 'reply') return { kind: 'answeredAtAdmission', reply: admission.reply }
 		rpcContext = admission.context
 	}
@@ -551,24 +542,27 @@ async function routeRequest(simulationServicesOwner: SimulationServicesOwner, we
 	return { kind: 'resolved', resolved, afterReplyDelivered }
 }
 
-// Website access itself does not change with the mode, but the mode selects the active address and access is granted per address. So a re-route keeps the earlier access decision only for the address that decision covered; any other address needs its own stored grant. Undefined means the website has no address to be routed on.
-async function getActiveAddressForReroute(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, verifiedActiveAddress: AddressBookEntry, settings: Settings) {
-	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId)
-	if (activeAddress === undefined || activeAddress.address === verifiedActiveAddress.address) return activeAddress
-	return getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, activeAddress) === 'hasAccess' ? activeAddress : undefined
+// Resolve the mode-selected authority again, then use the same access policy as initial admission without opening another consent flow.
+async function getAccessContextForReroute(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, previouslyVerified: AddressedRequestAccessContext, settings: Settings) {
+	const context = await getRequestAddressContext(settings, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, request, website.websiteOrigin)
+	if (!hasRequestAccessAddress(context)) return undefined
+	return verifyRequestAccess(websiteTabConnections, request, context, settings, { kind: 'reroute', previouslyVerified }) === 'hasAccess' ? context : undefined
 }
 
 // Sends the request's only reply, turning handling failures into an error reply. Follow-up work is returned instead of run, so its failures cannot reach this catch and send a second reply.
-async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddressInitiallyVerified: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
+async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, accessContextInitiallyVerified: RequestAccessContext, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
 	try {
+		if (!hasRequestAccessAddress(accessContextInitiallyVerified)) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const refuseModeChange = () => replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
 		for (let routingAttempt = 1; routingAttempt <= MAX_REQUEST_ROUTING_ATTEMPTS; routingAttempt++) {
 			const simulationModeGuard = captureSimulationModeGuard()
 			const settings = await getSettings()
-			const activeAddress = routingAttempt === 1 ? activeAddressInitiallyVerified : await getActiveAddressForReroute(websiteTabConnections, request, website, activeAddressInitiallyVerified, settings)
-			if (activeAddress === undefined) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
-			const routing = await routeRequest(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, settings, publishRpcConnectionStatus)
+			const accessContext = routingAttempt === 1 ? accessContextInitiallyVerified : await getAccessContextForReroute(websiteTabConnections, request, website, accessContextInitiallyVerified, settings)
+			// Website metadata and reroutes may wait across navigation or permission changes. Validate the captured authority before execution, without resolving a second native context.
+			if (accessContext === undefined || !hasRequestAccessAddress(accessContext) || accessContext.requireAddressAccess && !await accessContext.isCurrent(settings)) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
+			const { activeAddress } = accessContext
+			const routing = await routeRequest(simulationServicesOwner, websiteTabConnections, request, website, settings, accessContext, publishRpcConnectionStatus)
 			if (routing.kind === 'answeredAtAdmission') return replyDeliveredWithoutFollowUp(routeProviderReply(websiteTabConnections, routing.reply))
 			const { resolved, afterReplyDelivered } = routing
 			if (resolved.type === 'forwardToSigner') {

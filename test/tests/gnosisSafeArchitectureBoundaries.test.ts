@@ -237,7 +237,7 @@ test('only the Gnosis Safe message preview replaces a Gnosis Safe\'s code; Gnosi
 
 test('the content-script router delegates Gnosis Safe Apps admission and error mapping to its feature handler', async () => {
 	const handler = await Bun.file(new URL('../../app/ts/background/gnosisSafeAppsRequestHandler.ts', import.meta.url)).text()
-	assert.match(backgroundSource, /await prepareGnosisSafeAppsRequest\(/u)
+	assert.match(backgroundSource, /getInternalRequestAdmission\(request.method\)/u)
 	assert.doesNotMatch(backgroundSource, /getGnosisSafeAppsCompatibilityMode|isGnosisSafeAppsConnectionEligible|getGnosisSafeAppsExecution|getGnosisSafeAppsRequestCommand|isGnosisSafeAppsRequestPolicyError/u)
 	assert.match(handler, /isGnosisSafeAppsConnectionEligibleForAdmittedAddress\(/u)
 	assert.match(handler, /isGnosisSafeAppsRequestPolicyError\(/u)
@@ -260,4 +260,23 @@ test('Gnosis Safe message approval encoding and review matching have domain owne
 	for (const source of [safeTransactionConfirmationSource, details]) assert.match(source, /matchesGnosisSafeMessageApproval\(/u)
 	assert.match(delegates, /decodeGnosisSafeMessageApproval\(/u)
 	for (const source of [policy, safeTransactionConfirmationSource, details]) assert.doesNotMatch(source, /GNOSIS_SAFE_SIGN_MESSAGE_ABI|getGnosisSafeMessageDigest/u)
+})
+
+
+test('generic account resolution composes effective access contexts without site capability or native transport branches', async () => {
+	const resolver = backgroundSource.slice(backgroundSource.indexOf('async function getRequestAddressContext('), backgroundSource.indexOf('async function discoverAccountRequestAddressContext('))
+	const admissionComposition = await Bun.file(new URL('../../app/ts/background/requestAccessContext.ts', import.meta.url)).text()
+	assert.match(resolver, /resolveRequestAccessContext/u)
+	assert.doesNotMatch(resolver, /site_rpc_request|getNativeHostedSiteContext|isTopFramePort/u)
+	assert.match(admissionComposition, /createRequestAccessContextResolver/u)
+	assert.match(backgroundSource, /createRequestAccessContextResolver\(internalRequestAccessContextOwners\)/u)
+	assert.doesNotMatch(admissionComposition, /siteReadRequestAdmission|site_rpc_request|isTopFramePort|getNativeHostedSiteContext/u)
+})
+
+
+test('generic routing delegates site token snapshots and reply construction to site admission', () => {
+	const route = backgroundSource.slice(backgroundSource.indexOf('async function routeRequest('), backgroundSource.indexOf('async function getAccessContextForReroute('))
+	assert.match(route, /await admissionOwner.prepare/u)
+	assert.doesNotMatch(route, /request.method === '(?:safe_apps_request|site_rpc_request)'/u)
+	assert.doesNotMatch(route, /getSiteSimulationTokens|getSiteSimulationTokenMetadata|getUpdatedSimulationStackSnapshot|identifyAddress/u)
 })

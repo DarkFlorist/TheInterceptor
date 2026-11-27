@@ -17,6 +17,7 @@ import { createSigningWalletScript } from '../fixtures/signingWallet.js'
 import { createNativeGnosisSafeAppsFixtureClient } from '../fixtures/nativeGnosisSafeAppsClient.js'
 import { getHtmlFile } from '../../app/ts/utils/htmlPages.js'
 
+const httpInterception = process.argv.includes('--http-interception')
 const safeAddress = '0x1234567890123456789012345678901234567890'
 const owner = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 const ownerAddress = owner.address.toLowerCase()
@@ -49,6 +50,9 @@ const fixtureScript = `(() => {
 			if(method==='__setDraft')draft.value=params.value;
 			results[name]={value:draft.value};report();return;
 		}
+		if(method==='__nativeHttpBalance') {
+			void fetch('/native-site-rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:42,method:'eth_getBalance',params:[${ JSON.stringify(safeAddress) },'latest']})}).then(async response=>{results[name]={overlay:response.headers.get('x-interceptor-simulation'),value:await response.json()};report()},error=>{results[name]={error:String(error)};report()});return;
+		}
 		void request(method,params).then(reply=>{results[name]=reply;report()},error=>{results[name]={error:String(error)};report()});
 	});
 	void Promise.all([request('getSafeInfo',undefined,1000),request('getChainInfo'),request('getEnvironmentInfo')]).then(([info,chain,environment])=>{results.info=info;results.chain=chain;results.environment=environment;const status=document.querySelector('#connection-status');if(status)status.textContent=info.success?'Connected Gnosis Safe: '+info.data.safeAddress+' · chain '+info.data.chainId:'Connection failed: '+String(info.error);report()},error=>{results.error=String(error);report()});
@@ -59,6 +63,10 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
 	if (request.method === 'OPTIONS') return new Response(undefined, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'POST' } })
 	if (request.method === 'POST') {
 		const value: unknown = await request.json()
+		if (url.pathname === '/native-site-rpc') {
+			if (typeof value !== 'object' || value === null || !('method' in value) || typeof value.method !== 'string' || !('id' in value) || (typeof value.id !== 'number' && typeof value.id !== 'string')) throw new Error('Invalid native site RPC fixture request')
+			return Response.json({ jsonrpc: '2.0', id: value.id, result: value.method === 'eth_chainId' ? '0x1' : '0x2a' }, { headers: { 'Access-Control-Allow-Origin': '*' } })
+		}
 		if (typeof value !== 'object' || value === null || !('method' in value) || typeof value.method !== 'string' || !('id' in value) || typeof value.id !== 'number') throw new Error('Invalid native host test RPC request')
 		return Response.json({ jsonrpc: '2.0', id: value.id, result: await rpc.handleRpcRequest({ id: value.id, method: value.method, params: 'params' in value && Array.isArray(value.params) ? value.params : undefined }) }, { headers: { 'Access-Control-Allow-Origin': '*' } })
 	}
@@ -144,7 +152,7 @@ try {
 			const appUrl = `${ server.url.origin }/?${ new URLSearchParams({ parentOrigin: extensionOrigin }) }`
 			const grants = [{ website: { websiteOrigin: server.url.host }, access: true, addressAccess: [{ address: safeAddress, access: true }] }]
 			await settings.evaluate(`(async () => {
-				await browser.storage.local.set({safeAppsCompatibilityMode:true,simulationMode:true,useSignersAddressAsActiveAddress:false,independentActiveSimulationAddress:'${ safeAddress }',activeSigningSafeAddress:'${ safeAddress }',activeSigningAddress:'${ ownerAddress }',signingAddressPreferences:[{signerAddress:'${ ownerAddress }',selection:'safe',safeAddress:'${ safeAddress }',chainId:'0x1'}],userAddressBookEntriesV3:[{type:'safe',name:'Native host Gnosis Safe',address:'${ safeAddress }',chainId:'0x1',entrySource:'User',useAsActiveAddress:true,askForAddressAccess:false,safeSignerAddresses:['${ ownerAddress }'],safeSimulationSignerAddress:'${ ownerAddress }',safeVersion:'1.4.1'}],websiteAccess:${ JSON.stringify(grants) }});
+				await browser.storage.local.set({safeAppsCompatibilityMode:true,siteRpcInterceptionEnabled:${ httpInterception },simulationMode:true,useSignersAddressAsActiveAddress:false,independentActiveSimulationAddress:'${ safeAddress }',activeSigningSafeAddress:'${ safeAddress }',activeSigningAddress:'${ ownerAddress }',signingAddressPreferences:[{signerAddress:'${ ownerAddress }',selection:'safe',safeAddress:'${ safeAddress }',chainId:'0x1'}],userAddressBookEntriesV3:[{type:'safe',name:'Native host Gnosis Safe',address:'${ safeAddress }',chainId:'0x1',entrySource:'User',useAsActiveAddress:true,askForAddressAccess:false,safeSignerAddresses:['${ ownerAddress }'],safeSimulationSignerAddress:'${ ownerAddress }',safeVersion:'1.4.1'}],websiteAccess:${ JSON.stringify(grants) }});
 				await browser.runtime.sendMessage({method:'popup_changeActiveRpc',data:${ JSON.stringify(network) }});
 			})()`)
 			for (const simulationMode of process.argv.includes('--signing-only') ? [false] : [true, false]) {
@@ -177,6 +185,24 @@ try {
 						assert.equal(observed.native.timersUnchanged, true)
 						assert.ok(observed.native.referrer === '' || observed.native.referrer.startsWith(extensionOrigin), 'Native referrer is empty or the real extension host, never a synthetic website')
 						assert.ok(observed.replies.every((reply) => reply.origin === extensionOrigin && reply.sourceIsParent))
+						for (const sdkEnabled of httpInterception && simulationMode ? [true, false, true] : [true]) {
+							await settings.evaluate(`browser.storage.local.set({safeAppsCompatibilityMode:${ sdkEnabled }})`)
+							let probe = 0
+							await waitForBrowserCondition(async () => {
+								const name = `httpBalance${ sdkEnabled }${ probe++ }`
+								await command(host, name, '__nativeHttpBalance')
+								await waitForBrowserCondition(async () => await host.evaluate(`nativeHostFixture.at(-1)?.results.${ name }!==undefined`), 'native child HTTP reply')
+								const response = await host.evaluate<{ overlay: string | null, value: { result: string } }>(`nativeHostFixture.at(-1).results.${ name }`)
+								return response.overlay === (httpInterception && simulationMode ? 'true' : null) && response.value.result === (httpInterception && simulationMode ? '0x0' : '0x2a')
+							}, 'same-tab native HTTP authority with independent SDK preference')
+						}
+						if (httpInterception && simulationMode) {
+							// SDK preference changes intentionally pause SDK admission until the user retries; HTTP authority remains independently live above.
+							await waitForBrowserCondition(async () => await host.evaluate('document.querySelector("[role=status]")?.dataset.lastContextChange?.includes("safeAppsCompatibilityMode")'), 'SDK preference context invalidation')
+							await host.reload()
+							await observeHostFixture(host)
+							await waitForBrowserCondition(async () => await host.evaluate('document.querySelector("[role=status]")?.textContent?.includes("handshake received")'), 'SDK handshake after explicit Retry')
+						}
 						await host.evaluate(`window.dispatchEvent(new MessageEvent('message',{source:document.querySelector('iframe').contentWindow,origin:'https://different.example',data:{id:'wrong-origin',method:'getSafeInfo',env:{sdkVersion:'9.1.0'}}}))`)
 						await command(host, 'afterWrongOrigin', 'getSafeInfo')
 						await waitForBrowserCondition(async () => await host.evaluate('nativeHostFixture.at(-1)?.results.afterWrongOrigin?.success===true'), 'valid SDK request after wrong-origin message')
@@ -309,7 +335,8 @@ try {
 						const hostTabId = await host.evaluate<number>('browser.tabs.getCurrent().then(tab=>tab.id)')
 						await host.reload()
 						await observeHostFixture(host)
-						await waitForBrowserCondition(async () => await host.evaluate('document.querySelector("[role=status]")?.textContent?.includes("handshake received")'), 'native session reconnects after reload without a source tab')
+						// A successful metadata refresh can replace the handshake status before the harness observes it. Both statuses require a received handshake; the fresh SDK request below proves usable authority after reload.
+						await waitForBrowserCondition(async () => await host.evaluate('(() => {const status=document.querySelector("[role=status]")?.textContent;return status?.includes("handshake received")||status?.includes("The app connection is still active.")})()'), 'native session reconnects after reload without a source tab')
 						await command(host, 'afterReload', 'getSafeInfo')
 						await waitForBrowserCondition(async () => await host.evaluate('nativeHostFixture.at(-1)?.results.afterReload?.success===true'), 'native SDK request after host reload')
 						assert.equal(await host.evaluate('browser.tabs.getCurrent().then(tab=>tab.id)'), hostTabId, 'Reload retains the host session tab')
@@ -333,7 +360,7 @@ try {
 					}
 				} finally { await source.close() }
 				await settings.evaluate(`browser.storage.local.set({websiteAccess:${ JSON.stringify(grants) }})`)
-				for (const path of ['/strict-parent', '/denied-frame']) {
+				for (const path of httpInterception ? [] : ['/strict-parent', '/denied-frame']) {
 					const unsupportedUrl = `${ server.url.origin }${ path }?${ new URLSearchParams({ parentOrigin: extensionOrigin }) }`
 					const source = await session.openPage(unsupportedUrl)
 					try {

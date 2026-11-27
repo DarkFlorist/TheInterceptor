@@ -79,3 +79,20 @@ The earlier 1inch investigation found a separate provider defect: approved ifram
 Historical Aave connection before the full-screen/background-session refactor (Chrome simulation configuration, no transaction submitted):
 
 ![Aave connected through the native extension host](screenshots/native-gnosis-safe-aave-chrome.png)
+
+
+## Child HTTP simulation reads
+
+The HTTP-interception child adds a separate, default-off **simulated website HTTP reads** setting. Enabling Gnosis Safe App hosting alone does not enable it. Existing backups preserve hosting and leave the new capability off; version 1.8 backups store both choices independently.
+
+When enabled, approved Gnosis Safe simulation sessions receive supported JSON-RPC and vendor balance/status overlays on any HTTP(S) page. Each background read still checks the current account, chain and website grant. Signing, other-chain and unknown responses keep native network behavior. An explicitly disabled publication releases the native iframe's early network reads without an overlay.
+
+The build privately composes the HTTP feature with the provider into one classic script for both browsers. The provider module has no vendor imports, and no page-global registration function can capture its internal RPC callback. This includes the feature code in the assembled provider artifact while allowing live preference changes and avoiding a public privileged registration channel.
+
+Portfolio wire mapping delegates exact quantities, selected-chain value changes and group totals to a typed aggregation owner. Simulation logs and HTTP overlays derive native currency identity from one shared constant.
+
+The settings scenario runs on both browsers through `bun run test:browsers`. These captures show the two independent controls; simulated website HTTP reads default to off:
+
+| Chrome MV3 | Firefox MV2 |
+| --- | --- |
+| ![Independent hosting and HTTP settings in Chrome](screenshots/gnosis-safe-session-settings-chrome.png) | ![Independent hosting and HTTP settings in Firefox](screenshots/gnosis-safe-session-settings-firefox.png) |

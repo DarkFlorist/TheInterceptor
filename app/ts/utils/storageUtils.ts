@@ -58,6 +58,7 @@ type RequiredStartupStorageRepairs = { [Key in Exclude<keyof StartupStorageValue
 // Every startup key declares its repair policy; only tracked keys may explicitly decline repair.
 const startupStorageDefaultWriters: StartupStorageRepairWriters = {
 	simulationMode: undefined,
+	siteRpcInterceptionEnabled: async (value) => await browserStorageLocalSet({ siteRpcInterceptionEnabled: value }),
 	independentActiveSimulationAddress: async (value) => await browserStorageLocalSet({ independentActiveSimulationAddress: value }),
 	activeSigningSafeAddress: async (value) => await browserStorageLocalSet({ activeSigningSafeAddress: value }),
 	openedPageV2: async (value) => await browserStorageLocalSet({ openedPageV2: value }),
@@ -150,6 +151,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('rpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('safeAppsCompatibilityMode'),
+	funtypes.Literal('siteRpcInterceptionEnabled'),
 	funtypes.Literal('userAddressBookEntries'),
 	funtypes.Literal('userAddressBookEntriesV2'),
 	funtypes.Literal('userAddressBookEntriesV3'),

@@ -92,6 +92,7 @@ const InpageScriptSuccessCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('site_behavior'), result: funtypes.ReadonlyPartial({ rpcInterception: funtypes.ReadonlyObject({ origin: funtypes.String, chainId: EthereumQuantity, methods: funtypes.ReadonlyArray(funtypes.String), chainRoutedProxyPaths: funtypes.ReadonlyArray(funtypes.String) }).And(funtypes.ReadonlyPartial({ address: EthereumAddress })) }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ canRequestAccess: funtypes.Boolean })) }),
 )
 
@@ -167,6 +168,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: GnosisSafeAppsRequestCommand }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('site_rpc_request'), result: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.ReadonlyArray(funtypes.ReadonlyObject({ address: EthereumAddress, name: funtypes.String, symbol: funtypes.String, decimals: EthereumQuantity }))) }),
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
@@ -747,6 +749,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
+		siteRpcInterceptionEnabled: funtypes.Boolean,
 	})
 })
 
@@ -855,6 +858,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
+		siteRpcInterceptionEnabled: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})

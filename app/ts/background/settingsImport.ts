@@ -1,7 +1,7 @@
 import { normalizeImportedSettings, type ExportedSettings } from '../types/exportedSettingsTypes.js'
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, gnosisSafeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
+import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, siteRpcInterceptionEnabledStorageWrite, gnosisSafeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './storageVariables.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
@@ -33,6 +33,7 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 			websiteAccessStorageWrite(settings.websiteAccess),
 			useTabsInsteadOfPopupStorageWrite(settings.useTabsInsteadOfPopup),
 			gnosisSafeAppsCompatibilityModeStorageWrite(settings.safeAppsCompatibilityMode),
+			siteRpcInterceptionEnabledStorageWrite(settings.siteRpcInterceptionEnabled),
 			...settings.metamaskCompatibilityMode === undefined ? [] : [metamaskCompatibilityModeStorageWrite(settings.metamaskCompatibilityMode)],
 		],
 	}))

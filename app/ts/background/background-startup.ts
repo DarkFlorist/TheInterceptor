@@ -7,7 +7,7 @@ import { isNativeGnosisSafeAppsPreparationError } from './nativeGnosisSafeAppsSe
 import { attachNativeGnosisSafeAppsHostContext } from './nativeGnosisSafeAppsHostContext.js'
 import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
-import { createGnosisSafeAppsCompatibilityFeature, initializeGnosisSafeAppsCompatibility } from './gnosisSafeAppsCompatibilityCoordinator.js'
+import { createGnosisSafeSessionCapabilitiesFeature, initializeGnosisSafeSessionCapabilities } from './gnosisSafeSessionCapabilitiesCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
@@ -51,8 +51,8 @@ import { initializeTabStateStorage } from './tabStateLifecycle.js'
 import { getPopupMessageSenderKind, isPopupMessageAllowedFromSender } from './popupMessageSenderPolicy.js'
 
 const connections = new Map<number, TabConnection>()
-const safeAppsCompatibility = createGnosisSafeAppsCompatibilityFeature(connections)
-const websiteTabConnections: WebsiteTabConnections = Object.assign(connections, { lifecycle: safeAppsCompatibility.lifecycle })
+const gnosisSafeSessionCapabilities = createGnosisSafeSessionCapabilitiesFeature(connections)
+const websiteTabConnections: WebsiteTabConnections = Object.assign(connections, { lifecycle: gnosisSafeSessionCapabilities.lifecycle })
 let simulationServicesOwner: SimulationServicesOwner | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
 // Keep request watermarks across port reconnects so replayed messages are acknowledged without being handled twice. Tab removal clears them.
@@ -318,7 +318,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
-	await initializeGnosisSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+	await initializeGnosisSafeSessionCapabilities(gnosisSafeSessionCapabilities).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()
