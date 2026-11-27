@@ -1,3 +1,4 @@
+import { balanceOfData, allowanceData } from './erc20CallData.js'
 import { createSiteSimulationTokenRequest } from '../../shared/ts/siteSimulationTokenProtocol.js'
 import { nextSiteHttpApiRequestId } from './siteHttpApiRequestId.js'
 import { SIMULATION_NATIVE_TOKEN_ADDRESS, type SiteHttpApiRouteMatch } from '../../shared/ts/siteBehaviorPolicy.js'
@@ -8,7 +9,6 @@ type Balance = { readonly balance: string, readonly allowance: string }
 const isBalance = (value: unknown): value is Balance => typeof value === 'object' && value !== null && 'balance' in value && typeof value.balance === 'string' && /^[0-9]+$/.test(value.balance) && 'allowance' in value && typeof value.allowance === 'string' && /^[0-9]+$/.test(value.allowance)
 const isAddress = (value: string) => /^0x[0-9a-f]{40}$/i.test(value)
 const isAddressList = (value: unknown): value is readonly string[] => Array.isArray(value) && value.every((address: unknown) => typeof address === 'string' && isAddress(address))
-const word = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
 const decimalQuantity = (value: unknown) => {
 	if (typeof value !== 'string' || !/^0x[0-9a-f]+$/i.test(value) || value.length > 66) throw new Error('Invalid simulated balance or allowance.')
 	return BigInt(value).toString()
@@ -38,7 +38,7 @@ export async function prepareBalanceApiInterception(request: Request, context: S
 		const rpc = async (method: string, params: readonly unknown[]) => decimalQuantity(await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method, params }))
 		const result = Object.fromEntries(await Promise.all(Object.entries(balances).map(async ([token, value]) => [token, token === SIMULATION_NATIVE_TOKEN_ADDRESS
 			? { ...value, balance: await rpc('eth_getBalance', [account, 'latest']) }
-			: { ...value, balance: await rpc('eth_call', [{ to: token, data: `0x70a08231${ word(account) }` }, 'latest']), allowance: await rpc('eth_call', [{ to: token, data: `0xdd62ed3e${ word(account) }${ word(spender) }` }, 'latest']) }
+			: { ...value, balance: await rpc('eth_call', [{ to: token, data: balanceOfData(account) }, 'latest']), allowance: await rpc('eth_call', [{ to: token, data: allowanceData(account, spender) }, 'latest']) }
 		])))
 		return simulatedApiResponse(response, request.url, result)
 	}

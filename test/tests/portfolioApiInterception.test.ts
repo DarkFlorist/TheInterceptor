@@ -252,3 +252,21 @@ test('new selected-chain holdings join existing token groups on other chains', a
 		assert.equal(data.portfolio.totalValueUsd, 3000)
 	}
 })
+
+for (const otherHidden of [true, false]) for (const existingGroup of [true, false]) test(`hidden selected-chain flat holdings stay hidden in synthesized groups, existing=${ existingGroup }, otherHidden=${ otherHidden }`, async () => {
+	const selected = { ...existing, isHidden: true }
+	const otherRow = { chainId: 137, address: native, decimals: 18, amount: other.amount, valueUsd: 2000, isHidden: otherHidden }
+	const group = { name: 'Ethereum', symbol: 'ETH', priceUsd: 2000, chainBalances: [otherRow], totalValueUsd: 2000 }
+	const h = harness({ portfolio: { balances: [selected, ...(existingGroup ? [{ ...other, isHidden: otherHidden }] : [])], multichainBalances: existingGroup ? [group] : [], totalValueUsd: existingGroup && !otherHidden ? 2000 : 0 } }, async (method) => method === 'interceptor_getSimulationTokenMetadata' ? [] : '0x1bc16d674ec80000')
+	const data = await (await h.fetch()).json()
+	const updated = data.portfolio.multichainBalances[0]
+	assert.equal(data.portfolio.balances[0].isHidden, true)
+	const selectedRow = updated.chainBalances.find((row: { chainId: number }) => row.chainId === 1)
+	assert.equal(selectedRow.isHidden, true)
+	assert.equal(selectedRow.amount.raw, '2000000000000000000')
+	assert.equal(updated.totalAmount.raw, existingGroup && !otherHidden ? '1000000000000000000' : '0')
+	assert.equal(updated.totalValueUsd, existingGroup && !otherHidden ? 2000 : 0)
+	assert.equal(updated.totalValueUsd, data.portfolio.totalValueUsd)
+	if (existingGroup) assert.deepEqual(updated.chainBalances[0], otherRow)
+	else assert.equal(updated.isHidden, true)
+})

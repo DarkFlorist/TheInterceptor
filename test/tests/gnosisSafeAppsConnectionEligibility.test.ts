@@ -125,7 +125,7 @@ test('signer-as-simulation-address cannot approve or advertise a stale Safe', as
 	await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true, addressAccess: [{ address: safe.address, access: true }] }])
 	const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
 	const connections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
-	const feature = modules.createGnosisSafeAppsCompatibilityFeature(connections)
+	const feature = modules.createGnosisSafeSessionCapabilitiesFeature(connections).sdk
 	feature.setEnabled(true)
 	await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 	assert.equal(connection.approved, false)

@@ -1,3 +1,4 @@
+import { balanceOfData } from './erc20CallData.js'
 import { createSiteSimulationTokenRequest } from '../../shared/ts/siteSimulationTokenProtocol.js'
 import { aggregatePortfolioGroup, applyPortfolioValueDelta, portfolioQuantityAmount, portfolioQuantityValue, portfolioValueDelta, type PortfolioValueContribution } from './portfolioAggregation.js'
 import { nextSiteHttpApiRequestId } from './siteHttpApiRequestId.js'
@@ -89,7 +90,7 @@ export async function preparePortfolioApiInterception(request: Request, context:
 			if (row === undefined) throw new Error('Invalid simulated portfolio balance row.')
 			if (row.token.chainId !== chainId) return row
 			const tokenAddress = apiAddress(row.token.address)
-			const reply = await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method: tokenAddress === nativeAddress ? 'eth_getBalance' : 'eth_call', params: tokenAddress === nativeAddress ? [selectedAddress, 'latest'] : [{ to: tokenAddress, data: `0x70a08231${ selectedAddress.slice(2).padStart(64, '0') }` }, 'latest'] })
+			const reply = await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method: tokenAddress === nativeAddress ? 'eth_getBalance' : 'eth_call', params: tokenAddress === nativeAddress ? [selectedAddress, 'latest'] : [{ to: tokenAddress, data: balanceOfData(selectedAddress) }, 'latest'] })
 			if (typeof reply !== 'string' || !/^0x[0-9a-f]{1,64}$/i.test(reply)) throw new Error('Invalid simulated portfolio balance.')
 			const raw = BigInt(reply)
 			const isNew = newTokens.find((token) => apiAddress(token.address) === tokenAddress)
@@ -122,7 +123,7 @@ export async function preparePortfolioApiInterception(request: Request, context:
 				const updated = [...remaining].find((candidate) => address(field(field(candidate, 'token'), 'address')) && address(field(row, 'address')) && apiAddress(String(field(field(candidate, 'token'), 'address'))) === apiAddress(String(field(row, 'address'))) && field(field(candidate, 'token'), 'chainId') === field(row, 'chainId'))
 				if (updated === undefined || !isJsonRecord(row)) return row
 				remaining.delete(updated)
-				return { ...withoutPositionChanges(row), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') }
+				return { ...withoutPositionChanges(row), isHidden: hidden(row) || hidden(updated), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') }
 			})
 			// A token already grouped on another chain keeps one group when simulation adds this chain.
 			for (const updated of remaining) {
@@ -132,7 +133,7 @@ export async function preparePortfolioApiInterception(request: Request, context:
 					const existingAddress = field(row, 'address')
 					return address(existingAddress) && apiAddress(existingAddress) === apiAddress(updatedAddress)
 				})) continue
-				chainBalances.push({ chainId, address: updatedAddress, decimals: field(updatedToken, 'decimals'), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') })
+				chainBalances.push({ isHidden: hidden(updated), chainId, address: updatedAddress, decimals: field(updatedToken, 'decimals'), amount: field(updated, 'amount'), valueUsd: field(updated, 'valueUsd') })
 				remaining.delete(updated)
 			}
 			const totals = aggregatePortfolioGroup(chainBalances.map((row) => ({
@@ -146,8 +147,9 @@ export async function preparePortfolioApiInterception(request: Request, context:
 		for (const row of remaining) {
 			const token = field(row, 'token')
 			if (!isJsonRecord(token)) continue
-			const quantity = field(field(row, 'amount'), 'amount')
-			updatedGroups.push({ ...token, totalAmount: { raw: field(field(row, 'amount'), 'raw'), amount: quantity }, priceUsd: field(row, 'priceUsd'), totalValueUsd: field(row, 'valueUsd'), chainBalances: [{ chainId, address: field(token, 'address'), decimals: field(token, 'decimals'), amount: field(row, 'amount'), valueUsd: field(row, 'valueUsd') }] })
+			const isHidden = hidden(row)
+			const quantity = isHidden ? amount(0n, numeric(field(token, 'decimals'))) : field(row, 'amount')
+			updatedGroups.push({ ...token, isHidden, totalAmount: quantity, priceUsd: field(row, 'priceUsd'), totalValueUsd: isHidden ? 0 : field(row, 'valueUsd'), chainBalances: [{ isHidden, chainId, address: field(token, 'address'), decimals: field(token, 'decimals'), amount: field(row, 'amount'), valueUsd: field(row, 'valueUsd') }] })
 		}
 		return simulatedApiResponse(response, request.url, { ...data, portfolio: { ...withoutPositionChanges(portfolio), multichainBalances: updatedGroups, ...flat === undefined ? {} : { balances }, totalValueUsd: total } })
 	}
