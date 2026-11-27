@@ -5,7 +5,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } fro
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { clearFetchSimulationStackRequestPromiseIfOwnedBy, getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
+import { routeProviderReply } from '../providerReplyRouting.js'
 import type { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
@@ -85,7 +85,7 @@ async function resolveStoredRequest(snapshot: SimulationStackSnapshot, websiteTa
 		: { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error }
 	// Preparing the reply can wait on storage, so a newer request may hold the slot by now. It only got there because openFetchSimulationStackDialog found this request's dialog gone, which makes the close below a no-op in that case
 	await clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier)
-	replyToInterceptedRequest(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
+	routeProviderReply(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
 	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
 	await closePopupOrTabById(popupOrTabId)
 }

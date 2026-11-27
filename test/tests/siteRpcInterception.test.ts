@@ -412,3 +412,28 @@ test('browser-like network errors from simulated reads never fall back to live t
 		assert.equal(h.nativeRequests.length, 1, 'only the successful identification probe reached native transport')
 	}
 })
+
+test('aborting one reader preserves the shared pending probe for a later reader', async () => {
+	let release = () => { throw new Error('Probe gate not initialized') }
+	const probeGate = new Promise<void>((resolve) => { release = resolve })
+	const h = harness({ probeGate })
+	h.hook.setContext(context)
+	const controller = new AbortController()
+	const first = h.windowObject.fetch(input({ ...read, id: 'A' }, controller.signal))
+	const second = h.windowObject.fetch(input({ ...read, id: 'B' }))
+	// Let request-body parsing reach the shared identification before cancelling A.
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	assert.equal(h.nativeRequests.length, 1)
+	const reason = new Error('A cancelled')
+	controller.abort(reason)
+	await assert.rejects(first, (error: unknown) => error === reason)
+	const third = h.windowObject.fetch(input({ ...read, id: 'C' }))
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	assert.equal(h.nativeRequests.length, 1, 'C joins the original eth_chainId probe instead of starting another')
+	release()
+	assert.deepEqual(await (await second).json(), { jsonrpc: '2.0', id: 'B', result: 'simulated' })
+	assert.deepEqual(await (await third).json(), { jsonrpc: '2.0', id: 'C', result: 'simulated' })
+	assert.equal(h.rpcRequests.length, 2)
+	assert.equal(h.nativeRequests.length, 1, 'neither surviving reader falls back to live data')
+	h.hook.dispose()
+})

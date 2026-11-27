@@ -182,3 +182,21 @@ test('an aborted reader does not hide an unexpected shared-probe failure from a 
 	probe.reject(failure)
 	await assert.rejects(live, (error: unknown) => error === failure)
 })
+
+for (const reject of [false, true]) test(`an abandoned shared probe ${ reject ? 'rejection' : 'undefined result' } still evicts for a later retry`, async () => {
+	const probe = deferred<Response>()
+	let probes = 0
+	const transport = createRpcEndpointChainTransport(async () => ++probes === 1 ? await probe.promise : identified())
+	const controller = new AbortController()
+	const first = transport.identify(request(undefined, {}, 'same-origin', controller.signal))
+	const reason = new Error('caller cancelled')
+	controller.abort(reason)
+	await assert.rejects(first, (error: unknown) => error === reason)
+	if (reject) probe.reject(new TypeError('Failed to fetch'))
+	else probe.resolve(new Response('', { status: 401 }))
+	// Settle the shared probe and its eviction handler even though it has no live waiters.
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	assert.equal(await transport.identify(request()), '0x1')
+	assert.equal(await transport.identify(request()), '0x1')
+	assert.equal(probes, 2)
+})

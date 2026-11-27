@@ -3,7 +3,7 @@ import multiSendLibrary from '../fixtures/gnosis-safe-libraries/MultiSendCallOnl
 import signMessageLibrary from '../fixtures/gnosis-safe-libraries/SignMessageLib.json'
 import { GNOSIS_SAFE_MULTI_SEND_CALL_ONLY, GNOSIS_SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/gnosisSafe/gnosisSafeDelegateCalls.js'
 import { GNOSIS_SAFE_MESSAGE_ABI } from '../../app/ts/gnosisSafe/gnosisSafeMessage.js'
-import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/providerTerminalReplyDelivery.js'
 import { decodeFunctionDataStrict, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createGnosisSafeTx, GNOSIS_SAFE_ABI, gnosisSafeTxToTypedDataJson } from '../../app/ts/gnosisSafe/gnosisSafeCore.js'
@@ -237,7 +237,7 @@ export async function loadModules() {
 		import('../../app/ts/types/ethSimulate-types.js'),
 		import('../../app/ts/background/messageSending.js'),
 		import('../../app/ts/background/pendingTerminalReplies.js'),
-		import('../../app/ts/background/terminalReplyDelivery.js'),
+		import('../../app/ts/background/providerTerminalReplyDelivery.js'),
 		import('../../app/ts/background/providerMessageHandlers.js'),
 		import('../../app/ts/gnosisSafe/gnosisSafeExecutionRouting.js'),
 		import('../../app/ts/background/gnosisSafeConfirmationResolver.js'),

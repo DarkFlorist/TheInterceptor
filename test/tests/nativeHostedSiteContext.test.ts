@@ -1,4 +1,4 @@
-import { registerNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
+import { registerNativeGnosisSafeAppsSession, registerNativeGnosisSafeAppsRole, getNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getNativeHostedSiteContext } from '../../app/ts/background/nativeHostedSiteContext.js'
@@ -25,14 +25,18 @@ async function harness() {
 	Object.assign(hostPort.sender?.tab ?? {}, { url: hostUrl })
 	Object.assign(childPort.sender ?? {}, { id: 'test-extension', url: `${ origin }/swap` })
 	Object.assign(childPort.sender?.tab ?? {}, { url: hostUrl })
-	const host = { port: hostPort, socket: hostSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: true, wantsToConnect: false, nativeSafeRole: { kind: 'host' as const } }
-	const child = { port: childPort, socket: childSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: false, wantsToConnect: false, nativeSafeRole: { kind: 'signer' as const, session: { port: hostPort, origin } } }
+	const host = { port: hostPort, socket: hostSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: true, wantsToConnect: false }
+	const child = { port: childPort, socket: childSocket, websiteOrigin: 'app.example', requestOrigin: origin, approved: false, wantsToConnect: false }
 	const connections: WebsiteTabConnections = new Map([
 		[20, { connections: { [websiteSocketToString(hostSocket)]: host, [websiteSocketToString(childSocket)]: child } }],
 	])
 	Object.assign(childPort, { onDisconnect: { addListener: () => undefined, removeListener: () => undefined } })
 	Object.assign(hostPort, { onDisconnect: { addListener: () => undefined, removeListener: () => undefined } })
 	registerNativeGnosisSafeAppsSession(connections, 20, hostPort, origin)
+	registerNativeGnosisSafeAppsRole(connections, hostPort, { kind: 'host' })
+	const session = getNativeGnosisSafeAppsSession(connections, 20)
+	if (session === undefined) throw new Error('Missing session')
+	registerNativeGnosisSafeAppsRole(connections, childPort, { kind: 'signer', session })
 	const urls = new Map([[20, hostUrl]])
 	let hostEligible = true
 	let hostAddress: AddressBookEntry | undefined = activeAddress
@@ -82,7 +86,11 @@ test('native iframe HTTP context rejects forged senders, host/host navigation an
 		(h) => { h.urls.set(20, 'moz-extension://test-extension/html/gnosisSafeAppsHost.html?hostTabId=10&appUrl=invalid'); Object.assign(h.child.port.sender?.tab ?? {}, { url: h.urls.get(20) }) },
 		(h) => { h.connections.delete(20) },
 		(h) => { h.urls.set(20, 'https://attacker.example/') },
-		(h) => { Object.assign(h.child, { nativeSafeRole: undefined }) },
+		(h) => {
+			const ordinary = createPort(20, undefined, 7, h.childSocket.connectionName).port
+			Object.assign(ordinary, { sender: h.child.port.sender })
+			h.child.port = ordinary
+		},
 		(h) => { registerNativeGnosisSafeAppsSession(h.connections, 20, h.child.port, h.origin) },
 		(h) => { h.host.approved = false },
 		(h) => { h.host.requestOrigin = 'https://attacker.example' },

@@ -12,7 +12,8 @@ import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddre
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
+import { routeProviderReply } from '../providerReplyRouting.js'
+import { sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -410,7 +411,7 @@ export async function requestAccessFromUser(
 		if (oldPendingRequest !== undefined) {
 			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
 			if (request !== undefined) {
-				replyToInterceptedRequest(websiteTabConnections, {
+				routeProviderReply(websiteTabConnections, {
 					type: 'result',
 					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 					method: request.method,

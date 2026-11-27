@@ -32,10 +32,8 @@ export function createRpcEndpointChainTransport(send: typeof fetch, now: () => n
 				try {
 					const chain = await withRequestAbort(entry.chain, request.signal)
 					// Gateway authorization can become ready after its first probe. Cache verified chains, never a failed startup identification.
-					if (chain === undefined && endpoints.get(key) === entry) endpoints.delete(key)
 					return chain
 				} catch (error: unknown) {
-					if (endpoints.get(key) === entry) endpoints.delete(key)
 					// Only identification failures may preserve native transport. Simulated-read errors never pass through this classifier.
 					if (!request.signal.aborted && isProbeNetworkFailure(error)) return undefined
 					throw error
@@ -55,6 +53,12 @@ export function createRpcEndpointChainTransport(send: typeof fetch, now: () => n
 				const oldest = endpoints.keys().next().value
 				if (oldest !== undefined) endpoints.delete(oldest)
 			}
+			// Only the shared probe owns eviction; cancelling an individual waiter leaves it available to other callers.
+			void chain.then((result) => {
+				if (result === undefined && endpoints.get(key) === entry) endpoints.delete(key)
+			}, () => {
+				if (endpoints.get(key) === entry) endpoints.delete(key)
+			})
 			endpoints.set(key, entry)
 			return await waitForProbe(entry)
 		},

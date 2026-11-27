@@ -1,4 +1,4 @@
-import { registerNativeGnosisSafeAppsSession, getNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
+import { registerNativeGnosisSafeAppsSession, getNativeGnosisSafeAppsSession, registerNativeGnosisSafeAppsRole } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
 import { internalRequestAccessContextOwners } from '../../app/ts/background/internalRequestAdmissions.js'
 import { hasRequestAccessAddress, createRequestAccessContextResolver } from '../../app/ts/background/requestAccessContext.js'
 import * as assert from 'assert'
@@ -41,10 +41,16 @@ async function harness() {
 		Object.assign(result.port.sender?.tab ?? {}, { url })
 		urls.set(tabId, url)
 		const connection = { port: result.port, socket, websiteOrigin: website.websiteOrigin, requestOrigin: 'https://app.aave.com', approved: frameId === 0, wantsToConnect: false }
-		Object.assign(connection, frameId === 0 ? { nativeSafeRole: { kind: 'host' } } : { nativeSafeRole: { kind: 'signer', session: getNativeGnosisSafeAppsSession(connections, tabId) } })
 		connections.set(tabId, { connections: { ...connections.get(tabId)?.connections, [modules.websiteSocketToString(socket)]: connection } })
 		Object.assign(result.port, { onDisconnect: { addListener: () => undefined, removeListener: () => undefined } })
-		if (frameId === 0) registerNativeGnosisSafeAppsSession(connections, tabId, result.port, 'https://app.aave.com')
+		if (frameId === 0) {
+			registerNativeGnosisSafeAppsSession(connections, tabId, result.port, 'https://app.aave.com')
+			registerNativeGnosisSafeAppsRole(connections, result.port, { kind: 'host' })
+		} else {
+			const session = getNativeGnosisSafeAppsSession(connections, tabId)
+			if (session === undefined) throw new Error('Missing session')
+			registerNativeGnosisSafeAppsRole(connections, result.port, { kind: 'signer', session })
+		}
 		return { ...result, socket, connection }
 	}
 	const source = add(20, 0)

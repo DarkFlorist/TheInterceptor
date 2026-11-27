@@ -1,3 +1,4 @@
+import { getNativeGnosisSafeAppsAuthority } from './nativeGnosisSafeAppsSessions.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
@@ -20,7 +21,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { routeProviderReply } from './providerReplyRouting.js'
 import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
-import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { announceSignerProviderGeneration, isSignerProviderAnnouncementCurrent, beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningGnosisSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
@@ -34,7 +35,7 @@ function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, po
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
 	// A reload can leave the old owner token alive briefly; its child may no longer belong to the current host session.
-	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeSafeRole?.kind === 'signer' && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return undefined
+	if (getNativeGnosisSafeAppsAuthority(websiteTabConnections, port).kind === 'staleSigner') return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
@@ -207,7 +208,7 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 
 export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
-	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeSafeRole?.kind === 'signer' && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return returnValue
+	if (getNativeGnosisSafeAppsAuthority(websiteTabConnections, port).kind === 'staleSigner') return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
@@ -219,7 +220,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	const nativeSigner = isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)
 	const isTopFrame = isTopFramePort(port) || nativeSigner
-	if (getWebsiteConnectionForPort(websiteTabConnections, port)?.nativeSafeRole?.kind === 'signer' && !nativeSigner) return await getConnectedToSignerResult()
+	if (getNativeGnosisSafeAppsAuthority(websiteTabConnections, port).kind === 'staleSigner') return await getConnectedToSignerResult()
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
@@ -230,10 +231,11 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.connectionReady, socket)
 		if (!isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
 	}
+	if (!announceSignerProviderGeneration(websiteTabConnections, socket, port, signerProviderGeneration)) return await getConnectedToSignerResult()
 	let shouldRefreshSignerAccounts = false
 	const result = await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)
-		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
+		if (!isSignerProviderAnnouncementCurrent(port, signerProviderGeneration) || !isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()
 		}
 		const previousSignerProviderGeneration = tabConnection.signerStateOwner.providerGeneration
@@ -255,7 +257,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			const baseState = clearSignerState ? clearSignerDerivedTabState(previousState) : previousState
 			return modifyObject(baseState, { signerName, signerConnected: signerMissing ? false : signerConnected })
 		})
-		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwner.connectionName !== socket.connectionName) {
+		if (!isSignerProviderAnnouncementCurrent(port, signerProviderGeneration) || !isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwner.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()
 		}
 		if (nativeSigner && !isNativeGnosisSafeAppsSignerPort(websiteTabConnections, port)) return await getConnectedToSignerResult()
