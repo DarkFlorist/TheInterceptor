@@ -1,8 +1,6 @@
-import { getSiteReadRequestAccessContext } from './siteReadRequestAdmission.js'
+import { getInternalRequestAdmission, internalRequestAccessContextOwners } from './internalRequestAdmissions.js'
 import { isInternalProviderMethod } from '../../shared/ts/internalProviderMethods.js'
-import { prepareSiteRpcRequest } from './siteRpcInterception.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
-import { prepareGnosisSafeAppsRequest } from './gnosisSafeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -352,7 +350,7 @@ async function getActiveAddressForRequest(settings: Settings, websiteTabConnecti
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
-const resolveRequestAccessContext = createRequestAccessContextResolver([{ method: 'site_rpc_request', resolve: getSiteReadRequestAccessContext }])
+const resolveRequestAccessContext = createRequestAccessContextResolver(internalRequestAccessContextOwners)
 
 async function getRequestAddressContext(settings: Settings, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, websiteOrigin: string) {
 	return await resolveRequestAccessContext(websiteTabConnections, socket, request, settings, websiteOrigin, async () => await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId))
@@ -529,13 +527,9 @@ async function routeRequest(simulationServicesOwner: SimulationServicesOwner, we
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const safeSigningMode = isActiveSigningGnosisSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 	let rpcContext: RpcRequestContext = { request }
-	if (request.method === 'safe_apps_request') {
-		const admission = await prepareGnosisSafeAppsRequest(simulationServicesOwner.getCurrent(), websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
-		if (admission.kind === 'reply') return { kind: 'answeredAtAdmission', reply: admission.reply }
-		rpcContext = admission.context
-	}
-	if (request.method === 'site_rpc_request') {
-		const admission = await prepareSiteRpcRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, settings, accessContext)
+	const admissionOwner = getInternalRequestAdmission(request.method)
+	if (admissionOwner !== undefined) {
+		const admission = await admissionOwner.prepare({ services: simulationServicesOwner.getCurrent(), connections: websiteTabConnections, request, website, settings, accessContext, safeSigningMode })
 		if (admission.kind === 'reply') return { kind: 'answeredAtAdmission', reply: admission.reply }
 		rpcContext = admission.context
 	}

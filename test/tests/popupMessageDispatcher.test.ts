@@ -1,4 +1,3 @@
-import { asExtensionRootPaths, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { createDeferredValue, createPort, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
@@ -576,7 +575,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
-		assert.deepEqual(registeredContentScripts.get('inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 		assert.deepEqual(reloadedTabs, [42])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
@@ -751,7 +750,7 @@ describe('popup message dispatcher seams', () => {
 		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
 
 		assert.equal(storageState.metamaskCompatibilityMode, true)
-		assert.deepEqual(registeredContentScripts.get('inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['http://legacy-disabled.test:80/*', 'https://legacy-disabled.test:443/*'])
 		assert.deepEqual(reloadedTabs, [43])
 	})

@@ -1,5 +1,5 @@
 import { registerNativeGnosisSafeAppsSession, getNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
-import { getSiteReadRequestAccessContext } from '../../app/ts/background/siteReadRequestAdmission.js'
+import { internalRequestAccessContextOwners } from '../../app/ts/background/internalRequestAdmissions.js'
 import { hasRequestAccessAddress, createRequestAccessContextResolver } from '../../app/ts/background/requestAccessContext.js'
 import * as assert from 'assert'
 import { spyOn, test } from 'bun:test'
@@ -9,7 +9,7 @@ import { createGnosisSafeSessionCapabilitiesFeature, initializeGnosisSafeSession
 import { nativeGnosisSafeAppsHostUrl } from '../../app/ts/utils/nativeGnosisSafeAppsHost.js'
 import { createPort, createDeferredValue, createEthereumWithGetBlockCounter, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
-const resolveRequestAccessContext = createRequestAccessContextResolver([{ method: 'site_rpc_request', resolve: getSiteReadRequestAccessContext }])
+const resolveRequestAccessContext = createRequestAccessContextResolver(internalRequestAccessContextOwners)
 
 async function harness() {
 	installBrowserMock({ manifestVersion: 3 })

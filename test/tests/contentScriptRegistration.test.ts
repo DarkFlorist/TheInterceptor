@@ -1,4 +1,3 @@
-import { asExtensionRootPaths, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 
@@ -40,7 +39,7 @@ function installBrowserMock({ afterStorageRead, emitStorageEvents = false, regis
 	const executedScriptFiles: string[] = []
 	const reloadedTabs: number[] = []
 	const defaultScriptFilesById = new Map<string, readonly string[]>([
-		['inpage', asExtensionRootPaths(getPageWorldScriptPaths(false))],
+		['inpage', ['/inpage/js/inpage.js']],
 		['inpage2', ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js']],
 	])
 	const registeredContentScripts = new Map<string, RegisteredContentScript>(registeredContentScriptIds.map((id) => [id, { id, js: defaultScriptFilesById.get(id) }]))
@@ -218,7 +217,7 @@ test('compatibility mode replaces provider files without installing a page-world
 	await updateRegistration()
 	await browser.storage.local.set({ metamaskCompatibilityMode: true })
 	await updateRegistration()
-	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 	assert.ok(getUnregisteredContentScriptIdBatches().some((ids) => ids.includes('inpage')))
 	assert.equal(getRegisteredContentScripts().some(({ id }) => id === 'safe-apps-host'), false)
 })
@@ -246,7 +245,7 @@ test('queued reconciliation uses its supplied configuration rather than later st
 	const second = { injectionSites: { interceptorDisabledSites: ['second.example'] }, pageWorldProvider: { metamaskCompatibilityMode: true } }
 	await Promise.all([service.reconcile(first), service.reconcile(second)])
 	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, ['http://second.example:80/*', 'https://second.example:443/*'])
-	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, asExtensionRootPaths(getPageWorldScriptPaths(true)))
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 })
 
 test('website access observation reconciles disabled sites without deriving Gnosis Safe hosting origins', async () => {
