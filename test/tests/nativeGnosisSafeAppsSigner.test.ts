@@ -292,3 +292,18 @@ test('native dispatch normalizes every signing method and acknowledges only cons
 		}
 	} finally { take.mockRestore(); apply.mockRestore() }
 })
+
+test('correlation context cannot authorize a replaced delivery port for any signing method', async () => {
+	const { applySignerReply } = await import('../../app/ts/background/providerMessageHandlers.js')
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	for (const method of ['personal_sign', 'eth_signTypedData', 'eth_signTypedData_v1', 'eth_signTypedData_v2', 'eth_signTypedData_v3', 'eth_signTypedData_v4', 'eth_sendRawTransaction', 'eth_sendTransaction'] as const) {
+		const h = await setup()
+		const callback = h.dispatch()
+		const reply = h.reply(callback.token)
+		const params = { ...reply, forwardRequest: { ...h.forward, method, requestId: 1 } }
+		const request = { method: 'signer_reply' as const, params: [reply], uniqueRequestIdentifier: { requestId: 99, requestSocket: h.signer.socket }, interceptorRequest: true as const, usingInterceptorWithoutSigner: false }
+		// Replace the registry entirely so identical metadata cannot authenticate the old port.
+		h.connections.set(h.signer.socket.tabId, { connections: {} })
+		assert.deepEqual(await applySignerReply(simulationServicesOwner, h.connections, h.signerPort, request, { uniqueRequestIdentifier: h.forward.uniqueRequestIdentifier, params }), { type: 'doNotReply' })
+	}
+})

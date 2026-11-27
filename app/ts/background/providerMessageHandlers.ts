@@ -1,4 +1,4 @@
-import { getNativeGnosisSafeAppsAuthority } from './nativeGnosisSafeAppsSessions.js'
+import { isSignerPortAuthorityCurrent } from './signerStateOwnership.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
@@ -30,8 +30,6 @@ import type { ApprovalState } from './websiteAccessPolicy.js'
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
-	// A reload can leave the old owner token alive briefly; its child may no longer belong to the current host session.
-	if (getNativeGnosisSafeAppsAuthority(websiteTabConnections, port).kind === 'staleSigner') return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
@@ -204,7 +202,7 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 
 export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
-	if (getNativeGnosisSafeAppsAuthority(websiteTabConnections, port).kind === 'staleSigner') return returnValue
+	if (!isSignerPortAuthorityCurrent(port)) return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
@@ -298,6 +296,9 @@ export async function applySignerReply(simulationServicesOwner: SimulationServic
 	const doNotReply = { type: 'doNotReply' as const }
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
+	const currentDelivery = isCurrentWebsiteConnection(websiteTabConnections.get(socket.tabId), socket, port) && isSignerPortAuthorityCurrent(port)
+	// Unauthenticated correlation cannot identify a pending request. Ordinary replies retain their existing disconnected-error settlement.
+	if (!currentDelivery && context !== undefined) return doNotReply
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	const params = context?.params ?? originalParams
 	if (params.forwardRequest.method === 'wallet_watchAsset') {
@@ -316,11 +317,10 @@ export async function applySignerReply(simulationServicesOwner: SimulationServic
 	}
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	const uniqueRequestIdentifier = context?.uniqueRequestIdentifier ?? { requestId: params.forwardRequest.requestId, requestSocket }
-	const tabConnection = websiteTabConnections.get(socket.tabId)
 	// Signing is routed back through the frame that originated the request, which may be a child frame. Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port; the inpage bridge converts a provider-generation change into a terminal disconnected error.
-	if (context === undefined && (!isCurrentWebsiteConnection(tabConnection, socket, port)
+	if (!currentDelivery
 		|| requestSocket.tabId !== socket.tabId
-		|| requestSocket.connectionName !== socket.connectionName)) {
+		|| requestSocket.connectionName !== socket.connectionName) {
 		await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return doNotReply

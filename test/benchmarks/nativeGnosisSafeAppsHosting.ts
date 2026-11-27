@@ -185,6 +185,19 @@ try {
 							stage = 'preserving the native app through periodic background metadata refresh'
 							await verifyMetadataRefreshPreservesApp(host)
 						}
+						stage = 'rejecting a transaction without breaking the app connection'
+						await command(host, 'rejectionDraft', '__setDraft', { value: 'Unfinished draft survives rejection' })
+						await command(host, 'rejectedTransaction', 'sendTransactions', { txs: [{ to: ownerAddress, value: '0', data: '0x' }] })
+						const rejectedConfirmation = await waitForExtensionPage(session, 'confirmTransaction')
+						await waitForBrowserCondition(async () => await rejectedConfirmation.evaluate(`(() => {const button=document.querySelector('nav.popup-button-row button.dialog-action-button.is-danger');if(!button||button.disabled)return false;button.click();return true})()`), 'reject button')
+						await waitForBrowserCondition(async () => await host.evaluate('nativeHostFixture.at(-1)?.results.rejectedTransaction?.success===false'), 'rejected transaction response')
+						await command(host, 'afterRejection', 'getSafeInfo')
+						await command(host, 'rejectionDraftAfter', '__readDraft')
+						await waitForBrowserCondition(async () => await host.evaluate('nativeHostFixture.at(-1)?.results.afterRejection?.success===true&&nativeHostFixture.at(-1)?.results.rejectionDraftAfter!==undefined'), 'healthy SDK request after rejection')
+						assert.equal(await host.evaluate('nativeHostFixture.at(-1)?.results.rejectionDraftAfter?.value'), 'Unfinished draft survives rejection')
+						assert.equal(await host.evaluate('document.querySelector("[data-gnosis-safe-controls]")?.open'), false, 'Request rejection does not open connection error controls')
+						assert.equal(await host.evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Retry connection')?.disabled`), false, 'Rejected mutation releases the pending counter')
+						await captureHost(session, host, simulationMode ? 'rejection-simulation' : 'rejection-signing')
 						await captureHost(session, host, simulationMode ? 'simulation' : 'signing')
 						if (simulationMode && !process.argv.includes('--skip-transactions')) {
 							stage = 'approving two simulation transactions'

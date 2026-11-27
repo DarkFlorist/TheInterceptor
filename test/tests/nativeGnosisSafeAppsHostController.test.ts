@@ -363,3 +363,20 @@ test('unsupported embedding exposes an actionable connection error without chang
 	assert.equal(host.controller.view.value.frameUrl, 'https://app.example/swap')
 	host.controller.stop()
 })
+
+for (const method of ['sendTransactions', 'signMessage', 'unsupportedRequest']) test(`request rejection for ${ method } preserves the healthy app frame`, async () => {
+	const host = hostHarness()
+	await host.controller.refresh()
+	const frame = host.controller.view.value.frameGeneration
+	const pending = host.controller.receive(request('rejected', method))
+	host.pending.get('rejected')?.resolve({ id: 'rejected', success: false, error: 'User rejected the request' })
+	await pending
+	assert.equal(host.controller.view.value.connectionError, false)
+	assert.equal(host.controller.view.value.frameGeneration, frame)
+	assert.equal(host.controller.retryDisabled.value, false)
+	const next = host.controller.receive(request('next', 'getSafeInfo'))
+	host.pending.get('next')?.resolve({ id: 'next', success: true, data: {} })
+	await next
+	assert.equal(host.controller.view.value.connectionError, false)
+	assert.deepEqual(host.replies.map(({ success }) => success), [false, true])
+})

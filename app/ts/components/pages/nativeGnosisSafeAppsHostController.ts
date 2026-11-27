@@ -103,7 +103,6 @@ export function createNativeGnosisSafeAppsHostController(ports: HostPorts) {
 			try { response = await ports.request(request) } catch (error: unknown) { response = failure(request.id, error) }
 			if (!stopped && (!discovery || generation === requestGeneration)) {
 				ports.postResponse(response)
-				if (!response.success) showError(response.error)
 			}
 		} finally {
 			pending--

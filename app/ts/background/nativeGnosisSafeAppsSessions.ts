@@ -1,3 +1,5 @@
+import { registerSignerAuthorityCheck } from './signerStateOwnership.js'
+import { notifyWebsiteLifecycle, observeWebsiteSessionChanges } from './websiteLifecycle.js'
 import { getSocketFromPort, getWebsiteSocketConnection } from './backgroundUtils.js'
 import { getNativeGnosisSafeAppsChildLaunch, getNativeGnosisSafeAppsHostLaunch } from './nativeGnosisSafeAppsHostSender.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -5,14 +7,14 @@ import { NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING } from '../utils/nativeGnosisSafeAp
 
 type NativeSession = { readonly port: browser.runtime.Port, readonly origin: string }
 const sessions = new WeakMap<WebsiteTabConnections, Map<number, NativeSession>>()
-const listeners = new WeakMap<WebsiteTabConnections, Set<() => void>>()
+// Captured sessions authenticate root/child relationships; signerStateOwner owns wallet selection and generation. Private correlation and historical claims survive wallet changes without granting wallet authority.
 
 export const nativeGnosisSafeAppsPreparationFailure = (message: string) => Object.assign(new Error(message), { code: 'native_gnosis_safe_apps_preparation_failed' as const })
 export const isNativeGnosisSafeAppsPreparationError = (error: unknown): error is Error => error instanceof Error && 'code' in error && error.code === 'native_gnosis_safe_apps_preparation_failed'
 export const getNativeGnosisSafeAppsSession = (connections: WebsiteTabConnections, tabId: number) => sessions.get(connections)?.get(tabId)
 
 export function notifyNativeGnosisSafeAppsSessionConnections(connections: WebsiteTabConnections) {
-	for (const listener of listeners.get(connections) ?? []) listener()
+	notifyWebsiteLifecycle(connections.lifecycle?.sessionChanged)
 }
 
 // Reloads may overlap old and new ports with identical URLs. The current root port, not its URL, owns the session and its signer children.
@@ -34,9 +36,8 @@ export async function waitForNativeGnosisSafeAppsSessionCondition<T>(connections
 	const current = read()
 	if (current !== undefined) return current
 	return await new Promise<T>((resolve, reject) => {
-		let pending = listeners.get(connections)
-		if (pending === undefined) { pending = new Set(); listeners.set(connections, pending) }
-		const cleanup = () => { clearTimeout(timeout); pending.delete(check); port.onDisconnect.removeListener(disconnect) }
+		let unsubscribe: (() => void) | undefined
+		const cleanup = () => { clearTimeout(timeout); unsubscribe?.(); port.onDisconnect.removeListener(disconnect) }
 		const disconnect = () => { cleanup(); reject(nativeGnosisSafeAppsPreparationFailure('The app connection closed. Retry the connection.')) }
 		const check = () => {
 			try {
@@ -45,7 +46,7 @@ export async function waitForNativeGnosisSafeAppsSessionCondition<T>(connections
 			} catch (error: unknown) { cleanup(); reject(error) }
 		}
 		const timeout = setTimeout(() => { cleanup(); reject(nativeGnosisSafeAppsPreparationFailure(message)) }, NATIVE_GNOSIS_SAFE_APPS_HOST_TIMING.signerStartupTimeoutMs)
-		pending.add(check)
+		unsubscribe = observeWebsiteSessionChanges(connections, check)
 		port.onDisconnect.addListener(disconnect)
 		check()
 	})
@@ -57,6 +58,10 @@ export function registerNativeGnosisSafeAppsRole(connections: WebsiteTabConnecti
 	let registry = roles.get(connections)
 	if (registry === undefined) { registry = new WeakMap(); roles.set(connections, registry) }
 	registry.set(port, role)
+	registerSignerAuthorityCheck(port, () => {
+		const authority = getNativeGnosisSafeAppsAuthority(connections, port)
+		return authority.kind === 'host' || authority.kind === 'signer'
+	})
 }
 
 export function getNativeGnosisSafeAppsAuthority(connections: WebsiteTabConnections, port: browser.runtime.Port) {

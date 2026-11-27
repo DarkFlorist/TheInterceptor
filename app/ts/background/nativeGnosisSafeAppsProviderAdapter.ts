@@ -32,7 +32,7 @@ export const signerReply = async (...args: Parameters<typeof handleSignerReply>)
 	return await runSignerStateOperation(connections, socket.tabId, async () => {
 		const native = await takeNativeGnosisSafeAppsSignerReply(connections, port, params)
 		if (native === undefined) return { type: 'doNotReply' as const }
-		const result = await applySignerReply(args[0], connections, port, request, {
+		const result = await applySignerReply(args[0], connections, port, { ...request, uniqueRequestIdentifier: { ...request.uniqueRequestIdentifier, requestSocket: socket } }, {
 			uniqueRequestIdentifier: native.uniqueRequestIdentifier,
 			params: { ...native.reply, forwardRequest: { ...native.forward, requestId: native.uniqueRequestIdentifier.requestId } },
 	})
