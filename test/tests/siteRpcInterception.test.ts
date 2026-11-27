@@ -183,7 +183,7 @@ test('site RPC transport activates only from matching published context and supp
 
 
 test('policy publication and admission reuse the captured full frame origin, ignoring later port URL changes', async () => {
-	const { getConnectionOrigin } = await import('../../app/ts/background/siteBehaviorContext.js')
+	const { getConnectionOrigin } = await import('../../app/ts/background/backgroundUtils.js')
 	const { getFrameOrigins } = await import('../../app/ts/utils/requests.js')
 	const { createPort, installBrowserMock, loadModules } = await import('./backgroundEthAccountsTestHarness.js')
 	installBrowserMock()
