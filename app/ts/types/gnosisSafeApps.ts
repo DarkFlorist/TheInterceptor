@@ -20,7 +20,7 @@ export const GnosisSafeAppsRequestCommand = funtypes.Union(
 		kind: funtypes.Literal('ethereumRequest'),
 		method: funtypes.String,
 		params: funtypes.ReadonlyArray(JsonValue),
-	}).And(funtypes.ReadonlyPartial({ safeRequestContext: GnosisSafeReviewInput })).And(funtypes.Union(
+	}).And(funtypes.ReadonlyPartial({ safeRequestContext: GnosisSafeReviewInput, commandToken: funtypes.String })).And(funtypes.Union(
 		funtypes.ReadonlyObject({ mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')) }),
 		funtypes.ReadonlyObject({ mapResult: funtypes.Literal('safeMessage'), message: funtypes.String, safeAddress: funtypes.String, chainId: funtypes.String }).And(funtypes.ReadonlyPartial({ isTypedData: funtypes.Boolean })),
 	)),

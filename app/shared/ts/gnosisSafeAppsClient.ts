@@ -1,8 +1,10 @@
+export const isPublicGnosisSafeAppsMethod = (method: string) => new Set(['getEnvironmentInfo', 'getChainInfo', 'getSafeInfo', 'signMessage', 'signTypedMessage', 'getOffChainSignature', 'getTxBySafeTxHash', 'getSafeBalances', 'wallet_getPermissions', 'wallet_requestPermissions', 'rpcCall', 'sendTransactions']).has(method)
+
 import type { GnosisSafeAppsRequest } from './gnosisSafeAppsProtocol.js'
 
 type EthereumRequest = (request: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
-type GnosisSafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: readonly unknown[], readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
+type GnosisSafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: readonly unknown[], readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown, readonly commandToken?: unknown }
 
 const isGnosisSafeAppsCommandCandidate = (value: unknown): value is GnosisSafeAppsCommandCandidate => isRecord(value)
 
@@ -17,7 +19,7 @@ async function executeGnosisSafeAppsCommand(command: unknown, requestEthereum: E
 	if (command.mapResult === 'passthrough') return result
 	if (command.mapResult === 'safeMessage') {
 		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Gnosis Safe owner signature.')
-		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId, ...(command.isTypedData === true ? { isTypedData: true } : {}) } })
+		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { commandToken: command.commandToken, message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId, ...(command.isTypedData === true ? { isTypedData: true } : {}) } })
 		if (!isGnosisSafeAppsCommandCandidate(submitted) || submitted.kind !== 'result') throw new Error('Interceptor returned an invalid Gnosis Safe message submission response.')
 		return submitted.value
 	}
@@ -28,6 +30,7 @@ async function executeGnosisSafeAppsCommand(command: unknown, requestEthereum: E
 export function createGnosisSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
 	let offChainSigning = true
 	return async (request: Pick<GnosisSafeAppsRequest, 'method' | 'params'>) => {
+		if (!isPublicGnosisSafeAppsMethod(request.method)) throw new Error('Unsupported public Gnosis Safe Apps method.')
 		const signingRequest = request.method === 'signMessage' || request.method === 'signTypedMessage'
 		const command = await requestBackground({ method: request.method, ...(request.params === undefined ? {} : { params: request.params }), ...(signingRequest ? { offChainSigning } : {}) })
 		const result = await executeGnosisSafeAppsCommand(command, requestEthereum, requestBackground)

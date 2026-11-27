@@ -3,21 +3,17 @@ import { getHtmlPageUrl } from '../utils/htmlPages.js'
 import { getSettings } from './settings.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getAuthorizedNativeGnosisSafeAppsHostSenderUrl, getNativeGnosisSafeAppsChildLaunch, getNativeGnosisSafeAppsHostLaunch } from './nativeGnosisSafeAppsHostSender.js'
-import { forwardNativeGnosisSafeAppsSignerRequest } from './nativeGnosisSafeAppsSigner.js'
-import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { getWebsiteSocketConnection, isTopFramePort } from './backgroundUtils.js'
-import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { getTabIfExists } from '../utils/requests.js'
 
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getNativeGnosisSafeAppsSession, registerNativeGnosisSafeAppsSession, notifyNativeGnosisSafeAppsSessionConnections, waitForNativeGnosisSafeAppsSessionCondition, nativeGnosisSafeAppsPreparationFailure } from './nativeGnosisSafeAppsSessions.js'
 
-type SignerForward = Extract<InterceptedRequestForward, { readonly type: 'forwardToSigner' }>
 
 type NativeRegistration = {
 	readonly frameOrigins: { readonly websiteOrigin: string, readonly requestOrigin: string }
 	readonly isSignerOwner: boolean
-	readonly properties: { readonly nativeGnosisSafeAppOrigin?: string, readonly nativeGnosisSafeAppsSigner?: boolean, readonly nativeGnosisSafeAppsHostPort?: browser.runtime.Port, readonly forwardToSigner?: (message: SignerForward) => boolean }
+	readonly properties: Pick<NonNullable<ReturnType<typeof getWebsiteSocketConnection>>, 'nativeSafeRole'>
 	readonly beforeRequest?: () => Promise<void>
 	readonly registered?: () => void
 }
@@ -27,7 +23,7 @@ async function waitForNativeSigner(connections: WebsiteTabConnections, tabId: nu
 		if (getNativeGnosisSafeAppsSession(connections, tabId)?.port !== hostPort) throw nativeGnosisSafeAppsPreparationFailure('The app session changed. Retry the connection.')
 		const signer = getConfirmedSignerStateToken(connections, tabId)
 		const child = signer === undefined ? undefined : getWebsiteSocketConnection(connections, signer.socket)
-		return child?.nativeGnosisSafeAppsSigner === true && child.nativeGnosisSafeAppsHostPort === hostPort ? signer : undefined
+		return child?.nativeSafeRole?.kind === 'signer' && child.nativeSafeRole.session.port === hostPort ? signer : undefined
 	}, 'The app wallet bridge is unavailable. Enable Interceptor and your wallet for this embedded site, then retry or open the website directly.')
 }
 
@@ -48,7 +44,7 @@ export async function getNativeGnosisSafeAppsConnectionRegistration(port: browse
 				const settings = await getSettings()
 				if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) await waitForNativeSigner(connections, tabId, port)
 			},
-			properties: { nativeGnosisSafeAppOrigin: host.appUrl.origin, forwardToSigner: (message: SignerForward) => forwardNativeGnosisSafeAppsSignerRequest(connections, message, sendSubscriptionReplyOrCallBackToPort) },
+			properties: { nativeSafeRole: { kind: 'host' } },
 		}
 	}
 
@@ -64,5 +60,5 @@ export async function getNativeGnosisSafeAppsConnectionRegistration(port: browse
 		return current !== undefined && current.port.sender?.url === port.sender?.tab?.url && current.origin === child.appUrl.origin ? current : undefined
 	}, 'The Gnosis Safe App host did not finish connecting. Retry the connection.')
 	if ('documentId' in frame && 'documentId' in port.sender && typeof frame.documentId === 'string' && typeof port.sender.documentId === 'string' && frame.documentId !== port.sender.documentId) return undefined
-	return { frameOrigins: { websiteOrigin: child.appUrl.host, requestOrigin: child.appUrl.origin }, isSignerOwner: true, registered: () => notifyNativeGnosisSafeAppsSessionConnections(connections), properties: { nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: session.port } }
+	return { frameOrigins: { websiteOrigin: child.appUrl.host, requestOrigin: child.appUrl.origin }, isSignerOwner: true, registered: () => notifyNativeGnosisSafeAppsSessionConnections(connections), properties: { nativeSafeRole: { kind: 'signer', session } } }
 }

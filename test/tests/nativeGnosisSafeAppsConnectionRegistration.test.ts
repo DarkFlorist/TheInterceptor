@@ -29,7 +29,7 @@ test('host registration derives app permission identity without inheriting the o
 	const result = await getNativeGnosisSafeAppsConnectionRegistration(h.makePort(0, h.hostUrl), 7, new Map())
 	assert.equal(result?.isSignerOwner, false)
 	assert.deepEqual(result?.frameOrigins, { websiteOrigin: 'app.example:8443', requestOrigin: 'https://app.example:8443' })
-	assert.equal(result?.properties.nativeGnosisSafeAppOrigin, 'https://app.example:8443')
+	assert.equal(result?.properties.nativeSafeRole?.kind, 'host')
 })
 
 test('only the real direct app child can claim native signer ownership, including same-origin SPA URLs', async () => {
@@ -68,7 +68,7 @@ test('host requests wait for the new authenticated signer instead of inheriting 
 	assert.equal(ready, false)
 	const child = h.makePort(3, 'https://app.example:8443/swap')
 	const childRegistration = await getNativeGnosisSafeAppsConnectionRegistration(child, 7, connections)
-	connections.set(7, { signerStateOwner: { confirmed: true, connectionName: 0n, generation: 1, providerGeneration: 1 }, connections: { '7-0x0': { port: child, socket: { tabId: 7, connectionName: 0n }, websiteOrigin: 'app.example:8443', approved: false, wantsToConnect: false, nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: host } } })
+	connections.set(7, { signerStateOwner: { confirmed: true, connectionName: 0n, generation: 1, providerGeneration: 1 }, connections: { '7-0x0': { port: child, socket: { tabId: 7, connectionName: 0n }, websiteOrigin: 'app.example:8443', approved: false, wantsToConnect: false, nativeSafeRole: { kind: 'signer' as const, session: { port: host, origin: 'https://app.example:8443' } } } } })
 	childRegistration?.registered?.()
 	await waiting
 	assert.equal(ready, true)
@@ -122,7 +122,7 @@ test('same-URL reload waits for its own signer session and ignores late cleanup 
 	await getNativeGnosisSafeAppsConnectionRegistration(oldRoot, 7, connections)
 	const child = h.makePort(3, 'https://app.example:8443/swap')
 	const childSocket = { tabId: 7, connectionName: 0n }
-	const childConnection = { port: child, socket: childSocket, websiteOrigin: 'app.example:8443', approved: true, wantsToConnect: true, nativeGnosisSafeAppsSigner: true, nativeGnosisSafeAppsHostPort: oldRoot }
+	const childConnection = { port: child, socket: childSocket, websiteOrigin: 'app.example:8443', approved: true, wantsToConnect: true, nativeSafeRole: { kind: 'signer' as const, session: { port: oldRoot, origin: 'https://app.example:8443' } } }
 	connections.set(7, { signerStateOwner: { confirmed: true, connectionName: 0n, generation: 1, providerGeneration: 1 }, connections: { '7-0x0': childConnection } })
 	const root = h.makePort(0, h.hostUrl)
 	const registration = await getNativeGnosisSafeAppsConnectionRegistration(root, 7, connections)
@@ -132,7 +132,7 @@ test('same-URL reload waits for its own signer session and ignores late cleanup 
 	assert.equal(ready, false, 'old confirmed signer state is not authority for a new root with the same URL')
 	for (const disconnect of oldDisconnects) disconnect()
 	assert.equal(getNativeGnosisSafeAppsSession(connections, 7)?.port, root)
-	childConnection.nativeGnosisSafeAppsHostPort = root
+	childConnection.nativeSafeRole.session.port = root
 	notifyNativeGnosisSafeAppsSessionConnections(connections)
 	await waiting
 	assert.equal(ready, true)

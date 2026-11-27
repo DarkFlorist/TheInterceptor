@@ -451,7 +451,7 @@ describe('inpage signer bridge', () => {
 				{ id: 'invalid-rpc-params', success: false, error: 'Unsupported Gnosis Safe Apps RPC call.', version: '9.1.0' },
 				{ id: 'invalid-version', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
 				{ id: 'missing-method', success: false, error: 'Gnosis Safe Apps method must be a string.', version: '9.1.0' },
-				{ id: 'unknown-method', success: false, error: 'Unsupported Gnosis Safe Apps method: notSafeApps.', version: '9.1.0' },
+				{ id: 'unknown-method', success: false, error: 'Unsupported public Gnosis Safe Apps method.', version: '9.1.0' },
 				{ id: 'unsupported-version', success: false, error: 'Gnosis Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
 			])
 			assert.deepEqual(ethereumRequests, [])
@@ -589,7 +589,35 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	for (const method of ['sendTransactions', 'signMessage', 'signTypedMessage', 'submitOffChainMessage', 'execute']) for (const rejected of [false, true]) for (const settleWhileDisabled of [false, true]) {
+	for (const method of ['execute', 'submitOffChainMessage']) test(`rejects public ${ method } injection before contacting background`, async () => {
+		let forwarded = 0
+		let connected = false
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request, reply) => {
+			if (request.method === 'connected_to_signer') {
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				sendGnosisSafeAppsCompatibility(reply, true)
+				connected = true
+				return true
+			}
+			if (request.method === 'safe_apps_request') { forwarded++; return true }
+			return false
+		} })
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?reject-private-${ method }`, async () => {
+			await waitFor(() => connected)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => {
+				const message = parseGnosisSafeAppsBridgeMessage(event.data)
+				if (message !== undefined && isRecord(message.envelope) && typeof message.envelope.success === 'boolean') replies.push(message.envelope)
+			})
+			fakeWindow.postMessage(createGnosisSafeAppsBridgeMessage({ id: 'attack', method, params: { kind: 'ethereumRequest', safeRequestContext: { operation: 1 } }, env: { sdkVersion: '9.1.0' } }, 'native-host-token'), fakeWindow.location.origin)
+			await waitFor(() => replies.length === 1)
+			assert.equal(replies[0]?.success, false)
+			assert.equal(forwarded, 0)
+		})
+	})
+
+	for (const method of ['sendTransactions', 'signMessage', 'signTypedMessage']) for (const rejected of [false, true]) for (const settleWhileDisabled of [false, true]) {
 		test(`preserves admitted ${ method } ${ rejected ? 'rejection' : 'success' } when settling ${ settleWhileDisabled ? 'while disabled' : 'after re-enablement' } without replay`, async () => {
 			let publishCompatibility: ((enabled: boolean) => void) | undefined
 			let settle: (() => void) | undefined

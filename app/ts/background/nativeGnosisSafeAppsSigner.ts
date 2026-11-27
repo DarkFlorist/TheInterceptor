@@ -21,9 +21,9 @@ function matchesHost(connections: WebsiteTabConnections, host: Connection, signe
 	const launch = getNativeGnosisSafeAppsChildLaunch(signer.port.sender)
 	const hostLaunch = getNativeGnosisSafeAppsHostLaunch(host.port.sender)
 	const session = getNativeGnosisSafeAppsSession(connections, host.socket.tabId)
-	return child?.nativeGnosisSafeAppsSigner === true && child.port === signer.port && host.nativeGnosisSafeAppOrigin !== undefined
-		&& child.nativeGnosisSafeAppsHostPort === host.port && session?.port === host.port && session.origin === host.nativeGnosisSafeAppOrigin
-		&& host.socket.tabId === signer.socket.tabId && launch?.appUrl.origin === host.nativeGnosisSafeAppOrigin
+	return child?.nativeSafeRole?.kind === 'signer' && child.port === signer.port && host.nativeSafeRole?.kind === 'host'
+		&& child.nativeSafeRole.session.port === session?.port && session?.port === host.port && session.origin === hostLaunch?.appUrl.origin
+		&& host.socket.tabId === signer.socket.tabId && launch?.appUrl.origin === session.origin
 		&& hostLaunch?.appUrl.href === launch?.appUrl.href && child.websiteOrigin === host.websiteOrigin
 		&& getWebsiteSocketConnection(connections, host.socket) === host
 }
@@ -33,10 +33,10 @@ export function isNativeGnosisSafeAppsSignerPort(connections: WebsiteTabConnecti
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return false
 	const connection = getWebsiteSocketConnection(connections, socket)
-	if (connection?.port !== port || connection.nativeGnosisSafeAppsSigner !== true) return false
+	if (connection?.port !== port || connection.nativeSafeRole?.kind !== 'signer') return false
 	const launch = getNativeGnosisSafeAppsChildLaunch(port.sender)
 	const session = getNativeGnosisSafeAppsSession(connections, socket.tabId)
-	return launch !== undefined && connection.websiteOrigin === launch.appUrl.host && session?.origin === launch.appUrl.origin && connection.nativeGnosisSafeAppsHostPort === session.port
+	return launch !== undefined && connection.websiteOrigin === launch.appUrl.host && session?.origin === launch.appUrl.origin && connection.nativeSafeRole.session.port === session.port
 }
 
 // The host owns request identity and approvals; only the selected child's real wallet provider receives the signer callback.
@@ -83,7 +83,7 @@ export async function takeNativeGnosisSafeAppsSignerReply(connections: WebsiteTa
 	const approvalIsCurrent = approval === undefined || (!latestSettings.simulationMode && approval.approvalStatus.status === 'WaitingForSigner' && selectedAddress?.address === approval.activeAddress && latestSettings.activeSigningSafeAddress === approval.activeAddress && reviewedChain === latestSettings.activeRpcNetwork.chainId)
 	const current = isSignerStateTokenCurrent(connections, signer) && result.signerProviderGeneration === signer.signerProviderGeneration
 		&& matchesHost(connections, host, signer) && tab?.url === host.port.sender?.url
-		&& frame?.parentFrameId === 0 && new URL(frame.url).origin === host.nativeGnosisSafeAppOrigin
+		&& frame?.parentFrameId === 0 && new URL(frame.url).origin === getNativeGnosisSafeAppsSession(connections, host.socket.tabId)?.origin
 		&& host.approved && access === 'hasAccess' && approvalIsCurrent
 	const reply = current ? result : { ...result, success: false as const, error: signerConnectionReplacedError }
 	return { uniqueRequestIdentifier: forward.uniqueRequestIdentifier, reply, forward }
