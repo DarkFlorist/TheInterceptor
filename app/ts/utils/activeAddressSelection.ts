@@ -95,8 +95,8 @@ export function isActiveSigningGnosisSafe(activeAddress: AddressBookEntry | unde
 }
 
 // The selected simulation address is independent of the selected signing Gnosis Safe. Simulation never requires a connected owner wallet.
-export function getConfiguredGnosisSafeAddressForMode(settings: { readonly simulationMode: boolean, readonly activeSimulationAddress?: bigint, readonly activeSigningSafeAddress?: bigint }) {
-	return settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+export function getConfiguredGnosisSafeAddressForMode(settings: { readonly simulationMode: boolean, readonly useSignersAddressAsActiveAddress?: boolean, readonly activeSimulationAddress?: bigint, readonly activeSigningSafeAddress?: bigint }) {
+	return settings.simulationMode ? settings.useSignersAddressAsActiveAddress ? undefined : settings.activeSimulationAddress : settings.activeSigningSafeAddress
 }
 
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {

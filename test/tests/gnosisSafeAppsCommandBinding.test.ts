@@ -2,7 +2,7 @@ import { GnosisSafeAppsRequestCommand } from '../../app/ts/types/gnosisSafeApps.
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { test } from 'bun:test'
 import * as assert from 'node:assert/strict'
-import { bindGnosisSafeAppsCommand, admitGnosisSafeAppsPrivateCommand } from '../../app/ts/background/gnosisSafeAppsCommandBinding.js'
+import { bindGnosisSafeAppsCommand, admitGnosisSafeAppsPrivateCommand, trackGnosisSafeAppsExecution, settleGnosisSafeAppsExecution } from '../../app/ts/background/gnosisSafeAppsCommandBinding.js'
 import { createGnosisSafeAppsRequestHandler } from '../../app/shared/ts/gnosisSafeAppsClient.js'
 import { createPort } from './backgroundEthAccountsTestHarness.js'
 
@@ -33,9 +33,38 @@ test('generated offchain signing command executes and submits its bound message'
 		assert.ok(typeof request === 'object' && request !== null && 'method' in request)
 		methods.push(String(request.method))
 		if (request.method === 'signMessage') return command
+		if (request.method === 'execute') trackGnosisSafeAppsExecution(port, 1, request)
 		assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), true)
+		if (request.method === 'execute') settleGnosisSafeAppsExecution(port, 1, `0x${ '11'.repeat(65) }`)
 		return request.method === 'execute' ? `0x${ '11'.repeat(65) }` : { kind: 'result', value: 'submitted' }
 	}, async () => { throw new Error('must use reviewed execution') })
 	assert.equal(await handle({ method: 'signMessage', params: { message: 'review me' } }), 'submitted')
 	assert.deepEqual(methods, ['signMessage', 'execute', 'submitOffChainMessage'])
+})
+
+for (const admitted of [true, false]) test(`failed signing releases more than the command cap, admitted=${ admitted }`, () => {
+ const { port } = createPort(7)
+ for (let requestId = 0; requestId < 150; requestId++) {
+  const command = bindGnosisSafeAppsCommand(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'reject', isTypedData: false } }, mapResult: 'safeMessage', message: 'reject', safeAddress: '0x123', chainId: '1' })
+  const request = { method: 'execute', params: command }
+  trackGnosisSafeAppsExecution(port, requestId, request)
+  if (admitted) assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), true)
+  settleGnosisSafeAppsExecution(port, requestId, undefined)
+  assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), false)
+ }
+})
+
+test('submission waits for successful execution settlement and is single-use', () => {
+	const { port } = createPort(7)
+	const command = bindGnosisSafeAppsCommand(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'retain', isTypedData: false } }, mapResult: 'safeMessage', message: 'retain', safeAddress: '0x123', chainId: '1' })
+	const execute = { method: 'execute', params: command }
+	const submit = { method: 'submitOffChainMessage', params: { ...command, signature: `0x${ '11'.repeat(65) }` } }
+	trackGnosisSafeAppsExecution(port, 1, execute)
+	assert.equal(admitGnosisSafeAppsPrivateCommand(port, execute), true)
+	assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), false)
+	settleGnosisSafeAppsExecution(port, 1, `0x${ '11'.repeat(65) }`)
+	assert.equal(admitGnosisSafeAppsPrivateCommand(createPort(7).port, submit), false)
+	assert.equal(admitGnosisSafeAppsPrivateCommand(port, { ...submit, params: { ...submit.params, message: 'changed' } }), false)
+	assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), true)
+	assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), false)
 })

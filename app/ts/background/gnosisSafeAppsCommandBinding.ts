@@ -1,6 +1,6 @@
 import type { GnosisSafeAppsRequestCommand } from '../types/gnosisSafeApps.js'
 
-const pending = new WeakMap<browser.runtime.Port, Map<string, { command: GnosisSafeAppsRequestCommand, executed: boolean }>>()
+const pending = new WeakMap<browser.runtime.Port, Map<string, { command: GnosisSafeAppsRequestCommand, executed: boolean, settled: boolean }>>()
 type CommandCandidate = Record<string, unknown> & { readonly method?: unknown, readonly params?: unknown, readonly commandToken?: unknown, readonly message?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly isTypedData?: unknown }
 const record = (value: unknown): value is CommandCandidate => typeof value === 'object' && value !== null
 
@@ -20,7 +20,7 @@ export function bindGnosisSafeAppsCommand(port: browser.runtime.Port, command: G
 	if (commands === undefined) { commands = new Map(); pending.set(port, commands) }
 	if (commands.size >= 100) throw new Error('Too many pending Gnosis Safe Apps commands.')
 	const commandToken = crypto.randomUUID()
-	commands.set(commandToken, { command, executed: false })
+	commands.set(commandToken, { command, executed: false, settled: false })
 	return { ...command, commandToken }
 }
 
@@ -39,7 +39,32 @@ export function admitGnosisSafeAppsPrivateCommand(port: browser.runtime.Port, va
 		return true
 	}
 	const command = captured.command
-	if (!captured.executed || command.mapResult !== 'safeMessage' || payload.message !== command.message || payload.safeAddress !== command.safeAddress || payload.chainId !== command.chainId || (payload.isTypedData === true) !== (command.isTypedData === true)) return false
+	if (!captured.settled || command.mapResult !== 'safeMessage' || payload.message !== command.message || payload.safeAddress !== command.safeAddress || payload.chainId !== command.chainId || (payload.isTypedData === true) !== (command.isTypedData === true)) return false
 	commands?.delete(commandToken)
 	return true
+}
+
+const executions = new WeakMap<browser.runtime.Port, Map<number, string>>()
+
+// Track before access/policy admission: those stages can also reject a previously issued command.
+export function trackGnosisSafeAppsExecution(port: browser.runtime.Port, requestId: number, value: unknown) {
+	if (!record(value) || value.method !== 'execute' || !record(value.params) || typeof value.params.commandToken !== 'string') return
+	const { commandToken, ...command } = value.params
+	const captured = pending.get(port)?.get(commandToken)
+	if (captured === undefined || captured.executed || !sameCommand(command, captured.command)) return
+	let requests = executions.get(port)
+	if (requests === undefined) { requests = new Map(); executions.set(port, requests) }
+	requests.set(requestId, commandToken)
+}
+
+export function settleGnosisSafeAppsExecution(port: browser.runtime.Port, requestId: number, result: unknown) {
+	const requests = executions.get(port)
+	const token = requests?.get(requestId)
+	if (token === undefined) return
+	requests?.delete(requestId)
+	const commands = pending.get(port)
+	const captured = commands?.get(token)
+	// Only a successful owner signature retains a single submission capability.
+	if (captured?.executed && typeof result === 'string' && /^0x[0-9a-f]{130}$/i.test(result)) { captured.settled = true; return }
+	commands?.delete(token)
 }

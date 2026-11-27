@@ -2,7 +2,7 @@ import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { browserTestTargets } from '../../scripts/test-browsers.mts'
-import { launchBrowserSession, selectedBrowser, waitForBrowserCondition } from './browserHarness.js'
+import { launchBrowserSession, selectedBrowser, waitForBrowserCondition, waitForExtensionPage } from './browserHarness.js'
 import type { BrowserPage } from './browserHarness.js'
 import { getHtmlFile } from '../../app/ts/utils/htmlPages.js'
 
@@ -102,7 +102,10 @@ try {
 					const sourceTabId = await settings.evaluate<number>(`browser.tabs.query({}).then(tabs=>tabs.find(tab=>tab.url?.startsWith(${ JSON.stringify(site.url) }))?.id)`)
 					if (!Number.isSafeInteger(sourceTabId)) throw new Error('Missing original website tab')
 					const hostPath = getHtmlFile('gnosisSafeAppsHost', await settings.evaluate<number>('browser.runtime.getManifest().manifest_version'))
-					const host = await session.openExtensionPage(`${ hostPath.slice(1) }?${ new URLSearchParams({ sourceTabId: String(sourceTabId), appUrl: site.url }) }`)
+					const launch = await settings.evaluate<{ ok: boolean }>(`browser.runtime.sendMessage({method:'popup_openGnosisSafeApp',data:{sourceTabId:${ sourceTabId }}})`)
+					if (!launch.ok) throw new Error('Background rejected native app launch')
+					const host = await waitForExtensionPage(session, `${ hostPath }?${ new URLSearchParams({ hostTabId: String(sourceTabId), appUrl: site.url }) }`)
+					if (host.id !== source.id || await host.evaluate('browser.tabs.getCurrent().then(tab=>tab.id)') !== sourceTabId) throw new Error('Native app launch changed browser tabs')
 					try {
 						await host.evaluate(`(() => {globalThis.nativeLiveObservations=[];addEventListener('message',event=>{const child=document.querySelector('iframe');if(event.source===child?.contentWindow&&event.origin===${ JSON.stringify(new URL(site.url).origin) }&&event.data?.type==='native-host-test-observation')nativeLiveObservations.push({origin:event.origin,data:event.data})})})()`)
 						await new Promise((resolve) => setTimeout(resolve, 20_000))
