@@ -25,7 +25,7 @@ test('transaction address metadata enrichment does not interrupt a Gnosis Safe a
 	const enriched = { ...safe, name: 'Renamed Gnosis Safe', logoUri: 'https://example.org/logo.png', abi: '[]' }
 	const contact = { type: 'contact', name: 'Transaction recipient', address: '0x0000000000000000000000000000000000000002', entrySource: 'OnChain' }
 	assert.equal(nativeGnosisSafeAppsStorageChangeAffectsContext('userAddressBookEntriesV3', { oldValue: [safe], newValue: [enriched, contact] }), false)
-	for (const wallet of [{ ...enriched, safeSignerAddresses: [] }, { ...enriched, safeSimulationSignerAddress: contact.address }, { ...enriched, chainId: '0x2' }, { ...enriched, useAsActiveAddress: false }, { ...enriched, askForAddressAccess: true }]) assert.equal(nativeGnosisSafeAppsStorageChangeAffectsContext('userAddressBookEntriesV3', { oldValue: [safe], newValue: [wallet, contact] }), true)
+	for (const wallet of [{ ...enriched, safeSignerAddresses: [] }, { ...enriched, safeSimulationSignerAddress: contact.address }, { ...enriched, chainId: '0x2' }, { ...enriched, useAsActiveAddress: false }, { ...enriched, askForAddressAccess: true }, { ...enriched, safeVersion: '1.3.0' }, { ...enriched, declarativeNetRequestBlockMode: 'block-all' }]) assert.equal(nativeGnosisSafeAppsStorageChangeAffectsContext('userAddressBookEntriesV3', { oldValue: [safe], newValue: [wallet, contact] }), true)
 	assert.equal(nativeGnosisSafeAppsStorageChangeAffectsContext('userAddressBookEntriesV3', { oldValue: [safe], newValue: [contact] }), true)
 	assert.equal(nativeGnosisSafeAppsStorageChangeAffectsContext('userAddressBookEntriesV3', { oldValue: [safe], newValue: [{ ...safe, chainId: 'invalid' }] }), true)
 })
@@ -101,4 +101,14 @@ test('canonical hosting settings enumerate every context invalidation field', as
 	const keys = ['safeAppsCompatibilityMode', 'simulationMode', 'activeSigningSafeAddress', 'independentActiveSimulationAddress', 'useSignersAddressAsActiveAddress', 'activeRpcNetwork', 'websiteAccess', 'signingAddressPreferences', 'userAddressBookEntriesV3']
 	assert.deepEqual([...automaticGnosisSafeAppsHostingSettingsKeys].sort(), [...keys].sort())
 	for (const key of keys) assert.deepEqual(getNativeGnosisSafeAppsContextChanges({ [key]: { newValue: 'changed' } }, 'local'), [key])
+})
+
+
+test('permission projection coverage tracks the canonical codec inventory', async () => {
+	const { WebsiteAccess, Website, WebsiteAddressAccess } = await import('../../app/ts/types/websiteAccessTypes.js')
+	const { GnosisSafeEntry } = await import('../../app/ts/types/addressBookTypes.js')
+	assert.deepEqual(WebsiteAccess.intersectees.flatMap((codec) => Object.keys(codec.fields)).sort(), ['access', 'addressAccess', 'declarativeNetRequestBlockMode', 'interceptorDisabled', 'website'])
+	assert.deepEqual(Object.keys(Website.fields).sort(), ['icon', 'title', 'websiteOrigin'])
+	assert.deepEqual(Object.keys(WebsiteAddressAccess.fields).sort(), ['access', 'address'])
+	assert.deepEqual(GnosisSafeEntry.intersectees.flatMap((codec) => Object.keys(codec.fields)).sort(), ['abi', 'address', 'askForAddressAccess', 'chainId', 'declarativeNetRequestBlockMode', 'entrySource', 'logoUri', 'name', 'safeSignerAddresses', 'safeSimulationSignerAddress', 'safeVersion', 'type', 'useAsActiveAddress'])
 })

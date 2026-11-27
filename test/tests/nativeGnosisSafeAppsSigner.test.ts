@@ -245,7 +245,7 @@ test('native signer replies revalidate wallet generation, live host navigation a
 
 test('queued startup announcements never expose an obsolete wallet generation to native host metadata', async () => {
 	const h = await setup()
-	const { connectedToSigner } = await import('../../app/ts/background/providerMessageHandlers.js')
+	const { connectedToSigner } = await import('../../app/ts/background/nativeGnosisSafeAppsProviderAdapter.js')
 	const { runSignerStateOperation, getConfirmedSignerStateToken, waitForConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
 	const services = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
 	let release = () => { throw new Error('Missing queue release') }
@@ -263,4 +263,33 @@ test('queued startup announcements never expose an obsolete wallet generation to
 	assert.equal(await intermediate, undefined, 'the superseded Brave confirmation must not wake host requests')
 	assert.equal((await ready)?.signerProviderGeneration, 5)
 	assert.equal((await h.modules.getTabState(7)).signerName, 'MetaMask')
+})
+
+test('native dispatch normalizes every signing method and acknowledges only consumed private tokens', async () => {
+	const core = await import('../../app/ts/background/providerMessageHandlers.js')
+	const adapter = await import('../../app/ts/background/nativeGnosisSafeAppsProviderAdapter.js')
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	const apply = spyOn(core, 'applySignerReply').mockResolvedValue({ type: 'doNotReply' })
+	const native = await import('../../app/ts/background/nativeGnosisSafeAppsSigner.js')
+	const take = spyOn(native, 'takeNativeGnosisSafeAppsSignerReply')
+	try {
+		for (const method of ['personal_sign', 'eth_signTypedData', 'eth_signTypedData_v1', 'eth_signTypedData_v2', 'eth_signTypedData_v3', 'eth_signTypedData_v4', 'eth_sendRawTransaction', 'eth_sendTransaction'] as const) {
+			const h = await setup()
+			const forward = { ...h.forward, method }
+			const callback = h.dispatch()
+			take.mockResolvedValueOnce({ uniqueRequestIdentifier: forward.uniqueRequestIdentifier, forward, reply: h.reply(callback.token) })
+			const request = { method: 'signer_reply' as const, params: [h.reply(callback.token)], uniqueRequestIdentifier: { requestId: 99, requestSocket: h.signer.socket }, interceptorRequest: true as const, usingInterceptorWithoutSigner: false }
+			assert.deepEqual(await adapter.signerReply(simulationServicesOwner, h.connections, h.signerPort, request, 'hasAccess', undefined), { type: 'result', method: 'signer_reply', result: '0x' })
+			assert.equal(apply.mock.calls.at(-1)?.[4]?.params.forwardRequest.method, method)
+			assert.deepEqual(apply.mock.calls.at(-1)?.[4]?.uniqueRequestIdentifier, forward.uniqueRequestIdentifier)
+			const calls = apply.mock.calls.length
+			take.mockResolvedValueOnce(undefined)
+			assert.deepEqual(await adapter.signerReply(simulationServicesOwner, h.connections, h.signerPort, request, 'hasAccess', undefined), { type: 'doNotReply' })
+			assert.equal(apply.mock.calls.length, calls)
+			const stale = h.dispatch()
+			take.mockResolvedValueOnce({ uniqueRequestIdentifier: forward.uniqueRequestIdentifier, forward, reply: { ...h.reply(stale.token), success: false, error: { code: 4900, message: 'Signer connection changed' } } })
+			await adapter.signerReply(simulationServicesOwner, h.connections, h.signerPort, { ...request, params: [h.reply(stale.token)] }, 'hasAccess', undefined)
+			assert.equal(apply.mock.calls.at(-1)?.[4]?.params.success, false)
+		}
+	} finally { take.mockRestore(); apply.mockRestore() }
 })
