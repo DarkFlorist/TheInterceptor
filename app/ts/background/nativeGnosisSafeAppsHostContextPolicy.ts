@@ -42,7 +42,7 @@ export function nativeGnosisSafeAppsStorageChangeAffectsContext(key: string, cha
 
 export function getNativeGnosisSafeAppsContextChanges(changes: Record<string, browser.storage.StorageChange>, area: string) {
 	if (area !== 'local') return []
-	return [...automaticGnosisSafeAppsHostingSettingsKeys, 'signingAddressPreferences'].filter((key) => {
+	return automaticGnosisSafeAppsHostingSettingsKeys.filter((key) => {
 		const change = changes[key]
 		return change !== undefined && nativeGnosisSafeAppsStorageChangeAffectsContext(key, change)
 	})

@@ -68,3 +68,19 @@ export function settleGnosisSafeAppsExecution(port: browser.runtime.Port, reques
 	if (captured?.executed && typeof result === 'string' && /^0x[0-9a-f]{130}$/i.test(result)) { captured.settled = true; return }
 	commands?.delete(token)
 }
+
+// The request handler owns admission and the handoff to durable asynchronous replies. Returning true transfers settlement to the domain reply router; every earlier exit, including preparation errors and missing/disconnected contexts, releases the capability.
+export const gnosisSafeAppsCommandLifecycle = {
+	bind: bindGnosisSafeAppsCommand,
+	admit: admitGnosisSafeAppsPrivateCommand,
+	settle: settleGnosisSafeAppsExecution,
+	async process(port: browser.runtime.Port, request: { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[] }, process: () => Promise<boolean | undefined>) {
+		if (request.method === 'safe_apps_request') trackGnosisSafeAppsExecution(port, request.requestId, request.params?.[0])
+		let handedOff = false
+		try {
+			handedOff = await process() === true
+		} finally {
+			if (!handedOff) settleGnosisSafeAppsExecution(port, request.requestId, undefined)
+		}
+	},
+}

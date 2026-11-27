@@ -1,4 +1,4 @@
-import { bindGnosisSafeAppsCommand, admitGnosisSafeAppsPrivateCommand } from './gnosisSafeAppsCommandBinding.js'
+import { gnosisSafeAppsCommandLifecycle } from './gnosisSafeAppsCommandBinding.js'
 import { getWebsiteSocketConnection } from './backgroundUtils.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { isGnosisSafeAppsConnectionEligibleForAdmittedAddress } from './gnosisSafeAppsConnectionEligibility.js'
@@ -31,7 +31,7 @@ export async function prepareGnosisSafeAppsRequest(services: SimulationServicesS
 	try {
 		const connection = getWebsiteSocketConnection(connections, request.uniqueRequestIdentifier.requestSocket)
 		const payload = 'params' in request ? request.params?.[0] : undefined
-		if (connection === undefined || !admitGnosisSafeAppsPrivateCommand(connection.port, payload)) return failure(-32602, 'Unrecognized or modified Gnosis Safe Apps private command.')
+		if (connection === undefined || !gnosisSafeAppsCommandLifecycle.admit(connection.port, payload)) return failure(-32602, 'Unrecognized or modified Gnosis Safe Apps private command.')
 		const execution = getGnosisSafeAppsExecution(request)
 		if (execution !== undefined) return { kind: 'execute', context: execution }
 		const safeAddress = activeAddress.address
@@ -42,7 +42,7 @@ export async function prepareGnosisSafeAppsRequest(services: SimulationServicesS
 			getBalances: async (currency: string) => await fetchGnosisSafeAppsBalances(chainId, safeAddress, currency),
 			getTransaction: async (safeTxHash: string) => await fetchGnosisSafeAppsTransaction(chainId, safeAddress, safeTxHash),
 		})
-		const result = command.kind === 'settings' ? { kind: 'result' as const, value: { offChainSigning: command.offChainSigning } } : bindGnosisSafeAppsCommand(connection.port, command)
+		const result = command.kind === 'settings' ? { kind: 'result' as const, value: { offChainSigning: command.offChainSigning } } : gnosisSafeAppsCommandLifecycle.bind(connection.port, command)
 		return reply({ type: 'result', method: 'safe_apps_request', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	} catch (error: unknown) {
 		if (isGnosisSafeAppsRequestPolicyError(error)) return failure(-32602, error.message)

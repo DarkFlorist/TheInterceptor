@@ -1,6 +1,7 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
-import { trackGnosisSafeAppsExecution, settleGnosisSafeAppsExecution } from './gnosisSafeAppsCommandBinding.js'
+import { routeProviderReply } from './providerReplyRouting.js'
+import { gnosisSafeAppsCommandLifecycle } from './gnosisSafeAppsCommandBinding.js'
 import { getNativeGnosisSafeAppsConnectionRegistration } from './nativeGnosisSafeAppsConnectionRegistration.js'
 import { isNativeGnosisSafeAppsPreparationError } from './nativeGnosisSafeAppsSessions.js'
 import { attachNativeGnosisSafeAppsHostContext } from './nativeGnosisSafeAppsHostContext.js'
@@ -199,21 +200,19 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					checkAndThrowRuntimeLastError()
 				})
 				if (delivery === 'duplicate') return
-				try {
+				await gnosisSafeAppsCommandLifecycle.process(port, rawMessage, async () => {
 					if (delivery === 'invalid') {
 						port.postMessage(serializeInpageReply({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'Invalid request ID: expected a non-negative safe integer.' } }))
 						checkAndThrowRuntimeLastError()
 						return
 					}
-					if (rawMessage.method === 'safe_apps_request') trackGnosisSafeAppsExecution(port, rawMessage.requestId, 'params' in rawMessage ? rawMessage.params?.[0] : undefined)
 					const { simulationServicesOwner } = await getConnectionInitializationPromise()
 					const context = await contextPromise
-					if (context === undefined) { settleGnosisSafeAppsExecution(port, rawMessage.requestId, undefined); return }
+					if (context === undefined) return
 					const { nativeRegistration, websiteOrigin, websitePromise } = context
 					try { await nativeRegistration?.beforeRequest?.() } catch (error: unknown) {
-						settleGnosisSafeAppsExecution(port, rawMessage.requestId, undefined)
 						if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
-						port.postMessage(serializeInpageReply({ type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, interceptorApproved: true, bridgeRequestSettled: true, error: { code: 4900, message: error.message } }))
+						routeProviderReply(websiteTabConnections, { type: 'result', method: rawMessage.method, uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket }, error: { code: 4900, message: error.message } })
 						return
 					}
 					await pendingRequestLimiter.execute(async () => {
@@ -228,10 +227,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 						// A connected port outlives RPC switches; each request stage selects services from the owner.
 						return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 					})
-				} catch (error: unknown) {
-					settleGnosisSafeAppsExecution(port, rawMessage.requestId, undefined)
-					throw error
-				}
+					return true
+				})
 			})
 		},
 		checkAndThrowRuntimeLastError,

@@ -44,15 +44,15 @@ test('generated offchain signing command executes and submits its bound message'
 })
 
 for (const admitted of [true, false]) test(`failed signing releases more than the command cap, admitted=${ admitted }`, () => {
- const { port } = createPort(7)
- for (let requestId = 0; requestId < 150; requestId++) {
-  const command = bindGnosisSafeAppsCommand(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'reject', isTypedData: false } }, mapResult: 'safeMessage', message: 'reject', safeAddress: '0x123', chainId: '1' })
-  const request = { method: 'execute', params: command }
-  trackGnosisSafeAppsExecution(port, requestId, request)
-  if (admitted) assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), true)
-  settleGnosisSafeAppsExecution(port, requestId, undefined)
-  assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), false)
- }
+	const { port } = createPort(7)
+	for (let requestId = 0; requestId < 150; requestId++) {
+		const command = bindGnosisSafeAppsCommand(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'reject', isTypedData: false } }, mapResult: 'safeMessage', message: 'reject', safeAddress: '0x123', chainId: '1' })
+		const request = { method: 'execute', params: command }
+		trackGnosisSafeAppsExecution(port, requestId, request)
+		if (admitted) assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), true)
+		settleGnosisSafeAppsExecution(port, requestId, undefined)
+		assert.equal(admitGnosisSafeAppsPrivateCommand(port, request), false)
+	}
 })
 
 test('submission waits for successful execution settlement and is single-use', () => {
@@ -90,4 +90,31 @@ test('provider routing settles tracked signer replies and generic transport stay
 	}
 	assert.doesNotMatch(await Bun.file('app/ts/background/messageSending.ts').text(), /gnosisSafeAppsCommandBinding|settleGnosisSafeAppsExecution/)
 	assert.match(await Bun.file('app/ts/background/terminalReplyDelivery.ts').text(), /routeProviderReply/)
+})
+
+test('lifecycle releases early exits and thrown preparation failures beyond capacity', async () => {
+	const { gnosisSafeAppsCommandLifecycle: lifecycle } = await import('../../app/ts/background/gnosisSafeAppsCommandBinding.js')
+	const { port } = createPort(7)
+	for (let requestId = 0; requestId < 150; requestId++) {
+		const command = lifecycle.bind(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'reject', isTypedData: false } }, mapResult: 'safeMessage', message: 'reject', safeAddress: '0x123', chainId: '1' })
+		const payload = { method: 'execute', params: command }
+		const request = { method: 'safe_apps_request', requestId, params: [payload] }
+		if (requestId % 2 === 0) await lifecycle.process(port, request, async () => undefined)
+		else await assert.rejects(lifecycle.process(port, request, async () => { throw new Error('preparation failed') }), /preparation failed/)
+		assert.equal(lifecycle.admit(port, payload), false)
+	}
+})
+
+test('lifecycle hands queued approval settlement to the terminal reply without releasing it early', async () => {
+	const { gnosisSafeAppsCommandLifecycle: lifecycle } = await import('../../app/ts/background/gnosisSafeAppsCommandBinding.js')
+	const { port } = createPort(7)
+	const command = lifecycle.bind(port, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [], safeRequestContext: { message: { text: 'queued', isTypedData: false } }, mapResult: 'safeMessage', message: 'queued', safeAddress: '0x123', chainId: '1' })
+	const payload = { method: 'execute', params: command }
+	await lifecycle.process(port, { method: 'safe_apps_request', requestId: 1, params: [payload] }, async () => true)
+	assert.equal(lifecycle.admit(port, payload), true)
+	lifecycle.settle(createPort(7).port, 1, undefined)
+	lifecycle.settle(port, 2, undefined)
+	lifecycle.settle(port, 1, `0x${ '11'.repeat(65) }`)
+	assert.equal(lifecycle.admit(port, { method: 'submitOffChainMessage', params: command }), true)
+	assert.equal(lifecycle.admit(port, payload), false)
 })
