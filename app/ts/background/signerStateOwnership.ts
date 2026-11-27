@@ -118,6 +118,21 @@ export function beginSignerStateConfirmation(tabConnection: TabConnection) {
 	tabConnection.signerStateOwner.confirmation = createSignerStateConfirmation()
 }
 
+// Provider announcements arrive before queued confirmation work completes. Never publish an obsolete intermediate wallet as ready.
+const announcedProviderGenerations = new WeakMap<browser.runtime.Port, number>()
+export function announceSignerProviderGeneration(connections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, generation: number) {
+	const tab = connections.get(socket.tabId)
+	if (!isCurrentWebsiteConnection(tab, socket, port) || tab?.signerStateOwner?.connectionName !== socket.connectionName) return false
+	const previous = announcedProviderGenerations.get(port) ?? tab.signerStateOwner.providerGeneration ?? -1
+	if (generation < previous) return false
+	announcedProviderGenerations.set(port, generation)
+	if (generation > previous) {
+		beginSignerStateConfirmation(tab)
+	}
+	return true
+}
+export const isSignerProviderAnnouncementCurrent = (port: browser.runtime.Port, generation: number) => announcedProviderGenerations.get(port) === generation
+
 export function confirmSignerState(tabConnection: TabConnection, signerProviderGeneration: number) {
 	if (tabConnection.signerStateOwner === undefined) throw new Error('Signer state owner lifecycle missing')
 	tabConnection.signerStateOwner.providerGeneration = signerProviderGeneration
@@ -136,7 +151,7 @@ export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	connection: TabConnection['connections'][string],
-	isTopFrame: boolean,
+	mayOwnSignerState: boolean,
 ) {
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		let tabConnection = websiteTabConnections.get(socket.tabId)
@@ -145,16 +160,23 @@ export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
 			tabConnection = { connections: {} }
 			websiteTabConnections.set(socket.tabId, tabConnection)
 		}
-		const previousSignerStateToken = isTopFrame ? getConfirmedSignerStateToken(websiteTabConnections, socket.tabId) : undefined
+		const previousSignerStateToken = mayOwnSignerState ? getConfirmedSignerStateToken(websiteTabConnections, socket.tabId) : undefined
 		tabConnection.connections[websiteSocketToString(socket)] = connection
-		if (isTopFrame) {
+		if (mayOwnSignerState) {
 			provisionallyClaimSignerStateOwnerWithinOperation(tabConnection, socket)
 			settleSignerRequestsForReplacedState(previousSignerStateToken)
 			await updateTabState(socket.tabId, clearSignerDerivedTabState)
 		}
-		return { createdTabConnection, provisionallyClaimedSignerState: isTopFrame }
+		return { createdTabConnection, provisionallyClaimedSignerState: mayOwnSignerState }
 	})
 }
+
+// Feature authentication can retire an exact port independently of wallet generation. Keep the core invariant neutral: providers register validation, never a bypass.
+const signerAuthorityChecks = new WeakMap<browser.runtime.Port, () => boolean>()
+export function registerSignerAuthorityCheck(port: browser.runtime.Port, check: () => boolean) {
+	signerAuthorityChecks.set(port, check)
+}
+export const isSignerPortAuthorityCurrent = (port: browser.runtime.Port) => signerAuthorityChecks.get(port)?.() !== false
 
 export function getConfirmedSignerStateToken(websiteTabConnections: WebsiteTabConnections, tabId: number): SignerStateToken | undefined {
 	const tabConnection = websiteTabConnections.get(tabId)
@@ -167,7 +189,7 @@ export function getConfirmedSignerStateToken(websiteTabConnections: WebsiteTabCo
 	if (connectionName === undefined || ownerGeneration === undefined || signerProviderGeneration === undefined) return undefined
 	const socket = { tabId, connectionName }
 	const port = tabConnection.connections[websiteSocketToString(socket)]?.port
-	if (port === undefined) return undefined
+	if (port === undefined || !isSignerPortAuthorityCurrent(port)) return undefined
 	return { socket, port, ownerGeneration, signerProviderGeneration }
 }
 

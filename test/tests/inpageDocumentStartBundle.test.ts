@@ -36,7 +36,6 @@ test('one runtime build ships and embeds identical classic provider bytes per co
 			assert.ok(embeddedProvider?.endsWith(`\n${ provider }`))
 			let setupReached = false
 			const providerWindow = new Proxy({}, { get: (_target, property) => {
-				if (property === 'parent' || property === 'top') return providerWindow
 				if (property === 'postMessage') return () => undefined
 				if (property === 'setTimeout' || property === 'clearTimeout') return () => undefined
 				if (property === 'addEventListener') return () => { setupReached = true; throw new Error('Fixture reached provider setup') }

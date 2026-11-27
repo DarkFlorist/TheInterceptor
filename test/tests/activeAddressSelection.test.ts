@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
+import { getConfiguredGnosisSafeEntryForMode, resolveConfiguredGnosisSafeForMode, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 import { getActiveAddressEntry } from '../../app/ts/components/subcomponents/address.js'
@@ -209,14 +209,14 @@ describe('active address selection', () => {
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, []), false)
 	})
 
-	test('shows only current-chain Safes owned by the wallet-selected signer account', () => {
+	test('shows only current-chain Gnosis Safe wallets owned by the wallet-selected signer account', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, [EOA_ADDRESS]).map(({ address }) => address),
 			[GNOSIS_SAFE_ADDRESS],
 		)
 	})
 
-	test('keeps arbitrary EOAs and Safes available in simulation mode', () => {
+	test('keeps arbitrary EOAs and Gnosis Safe wallets available in simulation mode', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, true, 1n, [EOA_ADDRESS]).map(({ address }) => address),
 			[EOA_ADDRESS, GNOSIS_SAFE_ADDRESS, UNOWNED_GNOSIS_SAFE_ADDRESS, UNKNOWN_OWNERS_GNOSIS_SAFE_ADDRESS],
@@ -273,7 +273,7 @@ describe('active address selection', () => {
 		)
 	})
 
-	test('blocks alternate signing-mode selection paths from choosing arbitrary EOAs or unowned Safes', () => {
+	test('blocks alternate signing-mode selection paths from choosing arbitrary EOAs or unowned Gnosis Safe wallets', () => {
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, [EOA_ADDRESS]), true)
 		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
 		assert.equal(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), undefined)
@@ -337,4 +337,17 @@ describe('active address selection', () => {
 		assert.doesNotMatch(providerMessageHandlersSource, /shouldActivateWalletAccountSelection/u)
 		assert.doesNotMatch(backgroundUtilsSource, /signingAddressPreferences/u)
 	})
+})
+
+test('configured Gnosis Safe mode selection is chain-pinned and signer-independent only in simulation', () => {
+	const simulation = { simulationMode: true, activeSimulationAddress: GNOSIS_SAFE_ADDRESS, activeSigningSafeAddress: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS, activeRpcNetwork: { chainId: 1n } }
+	assert.equal(getConfiguredGnosisSafeEntryForMode(simulation, activeAddresses)?.address, GNOSIS_SAFE_ADDRESS)
+ assert.equal(getConfiguredGnosisSafeEntryForMode({ ...simulation, useSignersAddressAsActiveAddress: true }, activeAddresses), undefined)
+ assert.equal(resolveConfiguredGnosisSafeForMode({ ...simulation, useSignersAddressAsActiveAddress: true }, activeAddresses, [EOA_ADDRESS]), undefined)
+	assert.equal(resolveConfiguredGnosisSafeForMode(simulation, activeAddresses, [])?.address, GNOSIS_SAFE_ADDRESS)
+	assert.equal(resolveConfiguredGnosisSafeForMode({ ...simulation, activeSimulationAddress: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS }, activeAddresses, []), undefined)
+	const signing = { ...simulation, simulationMode: false, activeSigningSafeAddress: GNOSIS_SAFE_ADDRESS }
+	assert.equal(resolveConfiguredGnosisSafeForMode(signing, activeAddresses, []), undefined)
+	assert.equal(resolveConfiguredGnosisSafeForMode(signing, activeAddresses, [EOA_ADDRESS])?.address, GNOSIS_SAFE_ADDRESS)
+	assert.equal(resolveConfiguredGnosisSafeForMode({ ...signing, activeSigningSafeAddress: OTHER_CHAIN_GNOSIS_SAFE_ADDRESS }, activeAddresses, [EOA_ADDRESS]), undefined)
 })

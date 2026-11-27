@@ -18,7 +18,7 @@ import type { PendingTransactionGnosisSafeFlow } from '../types/accessRequest.js
 
 type GnosisSafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareGnosisSafeExecutionSignerRoute>>>
 
-// The flow decided when the confirmation opens. A Safe proposal's state is only known once finalize has tried to create it from the formed transaction.
+// The flow decided when the confirmation opens. A Gnosis Safe proposal's state is only known once finalize has tried to create it from the formed transaction.
 type OpenedGnosisSafeFlow = Exclude<PendingTransactionGnosisSafeFlow, { readonly kind: 'proposal' }> | { readonly kind: 'proposal' }
 
 export type GnosisSafeTransactionConfirmationPreparation = {
@@ -26,6 +26,7 @@ export type GnosisSafeTransactionConfirmationPreparation = {
 	readonly transactionExecutor: bigint
 	readonly flowKind: GnosisSafeTransactionFlowKind
 	readonly gasPayment: TransactionGasPayment
+	readonly safeOperation?: 1
 	readonly preparationMessage: string | undefined
 	readonly rejection: {
 		readonly code: number
@@ -43,7 +44,7 @@ export type GnosisSafeTransactionConfirmationPreparation = {
 
 /**
  * In simulation mode, a transaction the user sends as a Gnosis Safe runs the way the Safe runs it on-chain: through the Safe's execTransaction, sent by an executor that pays the fees (safe/safeExecutionSimulation.ts). That assumes the Safe's owners approved it, so it is only assumed for the Safe the user is simulating as: the sender formEthSendTransaction simulates, the page's `from` or else the active address, must be the active address, which must be a Gnosis Safe configured on this chain. A page naming another configured Safe as `from` gets the ordinary simulation of that sender.
- * Raw transactions, EIP-7702 authorizations and contract creations, which a Safe can't make through execTransaction, and Safes that aren't deployed on this chain or have a version Interceptor doesn't support, keep the ordinary simulation.
+ * Raw transactions, EIP-7702 authorizations and contract creations, which a Safe can't make through execTransaction, and Safes that aren't deployed on this chain or have a version Interceptor doesn't support, keep the ordinary simulation for ordinary RPC requests. Explicit Safe Apps operations instead reject when the Safe execution is unavailable.
  */
 async function isSimulationModeGnosisSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
 	if (!isGnosisSafeExecutableRequestFromActiveAddress(transactionParams, activeAddress)) return false
@@ -56,7 +57,7 @@ async function isSimulationModeGnosisSafeExecution(ethereum: EthereumClientServi
 		if (!isGnosisSafeContractValidationFailure(error)) throw error
 		await reportLocalRecovery(error, {
 			code: 'simulated_safe_execution_unavailable',
-			message: 'Simulating the Gnosis Safe\'s transaction as an ordinary transaction.',
+			message: 'The configured Gnosis Safe cannot be used for this simulation.',
 			details: error instanceof Error ? error.stack : undefined,
 		})
 		return false
@@ -128,7 +129,9 @@ export async function prepareGnosisSafeTransactionConfirmation(
 	}
 
 	const executeThroughSafe = simulationMode && await isSimulationModeGnosisSafeExecution(ethereum, transactionParams, activeAddress)
-	// Why the configured Safe can't make the request through execTransaction. Only a contract creation gets this far; the other reasons are rejected above.
+	// Explicit Gnosis Safe Apps operations must never degrade to an ordinary CALL when Gnosis Safe execution is unavailable.
+	if (simulationMode && confirmation.safeTransaction !== undefined && !executeThroughSafe) return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe Apps simulation requires a deployed, supported Gnosis Safe on the selected chain.')
+	// Why the configured Gnosis Safe can't make the request through execTransaction. Only a contract creation gets this far; the other reasons are rejected above.
 	const unsupportedSafeRequestReason = safeEntry === undefined ? undefined : getGnosisSafeUnsupportedRequestReason(transactionParams)
 	// finalize stores it in the pending transaction as its safeFlow, from which every refresh reads it back (getPendingTransactionFlowKind).
 	const openedSafeFlow: OpenedGnosisSafeFlow = isDirectSafeExecution && transactionParams.method === 'eth_sendTransaction'
@@ -139,7 +142,7 @@ export async function prepareGnosisSafeTransactionConfirmation(
 			...(safeExecutionReviewedState === undefined ? {} : { safeExecutionReviewedSafeState: safeExecutionReviewedState }),
 		}
 		: safeEntry !== undefined ? unsupportedSafeRequestReason === undefined ? { kind: 'proposal' } : { kind: 'unsupportedSafeRequest' }
-		: executeThroughSafe ? { kind: 'simulationModeSafeExecution' }
+		: executeThroughSafe ? { kind: 'simulationModeSafeExecution', ...(confirmation.safeTransaction?.operation === 1 ? { operation: 1 as const } : {}) }
 		: { kind: 'ordinary' }
 	// The window shows an unsupported request's rejection without forming the transaction, so no gas estimate or other formation failure can stand in for it.
 	const unsupportedSafeRequestMessage = unsupportedSafeRequestReason === undefined ? undefined : GNOSIS_SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedSafeRequestReason]
@@ -151,6 +154,7 @@ export async function prepareGnosisSafeTransactionConfirmation(
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
 		flowKind: openedSafeFlow.kind,
 		gasPayment: getGnosisSafeTransactionFlowGasPayment(openedSafeFlow.kind),
+		safeOperation: openedSafeFlow.kind === 'simulationModeSafeExecution' ? openedSafeFlow.operation : undefined,
 		preparationMessage: unsupportedSafeRequestMessage ?? directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
@@ -165,6 +169,8 @@ export async function prepareGnosisSafeTransactionConfirmation(
 			}
 			if (finalizedTransaction.success) {
 				try {
+					const review = confirmation.safeTransaction?.messageReview
+					if (simulationMode && review !== undefined && (finalizedTransaction.transaction.to === null || !matchesGnosisSafeMessageApproval({ to: finalizedTransaction.transaction.to, value: finalizedTransaction.transaction.value, data: finalizedTransaction.transaction.input, operation: BigInt(confirmation.safeTransaction?.operation ?? 0) }, review))) throw createGnosisSafeContractValidationFailure('The Gnosis Safe message review text does not match the on-chain approval.')
 					safeTransaction = await createGnosisSafeSigningRequestForTransaction(
 						ethereum,
 						safeExecutionSignerRoute?.transactionParams ?? transactionParams,

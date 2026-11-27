@@ -20,6 +20,9 @@
 				"app/inpage/ts/inpage.ts",
 				"app/inpage/ts/listenContentScript.ts",
 				"app/inpage/ts/listenContentScriptBootstrap.ts",
+				// compiled shared runtime owners consumed by both TypeScript roots
+				"app/shared/ts/*.ts",
+				// injected classic scripts listed in INPAGE_SCRIPTS (app/ts/config/injectedScripts.ts) and bundled by build/bundler.mts
 				"app/ts/simulationStack.ts",
 				"test/tests/*.test.ts",
 				"test/tests/*.ts"
@@ -27,6 +30,7 @@
 			"project": [
 				"app/ts/**/*.{ts,tsx}",
 				"app/inpage/ts/*.ts",
+				"app/shared/ts/*.ts",
 				"scripts/*.{ts,tsx,mts}",
 				"test/**/*.{ts,tsx}"
 			],

@@ -1,0 +1,7 @@
+{
+  "sourceUrl": "https://swap.cow.fi/static/@safe-global-safe-apps-sdk-B7AL-On6.js",
+  "bundleSha256": "7ea787d288155c7add3fbd5494fd98d1b37e1fc862a8c1fc2f6f3f854dec731b",
+  "capturedAt": "2026-11-25",
+  "callbackSource": "()=>{r?a.abort():o(t)}",
+  "note": "Unmodified setTimeout callback extracted from the deployed CoW Gnosis Safe SDK bundle; free variables are bound only by the test harness. Snapshot coverage does not continuously monitor future site deployments."
+}

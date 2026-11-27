@@ -1,3 +1,4 @@
+import { createGnosisSafeAppsSigningServices } from '../fixtures/gnosisSafeAppsRequestServices.js'
 import { fetchGnosisSafeAppsBalances } from '../../app/ts/background/gnosisSafeAppsBalances.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -7,7 +8,7 @@ import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 const safeAddress = 0x1111111111111111111111111111111111111111n
 const network = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
 const unusedGnosisSafeState = async (): Promise<never> => { throw new Error('Balances do not need an owner or nonce lookup') }
-const requestBalances = (params?: unknown) => getGnosisSafeAppsRequestCommand({ method: 'getSafeBalances', ...(params === undefined ? {} : { params }) }, 'app.example', safeAddress, network, unusedGnosisSafeState, { getBalances: async (currency) => await fetchGnosisSafeAppsBalances(network.chainId, safeAddress, currency) })
+const requestBalances = (params?: unknown) => getGnosisSafeAppsRequestCommand({ method: 'getSafeBalances', ...(params === undefined ? {} : { params }) }, 'app.example', safeAddress, network, unusedGnosisSafeState, createGnosisSafeAppsSigningServices({ getBalances: async (currency) => await fetchGnosisSafeAppsBalances(network.chainId, safeAddress, currency) }))
 const balances = {
 	fiatTotal: '23.50',
 	items: [{

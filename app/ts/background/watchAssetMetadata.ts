@@ -77,7 +77,7 @@ function hasAmbiguousNumericHostname(uri: string) {
 	return !/^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(rawHostname)
 }
 
-function safeRemoteUrl(uri: string): URL | undefined {
+function sanitizedRemoteMetadataUrl(uri: string): URL | undefined {
 	const ipfsPath = uri.startsWith('ipfs://') ? uri.slice('ipfs://'.length).replace(/^ipfs\//, '') : undefined
 	if (ipfsPath === undefined && hasAmbiguousNumericHostname(uri)) return undefined
 	let url: URL
@@ -132,7 +132,7 @@ async function fetchMetadataJson(uri: string): Promise<unknown | undefined> {
 	if (dataJson !== undefined) {
 		try { return JSON.parse(dataJson) } catch { return undefined }
 	}
-	const url = safeRemoteUrl(uri)
+	const url = sanitizedRemoteMetadataUrl(uri)
 	if (url === undefined) return undefined
 	try {
 		const response = await fetchWithTimeout(url, { redirect: 'error' }, 15_000)
@@ -215,7 +215,7 @@ function normalizeErc1155Uri(uri: string, tokenId: bigint) {
 export function normalizeWatchAssetImageUrl(uri: string | undefined) {
 	if (uri === undefined) return undefined
 	if (uri.startsWith('data:image/')) return uri.length <= MAX_ASSET_METADATA_BYTES * 2 ? uri : undefined
-	return safeRemoteUrl(uri)?.toString()
+	return sanitizedRemoteMetadataUrl(uri)?.toString()
 }
 
 export async function loadErc1046Metadata(ethereum: EthereumClientService, address: bigint): Promise<WatchAssetMetadataResult> {

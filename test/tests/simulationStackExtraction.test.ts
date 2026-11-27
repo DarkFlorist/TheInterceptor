@@ -70,7 +70,7 @@ const GNOSIS_SAFE_BALANCE = 10n ** 18n
 const [simulatedBlock] = simulationStateWithBalanceBelowBaseFee.kind === 'simulated' && simulationStateWithBalanceBelowBaseFee.value.success ? simulationStateWithBalanceBelowBaseFee.value.simulatedBlocks : []
 const [simulatedTransaction] = simulatedBlock?.simulatedTransactions ?? []
 if (simulationStateWithBalanceBelowBaseFee.kind !== 'simulated' || !simulationStateWithBalanceBelowBaseFee.value.success || simulatedBlock === undefined || simulatedTransaction === undefined) throw new Error('missing simulation fixture')
-// The sender is a Gnosis Safe whose execution the simulation runs through its execTransaction (safe/safeExecutionSimulation.ts), in a block with a real base fee.
+// The sender is a Gnosis Safe whose execution the simulation runs through its execTransaction (gnosisSafe/gnosisSafeExecutionSimulation.ts), in a block with a real base fee.
 const simulationStateWithSafeExecution: ResolvedSimulationState = {
 	kind: 'simulated',
 	value: {

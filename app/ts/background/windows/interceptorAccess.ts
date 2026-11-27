@@ -12,11 +12,12 @@ import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddre
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
+import { routeProviderReply } from '../providerReplyRouting.js'
+import { sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulationServicesOwner.js'
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
@@ -410,7 +411,7 @@ export async function requestAccessFromUser(
 		if (oldPendingRequest !== undefined) {
 			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
 			if (request !== undefined) {
-				replyToInterceptedRequest(websiteTabConnections, {
+				routeProviderReply(websiteTabConnections, {
 					type: 'result',
 					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 					method: request.method,
@@ -563,7 +564,7 @@ async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: 
 	const selectableAddresses = selectionSource === 'pendingEntry'
 		? includePersistedAddressBookEntry(activeAddresses, requestedEntry)
 		: activeAddresses
-	// Access replies carry the approved address, while the pending entry preserves whether a same-address signing selection was explicitly a Safe.
+	// Access replies carry the approved address, while the pending entry preserves whether a same-address signing selection was explicitly a Gnosis Safe.
 	const addressSelection = selectionSource === 'pendingEntry'
 		&& !simulationMode
 		&& address !== 'signer'

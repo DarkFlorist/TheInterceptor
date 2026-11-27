@@ -1,4 +1,4 @@
-import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulationServicesOwner.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import { applyWebsiteAccessUpdate } from '../applyWebsiteAccessUpdate.js'
 import { withInterceptorDisabledForWebsite, withExternalRequestsBlockedOrAllowed, withoutAddressAccess, withAddressAccessForWebsite, withoutWebsiteAccess } from '../websiteAccessMutations.js'

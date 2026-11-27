@@ -18,7 +18,7 @@ const callGnosisSafeOnStack = async (ethereum: EthereumClientService, simulation
 	maxPriorityFeePerGas: 0n,
 })
 
-// Reads the Safe's owners and threshold on top of the same simulation stack the Safe transaction preview runs on, so a Safe deployed or reconfigured on the stack is read as the preview sees it. Returns undefined when the address does not answer as a Safe: a revert, a reply that does not decode, or a threshold outside 1 to the owner count, which a Safe's setup and owner changes never allow. A node failure is not caught here, as it fails the preview it belongs to as well. Only the account asked to sign counts as a signature the user can provide. Other address-book accounts are not counted: they include default demo accounts the user does not control, and counting one would hide that other owners must sign.
+// Reads the Gnosis Safe's owners and threshold on top of the same simulation stack the Gnosis Safe transaction preview runs on, so a Gnosis Safe deployed or reconfigured on the stack is read as the preview sees it. Returns undefined when the address does not answer as a Gnosis Safe: a revert, a reply that does not decode, or a threshold outside 1 to the owner count, which a Gnosis Safe's setup and owner changes never allow. A node failure is not caught here, as it fails the preview it belongs to as well. Only the account asked to sign counts as a signature the user can provide. Other address-book accounts are not counted: they include default demo accounts the user does not control, and counting one would hide that other owners must sign.
 export async function getGnosisSafeSignatureRequirement(
 	ethereum: EthereumClientService,
 	simulationInput: SimulationStateInput,

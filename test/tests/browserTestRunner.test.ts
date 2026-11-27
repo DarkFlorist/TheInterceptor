@@ -26,9 +26,9 @@ for (const failure of ['none', 'chrome-build', 'chrome-test', 'wrong-manifest', 
 test('a scenario filter still runs the same scenario on both browsers', async () => {
 	let version = 0
 	const recorded: string[][] = []
-	await runBrowserTests(async (script, args = []) => { if (script === 'setup-chrome') version = 3; if (script === 'setup-firefox') version = 2; recorded.push([script, ...args]); return 0 }, async () => version, ['provider-injection'])
-	assert.equal(recorded.filter(([script]) => script === 'test:browser:provider-injection').length, 2)
-	assert.deepEqual(recorded.filter(([script]) => script === 'test:browser:provider-injection').map(([, engine]) => engine), ['--browser=chrome', '--browser=firefox'])
+	await runBrowserTests(async (script, args = []) => { if (script === 'setup-chrome') version = 3; if (script === 'setup-firefox') version = 2; recorded.push([script, ...args]); return 0 }, async () => version, ['gnosis-safe-hosting'])
+	assert.equal(recorded.filter(([script]) => script === 'test:browser:native-hosting').length, 2)
+	assert.deepEqual(recorded.filter(([script]) => script === 'test:browser:native-hosting').map(([, engine]) => engine), ['--browser=chrome', '--browser=firefox'])
 	assert.equal(recorded.some(([script]) => script === 'test:chrome-communication'), false)
 })
 

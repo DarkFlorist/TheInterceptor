@@ -18,7 +18,7 @@ const THIRD_OWNER = 0x3333333333333333333333333333333333333333n
 const CHAIN_ID = 1337n
 
 type GnosisSafeOwnership = { readonly owners: readonly bigint[], readonly threshold: bigint }
-// What the Safe answers to an owner read, given how many eth_simulateV1 blocks run before the read: undefined reverts the call.
+// What the Gnosis Safe answers to an owner read, given how many eth_simulateV1 blocks run before the read: undefined reverts the call.
 type OwnerReadAnswer = (stackBlockCount: number) => GnosisSafeOwnership | undefined
 
 const parentBlock = {
@@ -68,7 +68,7 @@ const simulatedBlocks = (blockCount: number, ownerRead: ReturnType<typeof succee
 	calls: [index === blockCount - 1 ? ownerRead : succeededCall(new Uint8Array())],
 })))
 
-// A node that runs every Safe read through eth_simulateV1 and refuses plain chain reads, so a reply can only come from the stack the read is given.
+// A node that runs every Gnosis Safe read through eth_simulateV1 and refuses plain chain reads, so a reply can only come from the stack the read is given.
 const createNode = (answerOwnerRead: OwnerReadAnswer) => {
 	const handler = {
 		rpcUrl: 'https://stub.invalid',
@@ -93,7 +93,7 @@ const createNode = (answerOwnerRead: OwnerReadAnswer) => {
 	return new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Test', chainId: CHAIN_ID, httpsRpc: handler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
 }
 
-// A stack holding one transaction from the user, standing in for the deployment of a Safe the chain does not have.
+// A stack holding one transaction from the user, standing in for the deployment of a Gnosis Safe the chain does not have.
 const stackWithSafeDeployment: SimulationStateInput = [{
 	stateOverrides: {},
 	transactions: [{

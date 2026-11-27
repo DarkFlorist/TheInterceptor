@@ -1,0 +1,271 @@
+{
+  "date": "2026-11-25",
+  "host": "extension-owned",
+  "scope": "Read-only public-account connection trials. No live transactions/signatures/broadcasts. Frame-blocked outcomes were checked in browser screenshots; SDK replies alone are not UI connection passes.",
+  "records": [
+    {
+      "browser": "chrome",
+      "mode": "simulation",
+      "site": "aave",
+      "status": "connected",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": true,
+      "childObservations": 18,
+      "successfulMetadataReplies": 1,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/aave-simulation.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "signing",
+      "site": "aave",
+      "status": "connected",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": true,
+      "childObservations": 19,
+      "successfulMetadataReplies": 1,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/aave-signing.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "simulation",
+      "site": "cow",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/cow-simulation.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "signing",
+      "site": "cow",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/cow-signing.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "simulation",
+      "site": "lido",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/lido-simulation.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "signing",
+      "site": "lido",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/lido-signing.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "simulation",
+      "site": "request-finance",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/request-finance-simulation.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "signing",
+      "site": "request-finance",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/request-finance-signing.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "simulation",
+      "site": "uniswap",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/uniswap-simulation.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "signing",
+      "site": "uniswap",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/uniswap-signing.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "simulation",
+      "site": "1inch",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/1inch-simulation.json"
+    },
+    {
+      "browser": "chrome",
+      "mode": "signing",
+      "site": "1inch",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-final-chrome-live/chrome/1inch-signing.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "simulation",
+      "site": "aave",
+      "status": "connected",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": true,
+      "childObservations": 20,
+      "successfulMetadataReplies": 1,
+      "localEvidence": "/tmp/native-host-verified-live/firefox/aave-simulation.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "signing",
+      "site": "aave",
+      "status": "connected",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": true,
+      "childObservations": 18,
+      "successfulMetadataReplies": 1,
+      "localEvidence": "/tmp/native-host-verified-live/firefox/aave-signing.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "simulation",
+      "site": "cow",
+      "status": "connected",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": true,
+      "childObservations": 16,
+      "successfulMetadataReplies": 1,
+      "localEvidence": "/tmp/native-host-verified-live/firefox/cow-simulation.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "signing",
+      "site": "cow",
+      "status": "sdk-replied-ui-unconfirmed",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 16,
+      "successfulMetadataReplies": 1,
+      "localEvidence": "/tmp/native-host-verified-live/firefox/cow-signing.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "simulation",
+      "site": "lido",
+      "status": "sdk-replied-ui-unconfirmed",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 27,
+      "successfulMetadataReplies": 2,
+      "localEvidence": "/tmp/native-host-consent-live/firefox/lido-simulation.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "signing",
+      "site": "lido",
+      "status": "sdk-replied-ui-unconfirmed",
+      "nativeSdkHandshake": true,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 27,
+      "successfulMetadataReplies": 2,
+      "localEvidence": "/tmp/native-host-consent-live/firefox/lido-signing.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "simulation",
+      "site": "request-finance",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-live/firefox/request-finance-simulation.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "signing",
+      "site": "request-finance",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-live/firefox/request-finance-signing.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "simulation",
+      "site": "uniswap",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-live/firefox/uniswap-simulation.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "signing",
+      "site": "uniswap",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-live/firefox/uniswap-signing.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "simulation",
+      "site": "1inch",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-live/firefox/1inch-simulation.json"
+    },
+    {
+      "browser": "firefox",
+      "mode": "signing",
+      "site": "1inch",
+      "status": "frame-blocked",
+      "nativeSdkHandshake": false,
+      "uiShowsSelectedSafe": false,
+      "childObservations": 0,
+      "successfulMetadataReplies": 0,
+      "localEvidence": "/tmp/native-host-live/firefox/1inch-signing.json"
+    }
+  ]
+}

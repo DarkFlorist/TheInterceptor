@@ -4,7 +4,7 @@ import { MessageToPopup, SimulateExecutionReply } from '../../types/interceptor-
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 
-// Safe and governance outcomes contain address-book snapshots. Share their refresh policy so edits also refresh outcomes whose original request is pending.
+// Gnosis Safe and governance outcomes contain address-book snapshots. Share their refresh policy so edits also refresh outcomes whose original request is pending.
 export function useExecutionSimulation(identifier: bigint, request: () => Promise<SimulateExecutionReply | undefined>, missingReplyError: string) {
 	const { value: requestState, waitFor, reset } = useAsyncState<SimulateExecutionReply | undefined>()
 	const broadcastReply = useSignal<SimulateExecutionReply | undefined>(undefined)

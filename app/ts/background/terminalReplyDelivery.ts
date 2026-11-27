@@ -4,7 +4,8 @@ import { reportLocalRecovery } from '../utils/errors.js'
 import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
-import { replyToInterceptedRequest } from './messageSending.js'
+// Delivery policy is supplied by the domain composition; retries and persistence stay feature independent.
+export type TerminalReplyDelivery = (connections: WebsiteTabConnections, message: InterceptedRequestForward) => boolean | undefined
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
 import { createBackoffRetryScheduler } from '../utils/retryScheduler.js'
@@ -41,14 +42,14 @@ export async function queueTerminalReply(message: InterceptedRequestForward) {
 	}
 }
 
-export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, deliverReply: TerminalReplyDelivery) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
 	if (existingProduction !== undefined) return await existingProduction
 	const production = (async () => {
 		const deliver = async () => await terminalReplySemaphore.execute(async () => {
 			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
-			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
+			const delivery = deliverReply(websiteTabConnections, message)
 			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
 			return delivery
 		})
@@ -63,12 +64,12 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 	}
 }
 
-export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, deliverReply: TerminalReplyDelivery) {
 	await queueTerminalReply(message)
-	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
+	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message, deliverReply)
 }
 
-export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, deliverReply: TerminalReplyDelivery) {
 	return await terminalReplySemaphore.execute(async () => {
 		const pendingReplies = await getPendingTerminalReplies()
 		let deliveredReplies = 0
@@ -80,7 +81,7 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 				await removePendingTerminalReply(reply.uniqueRequestIdentifier)
 				continue
 			}
-			if (replyToInterceptedRequest(websiteTabConnections, reply) !== true) continue
+			if (deliverReply(websiteTabConnections, reply) !== true) continue
 			await recordSuccessfulTerminalReplyDelivery(identifier, reply, terminalReplyProductions.has(identifier) || terminalReplyReservations.has(identifier))
 			deliveredReplies += 1
 		}
@@ -88,7 +89,7 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 	})
 }
 
-export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) {
+export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, deliverReply: TerminalReplyDelivery) {
 	const socketIdentifier = websiteSocketToString(socket)
 	if (websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port !== port) return 0
 	const existingRetry = terminalReplyFlushRetries.get(socketIdentifier)
@@ -97,7 +98,7 @@ export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websi
 		terminalReplyFlushRetries.delete(socketIdentifier)
 	}
 	try {
-		const deliveredReplies = await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
+		const deliveredReplies = await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket, deliverReply)
 		const retry = terminalReplyFlushRetries.get(socketIdentifier)
 		if (retry?.port === port) {
 			retry.scheduler.reset()
@@ -125,7 +126,7 @@ export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websi
 				terminalReplyFlushRetries.delete(socketIdentifier)
 				return
 			}
-			void flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
+			void flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port, deliverReply)
 		})
 		return 0
 	}

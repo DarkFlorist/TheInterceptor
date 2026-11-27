@@ -60,7 +60,7 @@ describe('InterceptorAccess modal request selection', () => {
 		assert.equal(selectedRequest, undefined)
 	})
 
-	test('filters wrong-chain Safes and rejects stale direct selections', () => {
+	test('filters wrong-chain Gnosis Safe wallets and rejects stale direct selections', () => {
 		const currentChainSafeAddress = 0x3000000000000000000000000000000000000003n
 		const wrongChainSafeAddress = 0x4000000000000000000000000000000000000004n
 		const contactAddress = 0x5000000000000000000000000000000000000005n

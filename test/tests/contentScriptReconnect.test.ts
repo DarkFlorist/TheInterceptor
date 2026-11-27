@@ -1,4 +1,4 @@
-import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/shared/ts/bridgeWireProtocol.js'
+import { INTERCEPTOR_BRIDGE_READY_MESSAGE, INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/shared/ts/bridgeWireProtocol.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
@@ -7,13 +7,16 @@ import { getManifestV2DocumentStartScriptPath } from '../../app/ts/utils/content
 import { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../app/ts/utils/requests.js'
 import { generateInpageArtifacts, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 
+type RuntimeMessageListener = (message: unknown, sender?: { readonly id?: string }) => unknown
+
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
-	readonly runtimeMessageListeners: ((message: unknown) => unknown)[]
+	readonly runtimeMessageListeners: RuntimeMessageListener[]
 	readonly disconnectListeners: (() => void)[]
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
 	readonly injectedScripts: readonly { readonly src: string, readonly textContent: string }[]
 	readonly postedMessages: unknown[]
+	readonly postedWindowMessages: unknown[]
 	readonly connectionNames: string[]
 	readonly runtime: { lastError: { message?: string } | undefined }
 	readonly getConnectionCount: () => number
@@ -28,16 +31,22 @@ const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentS
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, metamaskCompatibilityMode = false) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	const topDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'top')
+	const removeEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'removeEventListener')
+	const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+	const postMessageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'postMessage')
+	const locationDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'location')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
 	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
-	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
+	const runtimeMessageListeners: RuntimeMessageListener[] = []
 	const disconnectListeners: (() => void)[] = []
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
 	const injectedScripts: { readonly src: string, readonly textContent: string }[] = []
 	const postedMessages: unknown[] = []
+	const postedWindowMessages: unknown[] = []
 	const connectionNames: string[] = []
 	const runtime: { lastError: { message?: string } | undefined } = { lastError: undefined }
 	let connectionCount = 0
@@ -45,6 +54,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 
 	const browserMock = {
 		runtime: {
+			id: 'test-extension',
 			get lastError() { return runtime.lastError },
 			getURL: (path: string) => `browser-extension://test/${ path }`,
 			connect: ({ name }: { name: string }) => {
@@ -63,12 +73,21 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 					},
 				}
 			},
-			onMessage: { addListener: (listener: (message: unknown) => unknown) => { runtimeMessageListeners.push(listener) } },
+			onMessage: { addListener: (listener: RuntimeMessageListener) => { runtimeMessageListeners.push(listener) } },
 		},
 	}
 	const addEventListener = (type: string, listener: EventListenerOrEventListenerObject) => {
 		eventListeners.set(type, [...eventListeners.get(type) ?? [], listener])
 	}
+	Object.defineProperty(globalThis, 'top', { configurable: true, value: globalThis })
+	Object.defineProperty(globalThis, 'removeEventListener', { configurable: true, value: (type: string, listener: EventListenerOrEventListenerObject) => {
+		const current = eventListeners.get(type) ?? []
+		const index = current.indexOf(listener)
+		if (index !== -1) current.splice(index, 1)
+	} })
+	Object.defineProperty(globalThis, 'window', { configurable: true, value: globalThis })
+	Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin: 'https://bridge.example' } })
+	Object.defineProperty(globalThis, 'postMessage', { configurable: true, value: (data: unknown) => postedWindowMessages.push(data) })
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
@@ -109,8 +128,18 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 			Function(generatedDocumentStart.source)()
 		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
-		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, injectedScripts, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
+		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, injectedScripts, postedMessages, postedWindowMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
+		if (topDescriptor === undefined) Reflect.deleteProperty(globalThis, 'top')
+		else Object.defineProperty(globalThis, 'top', topDescriptor)
+		if (removeEventListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'removeEventListener')
+		else Object.defineProperty(globalThis, 'removeEventListener', removeEventListenerDescriptor)
+		if (windowDescriptor === undefined) Reflect.deleteProperty(globalThis, 'window')
+		else Object.defineProperty(globalThis, 'window', windowDescriptor)
+		if (postMessageDescriptor === undefined) Reflect.deleteProperty(globalThis, 'postMessage')
+		else Object.defineProperty(globalThis, 'postMessage', postMessageDescriptor)
+		if (locationDescriptor === undefined) Reflect.deleteProperty(globalThis, 'location')
+		else Object.defineProperty(globalThis, 'location', locationDescriptor)
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
 		if (addEventListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'addEventListener')
@@ -124,7 +153,11 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	}
 }
 
-function dispatchWindowMessage(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, event: MessageEvent) {
+function dispatchWindowMessage(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, event: MessageEvent, ownSource = true) {
+	if (ownSource) {
+		Object.defineProperty(event, 'source', { value: globalThis })
+		Object.defineProperty(event, 'origin', { value: 'https://bridge.example' })
+	}
 	for (const listener of eventListeners.get('message') ?? []) {
 		if (typeof listener === 'function') listener(event)
 		else listener.handleEvent(event)
@@ -541,6 +574,32 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 			assert.equal(getConnectionCount(), 1)
 		}, { configurable: false, value: legacyListener })
 	})
+	for (const source of ['standalone-listener', 'manifest-v2-document-start'] as const) {
+		test(`${ source } no longer forwards retired original-tab SDK relay requests`, async () => {
+			await withContentScriptMock(source, async ({ runtimeMessageListeners, postedWindowMessages }) => {
+				const receive = runtimeMessageListeners[0]
+				assert.ok(receive)
+				for (const id of ['test-extension', 'another-extension']) assert.equal(await receive({ method: 'interceptor_native_gnosis_safe_source_request', origin: 'https://bridge.example', request: { id: 'retired', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } } }, { id }), undefined)
+				assert.deepEqual(postedWindowMessages, [{ type: INTERCEPTOR_BRIDGE_READY_MESSAGE }])
+			})
+		})
+	}
+	for (const source of ['standalone-listener', 'manifest-v2-document-start'] as const) {
+		test(`${ source } announces startup readiness and answers only its own window's readiness requests`, async () => {
+			await withContentScriptMock(source, async ({ eventListeners, postedWindowMessages }) => {
+				assert.deepEqual(postedWindowMessages, [{ type: INTERCEPTOR_BRIDGE_READY_MESSAGE }])
+				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE } }))
+				assert.equal(postedWindowMessages.length, 2)
+				const foreignOrigin = new MessageEvent('message', { data: { type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE }, origin: 'https://foreign.example' })
+				Object.defineProperty(foreignOrigin, 'source', { value: globalThis })
+				dispatchWindowMessage(eventListeners, foreignOrigin, false)
+				const foreignSource = new MessageEvent('message', { data: { type: INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE }, origin: 'https://bridge.example' })
+				Object.defineProperty(foreignSource, 'source', { value: {} })
+				dispatchWindowMessage(eventListeners, foreignSource, false)
+				assert.equal(postedWindowMessages.length, 2)
+			})
+		})
+	}
 	for (const source of ['standalone-listener', 'manifest-v2-document-start'] as const) {
 		test(`${ source } emits the diagnostic identity owned by the request protocol`, async () => {
 			await withContentScriptMock(source, async ({ backgroundMessageListeners, postedMessages }) => {

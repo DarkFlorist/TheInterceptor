@@ -41,6 +41,10 @@ const websiteMetaData: WebsiteMetaData = {
 		name: 'Aave',
 		externalRpc: true,
 	},
+	'stake.lido.fi': {
+		name: 'Lido',
+		externalRpc: true,
+	},
 	'app.compound.finance': {
 		name: 'Compound',
 		externalRpc: true,

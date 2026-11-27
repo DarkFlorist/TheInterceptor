@@ -417,7 +417,7 @@ function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPe
 		refundReceiver: zeroAddressEntry,
 		verifyingContract: {
 			type: 'contract',
-			name: 'Gnosis Safe',
+			name: 'Safe',
 			address: gnosisSignerAddress.address,
 			entrySource: 'User',
 			abi: '[]',
@@ -1620,7 +1620,7 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	for (const visualizer of ['Gnosis Safe', 'governance']) {
+	for (const visualizer of ['Safe', 'governance']) {
 		for (const completion of ['before edit', 'direct reply after edit', 'broadcast after edit']) {
 			test(`updates ${ visualizer } outcome address names with simulation completion via ${ completion }`, async () => {
 				const renameWhilePending = completion !== 'before edit'
@@ -1630,14 +1630,14 @@ describe('popup async action UI', () => {
 				let recipientName = 'Original recipient'
 				let simulationRequestCount = 0
 				runtimeSendMessage = async (message) => {
-					if (getRuntimeMethod(message) !== (visualizer === 'Gnosis Safe' ? 'popup_simulateGnosisSafeTransaction' : 'popup_simulateGovernanceContractExecution')) return undefined
+					if (getRuntimeMethod(message) !== (visualizer === 'Safe' ? 'popup_simulateGnosisSafeTransaction' : 'popup_simulateGovernanceContractExecution')) return undefined
 					simulationRequestCount += 1
 					return simulationRequestCount === 1 ? initialReply.promise : createGnosisSimulationSuccessReply(7n, recipientName)
 				}
 
 				try {
 					await act(() => {
-						render(visualizer === 'Gnosis Safe' ? h(modules.GnosisSafeVisualizer, {
+						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
 							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
 							activeAddress: gnosisSignerAddress.address,
 							renameAddressCallBack: () => undefined,
@@ -1752,7 +1752,7 @@ describe('popup async action UI', () => {
 
 	}
 
-	for (const visualizer of ['Gnosis Safe', 'governance']) {
+	for (const visualizer of ['Safe', 'governance']) {
 		for (const broadcastTiming of ['during request', 'after direct reply']) {
 			test(`an older matching broadcast ${ broadcastTiming } cannot discard the awaited ${ visualizer } result`, async () => {
 				const modules = await modulesPromise
@@ -1761,7 +1761,7 @@ describe('popup async action UI', () => {
 				runtimeSendMessage = async () => direct.promise
 				try {
 					await act(() => {
-						render(visualizer === 'Gnosis Safe' ? h(modules.GnosisSafeVisualizer, {
+						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
 							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
 							activeAddress: gnosisSignerAddress.address,
 							renameAddressCallBack: () => undefined,
@@ -1831,7 +1831,7 @@ describe('popup async action UI', () => {
 		await act(async () => { await clickRenderedElement(extraDetailsHeader) })
 		const renderedText = dom.document.body.textContent ?? ''
 		for (const expected of [
-			'Gnosis Safe: Gnosis Safe',
+			'Gnosis Safe: Safe',
 			'Chain: Ethereum Mainnet (1)',
 			'To: Recipient',
 			'Value (attoeth)0',

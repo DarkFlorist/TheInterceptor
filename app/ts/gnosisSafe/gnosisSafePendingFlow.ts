@@ -26,10 +26,10 @@ export type GnosisSafePendingFlow = DirectGnosisSafeExecutionFlow | GnosisSafeMe
 
 export const createCreatedGnosisSafeProposalGnosisSafeFlow = (safeTransaction: GnosisSafeTransactionSigningRequest): CreatedGnosisSafeProposalGnosisSafeFlow => ({ kind: 'proposal', state: 'created', safeTransaction })
 
-// The Gnosis Safe transaction of a created Safe proposal, the one flow that has one.
+// The Gnosis Safe transaction of a created Gnosis Safe proposal, the one flow that has one.
 export const getCreatedGnosisSafeProposal = (safeFlow: PendingTransactionGnosisSafeFlow) => safeFlow.kind === 'proposal' && safeFlow.state === 'created' ? safeFlow.safeTransaction : undefined
 
-// The signing-mode flows, which sign, propose or execute with the user's signer. A simulation-mode Safe execution is not one: it only runs through the Safe in the simulation. Neither is a Safe proposal that was not created, which has nothing to sign.
+// The signing-mode flows, which sign, propose or execute with the user's signer. A simulation-mode Gnosis Safe execution is not one: it only runs through the Gnosis Safe in the simulation. Neither is a Gnosis Safe proposal that was not created, which has nothing to sign.
 export function getGnosisSafeTransactionPendingFlow(pending: PendingTransaction): DirectGnosisSafeExecutionFlow | GnosisSafeProposalFlow | undefined {
 	const safeFlow = pending.safeFlow
 	if (safeFlow.kind === 'directExecution') return { kind: 'directExecution', pending: { ...pending, safeFlow } }
@@ -37,30 +37,30 @@ export function getGnosisSafeTransactionPendingFlow(pending: PendingTransaction)
 	return undefined
 }
 
-// The kind of transaction a confirmation forms, the one input of its fee mode (getSafeTransactionFlowGasPayment).
+// The kind of transaction a confirmation forms, the one input of its fee mode (getGnosisSafeTransactionFlowGasPayment).
 export type GnosisSafeTransactionFlowKind = PendingTransactionGnosisSafeFlow['kind']
 
-// The fee mode of each kind of transaction confirmation. prepareSafeTransactionConfirmation takes it from here when the confirmation opens and getPendingTransactionGasPayment on every refresh, so both form the transaction the same way.
+// The fee mode of each kind of transaction confirmation. prepareGnosisSafeTransactionConfirmation takes it from here when the confirmation opens and getPendingTransactionGasPayment on every refresh, so both form the transaction the same way.
 export function getGnosisSafeTransactionFlowGasPayment(flowKind: GnosisSafeTransactionFlowKind): TransactionGasPayment {
 	switch (flowKind) {
 		case 'ordinary': return 'transaction-sender'
-		// A direct Safe execution is the signer's own execTransaction call, paid outside the simulation.
+		// A direct Gnosis Safe execution is the signer's own execTransaction call, paid outside the simulation.
 		case 'directExecution': return 'external-executor'
-		// Never formed: the confirmation shows its request-shape rejection as the preparation message. Like every Safe transaction, it would not be paid by the Safe.
+		// Never formed: the confirmation shows its request-shape rejection as the preparation message. Like every Gnosis Safe transaction, it would not be paid by the Gnosis Safe.
 		case 'unsupportedSafeRequest': return 'external-executor'
-		// A Safe proposal, and in simulation mode a Safe's own call, run as the simulated executor's execTransaction call.
-		case 'proposal':
+		// A Gnosis Safe proposal, and in simulation mode a Gnosis Safe's own call, run as the simulated executor's execTransaction call.
+		case 'proposal': return 'simulated-safe-executor'
 		case 'simulationModeSafeExecution': return 'simulated-safe-executor'
 	}
 }
 
-// The flow kind prepareSafeTransactionConfirmation decided when the confirmation opened, read back from the pending transaction.
+// The flow kind prepareGnosisSafeTransactionConfirmation decided when the confirmation opened, read back from the pending transaction.
 export const getPendingTransactionFlowKind = (pending: PendingTransaction): GnosisSafeTransactionFlowKind => pending.safeFlow.kind
 
 // How a refresh forms a pending transaction again, decided by its flow:
 // - 'formTransaction': forms its request again with the fee mode of its flow (getPendingTransactionGasPayment).
 // - 'prepareSafeProposal': a Gnosis Safe proposal whose transaction did not form, so the proposal was never attempted. The refresh prepares the confirmation again, as opening it did with the page's safeRequestContext, which forms the transaction and creates the proposal from it.
-// - 'keepFailure': its Gnosis Safe transaction could not be made. Forming the request again would not make it, and could only show it as an ordinary transaction from the Safe.
+// - 'keepFailure': its Gnosis Safe transaction could not be made. Forming the request again would not make it, and could only show it as an ordinary transaction from the Gnosis Safe.
 export type PendingTransactionRefresh = { readonly kind: 'formTransaction' | 'keepFailure' } | { readonly kind: 'prepareSafeProposal', readonly safeRequestContext: GnosisSafeTransactionRequestContext | undefined }
 
 export function getPendingTransactionRefresh(pending: PendingTransaction): PendingTransactionRefresh {
@@ -97,4 +97,8 @@ export function getGnosisSafeFlowSignerAddress(flow: GnosisSafePendingFlow) {
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress
 		case 'proposal': return flow.pending.safeFlow.safeTransaction.safeSignerAddress
 	}
+}
+
+export function getPendingTransactionFormationOptions(pending: PendingTransaction) {
+	return { gasPayment: getPendingTransactionGasPayment(pending), safeOperation: pending.safeFlow.kind === 'simulationModeSafeExecution' ? pending.safeFlow.operation : undefined }
 }

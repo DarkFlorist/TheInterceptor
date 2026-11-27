@@ -1,3 +1,4 @@
+import { GnosisSafeAppsHostingSettings } from '../subcomponents/GnosisSafeAppsHostingSettings.js'
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
@@ -184,6 +185,7 @@ export function SettingsView() {
 			method: 'popup_ChangeSettings',
 			data: { safeAppsCompatibilityMode: checked }
 		})
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}
 
 	return <main style = 'padding: 10px'>
@@ -215,10 +217,11 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Advertise as a Gnosis Safe wallet to Gnosis Safe Apps (experimental).' }
+							text = { 'Enable Gnosis Safe Apps hosting in a real iframe (experimental).' }
 							checked = { safeAppsCompatibilityMode.value }
 							onInput = { requestToGnosisSafeAppsCompatibilityMode }
 						/>
+						<GnosisSafeAppsHostingSettings />
 					</li>
 					<li>
 						<p class = 'paragraph'>Export & Import</p>

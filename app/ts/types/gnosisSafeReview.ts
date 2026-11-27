@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 
-// Admission input for Safe review. Normalize transport data once, then persist the reviewed message or transaction in its domain model.
+// Admission input for Gnosis Safe review. Normalize transport data once, then persist the reviewed message or transaction in its domain model.
 export type GnosisSafeMessageReview = funtypes.Static<typeof GnosisSafeMessageReview>
 export const GnosisSafeMessageReview = funtypes.ReadonlyObject({ text: funtypes.String, isTypedData: funtypes.Boolean })
 

@@ -213,6 +213,43 @@ describe('blocking shield icon selection', () => {
 })
 
 describe('retrieveWebsiteDetails favicon handling', () => {
+	test('returns immediately for a still-loading tab without registering load listeners or polling for a favicon', async () => {
+		tabsById.set(14, { id: 14, status: 'loading', title: 'Previous document title', url: 'https://loading.test' })
+		const details = await Promise.race([
+			retrieveWebsiteDetails(14, 'loading.test'),
+			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('metadata blocked on tab load')), 50)),
+		])
+		assert.deepEqual(details, { title: undefined, icon: undefined })
+		assert.equal(onUpdatedListeners.length, 0)
+		assert.deepEqual(fetchCalls, [])
+	})
+
+	test('does not poll for a favicon on a completed tab', async () => {
+		tabsById.set(17, { id: 17, status: 'complete', title: 'Current app', url: 'https://missing-icon.test' })
+		const details = await Promise.race([
+			retrieveWebsiteDetails(17),
+			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('metadata polled for a favicon')), 50)),
+		])
+		assert.deepEqual(details, { title: 'Current app', icon: undefined })
+		assert.equal(onUpdatedListeners.length, 0)
+		assert.deepEqual(fetchCalls, [])
+	})
+
+	test('never assigns the outer tab title or favicon to a different frame origin', async () => {
+		tabsById.set(15, { id: 15, status: 'complete', title: 'Outer app', url: 'https://outer.test', favIconUrl: 'data:image/png;base64,b3V0ZXI=' })
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'child.test' }, access: true }]
+		assert.deepEqual(await retrieveWebsiteDetails(15, 'child.test'), { title: undefined, icon: undefined })
+		assert.deepEqual(fetchCalls, [])
+	})
+
+	test('returns only origin-specific cached metadata for a different frame origin', async () => {
+		tabsById.set(16, { id: 16, status: 'loading', title: 'Outer app', url: 'https://outer.test', favIconUrl: 'data:image/png;base64,b3V0ZXI=' })
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'child.test', icon: 'data:image/png;base64,Y2hpbGQ=' }, access: true }]
+		assert.deepEqual(await retrieveWebsiteDetails(16, 'child.test'), { title: undefined, icon: 'data:image/png;base64,Y2hpbGQ=' })
+		assert.equal(onUpdatedListeners.length, 0)
+		assert.deepEqual(fetchCalls, [])
+	})
+
 	test('rethrows unexpected tab lookup failures', async () => {
 		tabGetError = new Error('tabs permission missing')
 

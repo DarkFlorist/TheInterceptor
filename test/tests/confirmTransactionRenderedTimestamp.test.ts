@@ -824,10 +824,10 @@ describe('ConfirmTransaction', () => {
 	test('keeps the Gnosis Safe gas label, creation time and simulation time in one wrapping card footer', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const gnosisSafeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { transactionStatus: 'Transaction Succeeded' }, { requiredChainId: 1n, executeThroughSafe: true })
+		const safeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { transactionStatus: 'Transaction Succeeded' }, { requiredChainId: 1n, executeThroughSafe: true })
 
 		await renderConfirmTransaction(dom)
-		await dispatchPendingTransactions(browser, [gnosisSafeExecution])
+		await dispatchPendingTransactions(browser, [safeExecution])
 		const hasClass = (node: RenderedTreeNode, className: string) => node.attributes?.class?.split(/\s+/u).includes(className) === true
 		const footer = findRenderedElement(dom.document.body, (node) => hasClass(node, 'transaction-card-footer'))
 		if (footer === undefined) throw new Error('expected the transaction card footer below the simulated transaction')

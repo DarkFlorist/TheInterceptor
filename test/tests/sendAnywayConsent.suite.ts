@@ -163,7 +163,7 @@ test('the background stamps the reviewed-result id of the stored request on the 
 	const coSignRequest = await getStoredRequest()
 	assert.notEqual(coSignRequest.type === 'SignableMessage' ? coSignRequest.safeMessageCoSignSnapshot : undefined, undefined, 'the stored request is a Gnosis Safe co-signing request')
 	assertPopupCopyCarriesStoredId(coSignRequest, 'Gnosis Safe co-signing request')
-	// The Safe signer is reviewed content even though the popup copy does not carry the snapshot.
+	// The Gnosis Safe signer is reviewed content even though the popup copy does not carry the snapshot.
 	if (coSignRequest.type !== 'SignableMessage' || coSignRequest.safeMessageCoSignSnapshot === undefined) throw new Error('Expected a Gnosis Safe co-signing request')
 	assert.notEqual(getReviewedResultId({ ...coSignRequest, safeMessageCoSignSnapshot: { ...coSignRequest.safeMessageCoSignSnapshot, safeSignerAddress: gnosisSafeTestOwnerAddress } }), getReviewedResultId(coSignRequest))
 })

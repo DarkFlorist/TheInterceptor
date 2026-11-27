@@ -6,6 +6,7 @@ export const sharedBrowserScenarios = [
 	{ id: 'browser-harness-contract', script: 'test:browser:harness-contract', args: [] },
 	{ id: 'provider-injection', script: 'test:browser:provider-injection', args: [] },
 	{ id: 'wallet-signing', script: 'test:browser:wallet-signing', args: [] },
+	{ id: 'gnosis-safe-hosting', script: 'test:browser:native-hosting', args: [] },
 	{ id: 'rpc-communication', script: 'test:browser:rpc-communication', args: [] },
 ] as const
 

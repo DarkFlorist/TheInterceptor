@@ -1,7 +1,7 @@
 import { getProviderInjectionFailure, type ProviderInjectionResult } from './providerInjectionAssertions.js'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { launchBrowserSession, selectedBrowser } from './browserHarness.js'
+import { launchBrowserSession, selectedBrowser, waitForBrowserCondition } from './browserHarness.js'
 
 // Checks provider injection in either browser with the same page observations. The page's first script records whether the provider existed when it ran, each script element the extension adds with whether the provider existed when the page observed it, and any CSP violation.
 const firstPageScript = [
@@ -11,6 +11,18 @@ const firstPageScript = [
 ].join('\n')
 const firstPageScriptHash = createHash('sha256').update(firstPageScript).digest('base64')
 const pageHtml = `<!doctype html><html><head><script>${ firstPageScript }</script></head><body>Interceptor provider injection check</body></html>`
+// Different sites force Chrome to exercise its cross-process child-frame injection path.
+const framePageHtml = `<!doctype html><script>
+const preloadAtFirstScript = globalThis.browserFixturePreloadedBeforeFrameScript === true;
+const start = () => {
+	if (!window.ethereum?.isInterceptor) { setTimeout(start, 10); return; }
+	Promise.all([ethereum.request({method:'eth_chainId'}), ethereum.request({method:'eth_accounts'})]).then(
+		([chainId, accounts]) => parent.postMessage({type:'frame-rpc-result',chainId,accounts,preloadAtFirstScript}, '*'),
+		error => parent.postMessage({type:'frame-rpc-result',error:String(error),preloadAtFirstScript}, '*')
+	);
+}; start();
+</script>`
+
 // The strict policy allows only the page's own first script, so the injected inline provider is blocked and the extension URL fallback has to load it.
 const strictCspPath = '/strict-csp'
 const pagePaths = ['/no-csp', strictCspPath]
@@ -25,6 +37,16 @@ type PageResult = ProviderInjectionResult & { readonly path: string, readonly lo
 async function startPageServer() {
 	const server = createServer((request, response) => {
 		const path = request.url?.split('?')[0] ?? ''
+		if (path === '/frame-rpc' || path === '/frame-parent') {
+			response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+			response.end(path === '/frame-rpc' ? framePageHtml : `<!doctype html><script>
+addEventListener('message', event => {
+	const child = document.querySelector('iframe');
+	if (child && event.source === child.contentWindow && event.origin === new URL(child.src).origin && event.data?.type === 'frame-rpc-result') window.frameRpcResult = event.data;
+});
+</script>`)
+			return
+		}
 		if (!pagePaths.includes(path)) {
 			response.writeHead(404, { 'Cache-Control': 'no-store' })
 			response.end()
@@ -57,6 +79,26 @@ async function main() {
 		const session = await launchBrowserSession(selectedBrowser())
 		browserVersion = `${ session.browser }: ${ session.browserVersion }`
 		try {
+			await session.addPreloadScript('globalThis.browserFixturePreloadedBeforeFrameScript = true')
+			const settings = await session.openExtensionPage('html/settingsView.html')
+			try {
+				for (const enabled of [true, false]) {
+					await settings.evaluate(`browser.runtime.sendMessage({method:'popup_ChangeSettings',data:{safeAppsCompatibilityMode:${ enabled }}})`)
+					const persisted = await settings.evaluate(`(async()=> (await browser.storage.local.get('safeAppsCompatibilityMode')).safeAppsCompatibilityMode)()`)
+					if (persisted !== enabled) throw new Error(`${ session.browser } rejected a genuine extension-page settings message`)
+				}
+				const childUrl = `${ pageServer.baseUrl.replace('127.0.0.1', 'localhost') }/frame-rpc`
+				const account = '0x0000000000000000000000000000000000001234'
+				await settings.evaluate(`browser.storage.local.set({simulationMode:true,useSignersAddressAsActiveAddress:false,independentActiveSimulationAddress:'${ account }',websiteAccess:[{website:{websiteOrigin:'${ new URL(childUrl).host }'},access:true,addressAccess:[{address:'${ account }',access:true}]}]})`)
+				const frameParent = await session.openPage(`${ pageServer.baseUrl }/frame-parent`)
+				try {
+					await frameParent.evaluate(`(() => {const frame=document.createElement('iframe');frame.src=${ JSON.stringify(childUrl) };document.documentElement.append(frame)})()`)
+					await waitForBrowserCondition(async () => await frameParent.evaluate('window.frameRpcResult !== undefined'), 'cross-site iframe provider RPC')
+					const result = await frameParent.evaluate<{ chainId?: string, accounts?: string[], error?: string, preloadAtFirstScript?: boolean }>('window.frameRpcResult')
+					if (result.error !== undefined || result.chainId !== '0x1' || result.accounts?.[0]?.toLowerCase() !== account || result.preloadAtFirstScript !== true) throw new Error(`Cross-site iframe RPC failed: ${ JSON.stringify(result) }`)
+					console.warn(`${ session.browser } cross-site iframe preload, account and chain reads passed`)
+				} finally { await frameParent.close() }
+			} finally { await settings.close() }
 			// The MV2 background registers its webNavigation injector during startup, so wait until a page is injected at all before measuring.
 			const warmupPage = await session.openPage(`${ pageServer.baseUrl }/no-csp?warmup`)
 			const warmupInjected = await warmupPage.evaluate<boolean>(waitForInterceptorProvider)

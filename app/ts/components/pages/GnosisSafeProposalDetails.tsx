@@ -35,10 +35,10 @@ type GnosisSafeProposalSigningRequestCardParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-// Shows the EIP-712 SafeTx that "Sign & add" forwards to the signer wallet, so a hardware signer's display can be checked against it.
+// Shows the EIP-712 GnosisSafeTx that "Sign & add" forwards to the signer wallet, so a hardware signer's display can be checked against it.
 export function GnosisSafeProposalSigningRequestCard({ safeTransaction, addressMetaData, rpcNetwork, renameAddressCallBack }: GnosisSafeProposalSigningRequestCardParams) {
 	const safeTx = safeTransaction.safeTx
-	// safeTxHash is the contract-verified hash stored with the request; safeCore.test.ts asserts it equals keccak256(0x1901 ‖ domainHash ‖ messageHash).
+	// safeTxHash is the contract-verified hash stored with the request; gnosisSafeCore.test.ts asserts it equals keccak256(0x1901 ‖ domainHash ‖ messageHash).
 	const hashes = { ...getGnosisSafeTxSigningHashes(safeTx), safeTxHash: bytes32String(safeTransaction.safeTxHash) }
 	const addressBookEntries = {
 		verifyingContract: getAddressBookEntryOrAFiller(addressMetaData, safeTx.domain.verifyingContract),

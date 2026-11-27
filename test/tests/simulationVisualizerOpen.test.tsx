@@ -1007,7 +1007,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer Gnosis Safe export copies with feedback and a cooldown', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
-		const safeExportPayload = '{ "name": "Interceptor Gnosis Safe Stack" }'
+		const safeExportPayload = '{ "name": "Interceptor Safe Stack" }'
 		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSafeStackExport') {
 				return { method: 'popup_requestSafeStackExport', ok: true, safeStackJson: safeExportPayload }

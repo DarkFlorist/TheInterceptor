@@ -391,12 +391,12 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const [simulationStateAfterGnosisSafeMetaTransaction, gnosisSafeSignatureRequirement] = await Promise.all([
+		const [simulationStateAfterGnosisSafeMetaTransaction, safeSignatureRequirement] = await Promise.all([
 			appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides),
 			getGnosisSafeSignatureRequirement(ethereumClientService, simulationInput, gnosisSafeMessage.verifyingContract.address, gnosisSafeMessage.activeAddress.address),
 		])
 		const visualization = await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined)
-		return { success: true as const, result: gnosisSafeSignatureRequirement === undefined ? visualization : { ...visualization, gnosisSafeSignatureRequirement } }
+		return { success: true as const, result: safeSignatureRequirement === undefined ? visualization : { ...visualization, safeSignatureRequirement } }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
@@ -441,7 +441,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	return await updatePopupVisualisationWithCallBack(async (current, currentRevision) => currentRevision === capturedRevision ? { ...current, ...metadata } : undefined)
 }
 
-// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareGnosisSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Gnosis Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Gnosis Safe execution that wasn't prepared.
 export const prepareGnosisSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
@@ -450,14 +450,14 @@ export const prepareGnosisSafeExecutionsForRpc = async (simulationInput: Simulat
 	return await prepareGnosisSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 }
 
-// The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Safe layer owns it (createSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Safe execution simulation.
-export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment) => gasPayment === 'simulated-safe-executor' ? createGnosisSafeExecutionCallFormation(ethereum) : undefined
+// The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Gnosis Safe layer owns it (createGnosisSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Gnosis Safe execution simulation.
+export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment, safeOperation?: 1) => gasPayment === 'simulated-safe-executor' ? createGnosisSafeExecutionCallFormation(ethereum, safeOperation) : undefined
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) await validateGnosisSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
-	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.
+	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Gnosis Safe executions as the executor's calls too.
 	simulationInput = await prepareGnosisSafeExecutionsForRpc(simulationInput, ethereum)
 	const parentBlock = await ethereum.getBlock(undefined)
 	const getBaseFeeFixedInputStateBlocks = async () => {

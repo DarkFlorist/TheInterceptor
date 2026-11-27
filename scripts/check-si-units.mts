@@ -3,7 +3,7 @@ import ts from 'typescript'
 import { collectFilePaths, scriptKindForPath } from './typescript-lint-utils.mts'
 
 // Ether amounts use SI prefixes (ether, nanoeth, attoeth); "wei" and "gwei" must not appear in text, comments, or identifiers.
-const filePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'app/inpage/ts/**/*.ts']
+const filePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'app/inpage/ts/**/*.ts', 'app/shared/ts/**/*.ts']
 const forbiddenUnitPattern = /\b(?:g?wei)\b/iu
 const forbiddenUnitWords = new Set(['wei', 'gwei'])
 

@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { createWorkflowStepsError, type WorkflowStepFailure } from '../utils/errors.js'
 import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'

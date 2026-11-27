@@ -35,13 +35,14 @@ export function getGnosisSafeModeRpcPolicyReply(options: {
 	readonly confirmation?: ConfirmationRequest
 	readonly parsedRequest: EthereumJsonRpcRequest | undefined
 	readonly safeSigningMode: boolean
+	readonly simulationMode?: boolean
 	readonly forwardToSigner: boolean
 	readonly activeAddress: bigint | undefined
 	readonly chainId: bigint
 	readonly hasRpcConnection: boolean
 }): RPCReply | undefined {
 	if (!options.safeSigningMode) {
-		if (options.confirmation?.kind === 'transaction' ? options.confirmation.safeTransaction !== undefined : options.confirmation?.review !== undefined) return gnosisSafeModeUnsupportedMethod(options.rawRequest.method, 'Gnosis Safe operations require an active Gnosis Safe signing account.')
+		if (!options.simulationMode && (options.confirmation?.kind === 'transaction' ? options.confirmation.safeTransaction !== undefined : options.confirmation?.review !== undefined)) return gnosisSafeModeUnsupportedMethod(options.rawRequest.method, 'Gnosis Safe operations require an active Gnosis Safe signing account.')
 		return undefined
 	}
 	if (options.parsedRequest === undefined) {

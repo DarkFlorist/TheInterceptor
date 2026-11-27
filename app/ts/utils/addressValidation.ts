@@ -4,7 +4,7 @@ import { CHAIN_IDS_BY_EIP3770_SHORT_NAME } from './chainNames.js'
 import { getChainName } from './constants.js'
 import { getAddress } from './ethereumPrimitives.js'
 
-// EIP-3770 chain-specific addresses are written as `<shortName>:<address>`, for example `eth:0x...` copied from Safe{Wallet}: https://eips.ethereum.org/EIPS/eip-3770
+// EIP-3770 chain-specific addresses are written as `<shortName>:<address>`, for example `eth:0x...` copied from Gnosis Safe{Wallet}: https://eips.ethereum.org/EIPS/eip-3770
 // Short names come from ethereum-lists/chains, whose schema allows `^[A-Za-z0-9-_]{1,64}$`: https://github.com/ethereum-lists/chains/blob/master/tools/schema/chainSchema.json
 // That schema also allows address-like text such as `0XAb58...` or `ab58...`, so `<known address>:<other address>` could show one address first and resolve to the other. The rules below are stricter than the schema to prevent that.
 const CHAIN_SHORT_NAME_CHARACTERS = /^[A-Za-z0-9_-]+$/u

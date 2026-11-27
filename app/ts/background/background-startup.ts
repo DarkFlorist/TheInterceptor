@@ -1,5 +1,10 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { routeProviderReply } from './providerReplyRouting.js'
+import { gnosisSafeAppsCommandLifecycle } from './gnosisSafeAppsCommandBinding.js'
+import { getNativeGnosisSafeAppsConnectionRegistration } from './nativeGnosisSafeAppsConnectionRegistration.js'
+import { isNativeGnosisSafeAppsPreparationError } from './nativeGnosisSafeAppsSessions.js'
+import { attachNativeGnosisSafeAppsHostContext } from './nativeGnosisSafeAppsHostContext.js'
 import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
 import { createGnosisSafeAppsCompatibilityFeature, initializeGnosisSafeAppsCompatibility } from './gnosisSafeAppsCompatibilityCoordinator.js'
@@ -22,7 +27,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
+import { startContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -30,19 +35,20 @@ import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
-import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, type SimulationServicesOwner } from './simulationServicesOwner.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
+import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './providerTerminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { getPopupMessageSenderKind, isPopupMessageAllowedFromSender } from './popupMessageSenderPolicy.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createGnosisSafeAppsCompatibilityFeature(connections)
@@ -127,12 +133,9 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 }))
 
 const manifestVersion = browser.runtime.getManifest().manifest_version
-const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
-if (isManifestV2) {
-	silenceChromeUnCaughtPromise(refreshContentScriptInjectionStrategy())
-}
+startContentScriptInjectionStrategy()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
@@ -142,18 +145,30 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const frameOrigins = getFrameOrigins(port.sender.url)
-	const { websiteOrigin } = frameOrigins
+	const senderUrl = port.sender.url
 	const identifier = websiteSocketToString(socket)
-	const websitePromise = (async () => {
-		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-		await updateKnownWebsiteMetadata(website)
-		return website
-	})()
-	silenceChromeUnCaughtPromise(websitePromise)
+	// Install port listeners synchronously: native-frame authentication performs browser I/O, while the page may send its first request immediately.
+	const contextPromise = (async () => {
+		let nativeRegistration: Awaited<ReturnType<typeof getNativeGnosisSafeAppsConnectionRegistration>>
+		try { nativeRegistration = await getNativeGnosisSafeAppsConnectionRegistration(port, socket.tabId, websiteTabConnections) } catch (error: unknown) {
+			if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
+			port.disconnect()
+			return undefined
+		}
+		const frameOrigins = nativeRegistration?.frameOrigins ?? getFrameOrigins(senderUrl)
+		const { websiteOrigin } = frameOrigins
+		const websitePromise = (async () => {
+			const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+			await updateKnownWebsiteMetadata(website)
+			return website
+		})()
+		silenceChromeUnCaughtPromise(websitePromise)
 
-	const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false }
-	const isTopFrame = isTopFramePort(port)
+		const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false, ...nativeRegistration?.properties }
+		const isTopFrame = nativeRegistration?.isSignerOwner ?? isTopFramePort(port)
+		return { nativeRegistration, websiteOrigin, websitePromise, newConnection, isTopFrame }
+	})()
+	silenceChromeUnCaughtPromise(contextPromise)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
 		if (connectionInitializationPromise === undefined) throw new Error('Content script connection initialization did not start')
@@ -185,23 +200,34 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					checkAndThrowRuntimeLastError()
 				})
 				if (delivery === 'duplicate') return
-				if (delivery === 'invalid') {
-					port.postMessage(serializeInpageReply({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'Invalid request ID: expected a non-negative safe integer.' } }))
-					checkAndThrowRuntimeLastError()
-					return
-				}
-				const { simulationServicesOwner } = await getConnectionInitializationPromise()
-				await pendingRequestLimiter.execute(async () => {
-					const request = {
-						method: rawMessage.method,
-						...'params' in rawMessage ? { params: rawMessage.params } : {},
-						interceptorRequest: rawMessage.interceptorRequest,
-						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
+				await gnosisSafeAppsCommandLifecycle.process(port, rawMessage, async () => {
+					if (delivery === 'invalid') {
+						port.postMessage(serializeInpageReply({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'Invalid request ID: expected a non-negative safe integer.' } }))
+						checkAndThrowRuntimeLastError()
+						return
 					}
-					// A connected port outlives RPC switches; each request stage selects services from the owner.
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+					const { simulationServicesOwner } = await getConnectionInitializationPromise()
+					const context = await contextPromise
+					if (context === undefined) return
+					const { nativeRegistration, websiteOrigin, websitePromise } = context
+					try { await nativeRegistration?.beforeRequest?.() } catch (error: unknown) {
+						if (!isNativeGnosisSafeAppsPreparationError(error)) throw error
+						routeProviderReply(websiteTabConnections, { type: 'result', method: rawMessage.method, uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket }, error: { code: 4900, message: error.message } })
+						return
+					}
+					await pendingRequestLimiter.execute(async () => {
+						const request = {
+							method: rawMessage.method,
+							...'params' in rawMessage ? { params: rawMessage.params } : {},
+							interceptorRequest: rawMessage.interceptorRequest,
+							usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
+							uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+							...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
+						}
+						// A connected port outlives RPC switches; each request stage selects services from the owner.
+						return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+					})
+					return true
 				})
 			})
 		},
@@ -210,7 +236,11 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	if (!listenersRegistered) return
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
+		const context = await contextPromise
+		if (context === undefined) return
+		const { nativeRegistration, newConnection, isTopFrame, websiteOrigin } = context
 		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
+		nativeRegistration?.registered?.()
 		if (registration.createdTabConnection) {
 			await updateTabState(socket.tabId, (previousState: TabState) => {
 				return modifyObject(previousState, {
@@ -225,6 +255,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		}
 	})
 	await connectionInitializationPromise
+	const context = await contextPromise
+	if (context === undefined) return
+	const { websitePromise } = context
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
@@ -364,11 +397,13 @@ if (initializeWatchAssetWindowListeners()) {
 
 browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
+	if (attachNativeGnosisSafeAppsHostContext(port)) return
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
-browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+browser.runtime.onMessage.addListener((message: unknown, sender) => Promise.resolve(catchAllErrorsAndCall(async () => {
+	if (!isPopupMessageAllowedFromSender(message, getPopupMessageSenderKind(sender, browser.runtime.id, browser.runtime.getURL('')))) return undefined
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const settings = await getSettings()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus, sender)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

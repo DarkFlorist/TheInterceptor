@@ -1,3 +1,4 @@
+import { validateGnosisSafeDelegateCode } from './gnosisSafeDelegateCalls.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput, getSimulatedGnosisSafeCallNonce, simulatedCallFromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
@@ -21,14 +22,14 @@ import { GNOSIS_SAFE_EXEC_TRANSACTION_SELECTOR } from './gnosisSafeExecutionRout
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { JsonRpcResponseError } from '../utils/errors.js'
 
-// The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
+// The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Gnosis Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
 export const GNOSIS_SAFE_EXECUTION_SIMULATION_EXECUTOR = generate256BitRandomBigInt() >> 96n
 
-// The storage slot of `mapping(address => mapping(bytes32 => uint256)) approvedHashes` in every Gnosis Safe version Interceptor supports (SUPPORTED_SAFE_VERSIONS in safeCore.ts).
+// The storage slot of `mapping(address => mapping(bytes32 => uint256)) approvedHashes` in every Gnosis Safe version Interceptor supports (SUPPORTED_GNOSIS_SAFE_VERSIONS in gnosisSafeCore.ts).
 const GNOSIS_SAFE_APPROVED_HASHES_SLOT = 8n
 // The executor's tip, the default formEthSendTransaction gives a transaction.
 const EXECUTOR_MAX_PRIORITY_FEE_PER_GAS = 10n ** 8n // 0.1 nanoeth/gas
-// Gas for execTransaction's own work around the Safe's call: its calldata, the signature checks, the nonce update, its event and the Safe's guard if it has one. The node charges only the gas used, so a generous allowance only keeps an execution from failing for lack of gas.
+// Gas for execTransaction's own work around the Gnosis Safe's call: its calldata, the signature checks, the nonce update, its event and the Gnosis Safe's guard if it has one. The node charges only the gas used, so a generous allowance only keeps an execution from failing for lack of gas.
 const GNOSIS_SAFE_EXECUTION_GAS_ALLOWANCE = 1_000_000n
 
 const compareAddresses = (first: bigint, second: bigint) => first < second ? -1 : first > second ? 1 : 0
@@ -48,7 +49,7 @@ function withoutExecutedTransaction(transaction: SimulationInputTransaction): Si
 // Every owner approves and signs, sorted as execTransaction requires. execTransaction checks only as many signatures as its threshold at execution, so an execution still passes after an earlier one on the stack raises the threshold.
 const getSigningOwners = (safeState: GnosisSafeContractState) => [...safeState.owners].sort(compareAddresses)
 
-// What a Gnosis Safe executes: the SafeTx of a Safe proposal, or in simulation mode the Safe's own call, which is a CALL without refund. The SafeTx nonce is left out, because the Safe executes it at whatever nonce it has by then.
+// What a Gnosis Safe executes: the GnosisSafeTx of a Gnosis Safe proposal, or in simulation mode the Gnosis Safe's own call, which is a CALL without refund. The GnosisSafeTx nonce is left out, because the Gnosis Safe executes it at whatever nonce it has by then.
 type GnosisSafeExecution = {
 	readonly safeAddress: bigint
 	readonly chainId: bigint
@@ -67,11 +68,11 @@ function getGnosisSafeExecution({ safeTransaction, signedTransaction, simulation
 	return {
 		safeAddress: signedTransaction.from,
 		chainId: signedTransaction.chainId,
-		message: { to: signedTransaction.to, value: signedTransaction.value, data: signedTransaction.input, operation: 0n, safeTxGas: 0n, baseGas: 0n, gasPrice: 0n, gasToken: 0n, refundReceiver: 0n },
+		message: { to: signedTransaction.to, value: signedTransaction.value, data: signedTransaction.input, operation: BigInt(simulationOptions?.safeOperation ?? 0), safeTxGas: 0n, baseGas: 0n, gasPrice: 0n, gasToken: 0n, refundReceiver: 0n },
 	}
 }
 
-// A call to any Safe's execTransaction that a transaction hands on, directly or relayed through other Safes, batches or contracts, is encoded within its calldata. This is the cheap test for whether an earlier transaction may have changed a Safe's nonce; a contract that builds an execTransaction call itself is not caught, and prepareSafeExecutionSimulationInput documents what happens then.
+// A call to any Gnosis Safe's execTransaction that a transaction hands on, directly or relayed through other Gnosis Safe wallets, batches or contracts, is encoded within its calldata. This is the cheap test for whether an earlier transaction may have changed a Gnosis Safe's nonce; a contract that builds an execTransaction call itself is not caught, and prepareGnosisSafeExecutionSimulationInput documents what happens then.
 const containsExecTransactionSelector = (data: Uint8Array) => {
 	for (let index = 0; index + GNOSIS_SAFE_EXEC_TRANSACTION_SELECTOR.length <= data.length; index++) {
 		if (GNOSIS_SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, offset) => data[index + offset] === byte)) return true
@@ -79,7 +80,7 @@ const containsExecTransactionSelector = (data: Uint8Array) => {
 	return false
 }
 
-// Reads a Gnosis Safe's nonce after a prepared simulation input runs on top of the given parent block, the block the input was prepared for, so a newer block cannot shift the nonce. prepareSafeExecutionSimulationInput takes it as a parameter so tests can answer for a node.
+// Reads a Gnosis Safe's nonce after a prepared simulation input runs on top of the given parent block, the block the input was prepared for, so a newer block cannot shift the nonce. prepareGnosisSafeExecutionSimulationInput takes it as a parameter so tests can answer for a node.
 export type GnosisSafeNonceAfterInputReader = (preparedInputBefore: SimulationStateInput, safeAddress: bigint, parentBlockNumber: bigint) => Promise<bigint>
 
 export const createGnosisSafeNonceAfterInputReader = (ethereum: EthereumClientService): GnosisSafeNonceAfterInputReader => async (preparedInputBefore, safeAddress, parentBlockNumber) => {
@@ -116,11 +117,11 @@ function createExecutorTransaction(execution: GnosisSafeExecution, safeCall: Eth
 		nonce: executorNonce,
 		maxFeePerGas,
 		maxPriorityFeePerGas: EXECUTOR_MAX_PRIORITY_FEE_PER_GAS,
-		// The Safe passes on at most 63/64 of the remaining gas to its call.
+		// The Gnosis Safe passes on at most 63/64 of the remaining gas to its call.
 		gas: safeCall.gas * 64n / 63n + GNOSIS_SAFE_EXECUTION_GAS_ALLOWANCE,
 		to: execution.safeAddress,
 		value: 0n,
-		// The SafeTx as the owners sign it, a delegate call included. With safeTxGas and gasPrice zero, as Interceptor creates them, execTransaction reverts if the Safe's call fails.
+		// The GnosisSafeTx as the owners sign it, a delegate call included. With safeTxGas and gasPrice zero, as Interceptor creates them, execTransaction reverts if the Gnosis Safe's call fails.
 		input: stringToUint8Array(encodeFunctionCall(GNOSIS_SAFE_EXECUTION_ABI, 'execTransaction', [addressString(message.to), message.value, dataStringWith0xStart(message.data), message.operation, message.safeTxGas, message.baseGas, message.gasPrice, addressString(message.gasToken), addressString(message.refundReceiver), signatures])),
 		accessList: [],
 		r: 0n,
@@ -166,9 +167,11 @@ export async function prepareGnosisSafeExecutionSimulationInput(input: Simulatio
 			const inputBeforeExecution = withFirstBlockOverrides([...preparedBlocks, { ...block, transactions: [...preparedTransactions] }], { approvedHashSlotsBySafe: new Map(approvedHashSlotsBySafe), executorBalance })
 			const nonceAtExecution = nonceMayHaveChanged ? await readSafeNonceAfterInput(inputBeforeExecution, safeAddress, parentBlockNumber) : safeState.nonce
 			executedSafes.add(safeAddress)
-			// The data the Safe calls or delegate-calls with, a MultiSend batch included.
+			// The data the Gnosis Safe calls or delegate-calls with, a MultiSend batch included.
 			if (containsExecTransactionSelector(execution.message.data)) earlierCalldataCanExecuteASafe = true
-			const safeTxHash = BigInt(getGnosisSafeTxHash(createGnosisSafeTxFromMessage(execution.chainId, safeAddress, { ...execution.message, nonce: nonceAtExecution })))
+			const safeTx = createGnosisSafeTxFromMessage(execution.chainId, safeAddress, { ...execution.message, nonce: nonceAtExecution })
+			await validateGnosisSafeDelegateCode(ethereum, safeTx, parentBlockNumber)
+			const safeTxHash = BigInt(getGnosisSafeTxHash(safeTx))
 			const approvedHashSlots = { ...approvedHashSlotsBySafe.get(safeAddress) }
 			for (const owner of getSigningOwners(safeState)) approvedHashSlots[getApprovedHashStorageSlot(owner, safeTxHash)] = 1n
 			approvedHashSlotsBySafe.set(safeAddress, approvedHashSlots)
@@ -184,7 +187,7 @@ export async function prepareGnosisSafeExecutionSimulationInput(input: Simulatio
 	return withFirstBlockOverrides(preparedBlocks, { approvedHashSlotsBySafe, executorBalance })
 }
 
-// The fields of the Safe's call that its gas estimate stacks it with.
+// The fields of the Gnosis Safe's call that its gas estimate stacks it with.
 type GnosisSafeCallFields = Pick<PreSimulationTransaction, 'website' | 'created' | 'originalRequestParameters' | 'transactionIdentifier'>
 
 /**
@@ -196,6 +199,7 @@ export async function estimateGnosisSafeExecutionGas(
 	simulationInput: SimulationStateInput,
 	safeCallWithoutGas: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
 	safeCallFields: GnosisSafeCallFields,
+	operation?: 1,
 ): Promise<{ error: TransactionCreationError } | { gas: bigint }> {
 	const parentBlock = await ethereum.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
@@ -203,9 +207,9 @@ export async function estimateGnosisSafeExecutionGas(
 	const safeCall: PreSimulationTransaction = {
 		...safeCallFields,
 		signedTransaction: mockSignTransaction({ ...safeCallWithoutGas, gas: blockGasLimit }),
-		simulationOptions: createGnosisSafeExecutionSimulationOptions(ethereum.getChainId()),
+		simulationOptions: createGnosisSafeExecutionSimulationOptions(ethereum.getChainId(), operation),
 	}
-	// appendTransactionsToInput puts the Safe's call alone in a new last block.
+	// appendTransactionsToInput puts the Gnosis Safe's call alone in a new last block.
 	const preparedInput = await prepareGnosisSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 	const lastBlock = last(preparedInput)
 	const executedTransaction = last(lastBlock?.transactions ?? [])?.executedTransaction
@@ -225,8 +229,8 @@ export async function estimateGnosisSafeExecutionGas(
 	return estimate
 }
 
-// The simulation options that mark a Gnosis Safe's call to run through the Safe. Forming the call and estimating its gas both take them from here, so the estimate runs the call as the stack will.
-export const createGnosisSafeExecutionSimulationOptions = (chainId: bigint): TransactionSimulationOptions => ({ requiredChainId: chainId, executeThroughSafe: true })
+// The simulation options that mark a Gnosis Safe's call to run through the Gnosis Safe. Forming the call and estimating its gas both take them from here, so the estimate runs the call as the stack will.
+export const createGnosisSafeExecutionSimulationOptions = (chainId: bigint, operation?: 1): TransactionSimulationOptions => ({ requiredChainId: chainId, executeThroughSafe: true, ...(operation === undefined ? {} : { safeOperation: operation }) })
 
 // How formEthSendTransaction forms a transaction that the simulation runs as an executor's call instead of as itself: the options that mark it, the source of its nonce field and its gas estimate.
 export type ExecutedCallFormation = {
@@ -235,13 +239,13 @@ export type ExecutedCallFormation = {
 	readonly estimateGas: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>, safeCallFields: GnosisSafeCallFields) => Promise<{ error: TransactionCreationError } | { gas: bigint }>
 }
 
-// The formation of a Gnosis Safe's call that runs through the Safe, a Safe proposal's or in simulation mode the Safe's own: marked by createSafeExecutionSimulationOptions, numbered by getSimulatedSafeCallNonce and estimated as its executor's call on top of the stack. A failed stack simulation fails the estimate, as in simulateEstimateGas.
-export const createGnosisSafeExecutionCallFormation = (ethereum: EthereumClientService): ExecutedCallFormation => ({
-	simulationOptions: createGnosisSafeExecutionSimulationOptions(ethereum.getChainId()),
+// The formation of a Gnosis Safe's call that runs through the Gnosis Safe, a Gnosis Safe proposal's or in simulation mode the Gnosis Safe's own: marked by createGnosisSafeExecutionSimulationOptions, numbered by getSimulatedGnosisSafeCallNonce and estimated as its executor's call on top of the stack. A failed stack simulation fails the estimate, as in simulateEstimateGas.
+export const createGnosisSafeExecutionCallFormation = (ethereum: EthereumClientService, operation?: 1): ExecutedCallFormation => ({
+	simulationOptions: createGnosisSafeExecutionSimulationOptions(ethereum.getChainId(), operation),
 	getNonce: async (requestAbortController, simulationState, from) => await getSimulatedGnosisSafeCallNonce(ethereum, requestAbortController, simulationState, from),
 	estimateGas: async (requestAbortController, simulationState, transaction, safeCallFields) => {
 		if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
-		return await estimateGnosisSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields)
+		return await estimateGnosisSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields, operation)
 	},
 })

@@ -977,7 +977,7 @@ function failOpeningTheSimulationStackWindow(postedMessages: readonly unknown[])
 	return repliesReceivedBeforeCleanup
 }
 
-// A signing-mode Gnosis Safe proposal from the requesting website, reviewed against a Safe whose only owner is the test owner.
+// A signing-mode Gnosis Safe proposal from the requesting website, reviewed against a Gnosis Safe whose only owner is the test owner.
 async function storeGnosisSafeProposalRequest(approvalStatus: { readonly status: 'WaitingForUser' } | { readonly status: 'WaitingForSigner' }) {
 	fakeGnosisSafeContract.owners = [gnosisSafeTestOwnerAddress]
 	const safeTx = createGnosisSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)

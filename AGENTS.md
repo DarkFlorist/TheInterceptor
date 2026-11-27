@@ -1,6 +1,6 @@
 # Agent Notes
 
-The Interceptor is a Bun-managed TypeScript browser extension. Main extension source lives in `app/ts`, injected inpage-provider source lives in `app/inpage/ts`, tests live in `test`, build tooling lives in `build` and `scripts`, and extension pages/assets live under `app`.
+The Interceptor is a Bun-managed TypeScript browser extension. Main extension source lives in `app/ts`, injected inpage-provider source lives in `app/inpage/ts`, shared Gnosis Safe Apps protocol/transport definitions live in `app/shared/ts`, tests live in `test`, build tooling lives in `build` and `scripts`, and extension pages/assets live under `app`.
 
 ## Required Validation
 
@@ -22,8 +22,8 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
 - `bun run test:chrome-communication` launches Chrome through the repo CDP harness, waits for the MV3 content scripts to register, opens a local HTTP page, approves the real Interceptor access popup, and verifies the page reaches `access-granted`.
 - If Chrome or Chromium is installed outside the standard paths, set `CHROME_BIN=/path/to/chrome` when running `bun run test:chrome-communication` or `bun run benchmark:popup-lifecycle`.
 
-- After browser injection, messaging or manifest changes, also run `bun run test:browsers`. It builds and tests Chrome MV3 and Firefox MV2 sequentially and restores the original generated manifest. Install test executables once with `bun run install-chrome` and `bun run install-firefox`.
-- The paired checks run in `.github/workflows/browser-tests.yml`. Both browsers cover provider injection, CSP fallback, wallet approval/signing/rejection, RPC permission replies and reloads.
+- After browser injection, messaging, manifest or Gnosis Safe hosting changes, also run `bun run test:browsers`. It builds and tests Chrome MV3 and Firefox MV2 sequentially and restores the original generated manifest. Install test executables once with `bun run install-chrome` and `bun run install-firefox`.
+- The combined browser checks run in `.github/workflows/browser-tests.yml`. Both browsers cover the extension-owned native Gnosis Safe Apps host in signing and simulation modes, SDK origins, permission revocation, unsupported framing and separately approved simulation transactions. Both also cover provider injection, CSP fallback, RPC permission replies and reloads.
 
 ## Final Review Gate
 
@@ -103,7 +103,8 @@ In the final response to the user, summarize the reviewer feedback received, rep
 
 ## Generated Output
 
-- Do not manually edit generated JavaScript under `app/js` or `app/inpage/js`. Change the corresponding TypeScript under `app/ts` or `app/inpage/ts`, then let the setup/build scripts regenerate output.
+- Do not manually edit generated JavaScript under `app/js`, `app/inpage/js`, or `app/shared/js`. Change the corresponding TypeScript source, then let the setup/build scripts regenerate output.
+- Shared consumers import TypeScript sources directly. `test` and `typecheck` need no shared build output; the app/inpage build configurations reference the composite shared owner and compile its ignored JavaScript and declarations through the TypeScript solution builder. `bun run compile-shared` remains available for a standalone shared build.
 - `bun run setup-chrome` runs vendor setup, builds the inpage bundle, builds the Chrome extension output, and writes `app/manifest.json` from `app/manifestV3.json`.
 - `bun run setup-firefox` builds the Firefox extension output and writes `app/manifest.json` from `app/manifestV2.json`.
 - Treat build outputs from `build/` vendor and bundle scripts as generated unless the task explicitly asks to update generated artifacts.

@@ -6,7 +6,7 @@ import { isAbiDataDecodeError } from '../utils/ethereumPrimitives.js'
 import { getGnosisSafeMessageDigest } from './gnosisSafeMessageData.js'
 
 export const GNOSIS_SAFE_SIGN_MESSAGE_LIB = 0xd53cd0ab83d845ac265be939c57f53ad838012c9n
-// Safe v1.4.1 exposes signMessage(bytes), selector 0x85a5affe; a 32-byte digest still uses dynamic bytes encoding: https://github.com/safe-global/safe-smart-account/blob/v1.4.1/contracts/libraries/SignMessageLib.sol
+// Gnosis Safe v1.4.1 exposes signMessage(bytes), selector 0x85a5affe; a 32-byte digest still uses dynamic bytes encoding: https://github.com/safe-global/safe-smart-account/blob/v1.4.1/contracts/libraries/SignMessageLib.sol
 export const GNOSIS_SAFE_SIGN_MESSAGE_ABI = [{ type: 'function', name: 'signMessage', stateMutability: 'nonpayable', inputs: [{ name: 'message', type: 'bytes' }], outputs: [] }] as const
 
 type GnosisSafeMessageApproval = Pick<GnosisSafeTx['message'], 'to' | 'operation' | 'value' | 'data'>
@@ -17,7 +17,7 @@ export function buildGnosisSafeMessageApproval(review: GnosisSafeMessageReview):
 	return { to: GNOSIS_SAFE_SIGN_MESSAGE_LIB, operation: 1n, value: 0n, data: stringToUint8Array(encodeDigest(getGnosisSafeMessageDigest(review.text, review.isTypedData))) }
 }
 
-// A recognized approval has a canonical 32-byte digest argument and executes in the Safe's storage context.
+// A recognized approval has a canonical 32-byte digest argument and executes in the Gnosis Safe's storage context.
 export function decodeGnosisSafeMessageApproval(transaction: GnosisSafeMessageApproval): string | undefined {
 	if (transaction.to !== GNOSIS_SAFE_SIGN_MESSAGE_LIB || transaction.operation !== 1n || transaction.value !== 0n) return undefined
 	const data = dataStringWith0xStart(transaction.data)

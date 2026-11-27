@@ -2,7 +2,7 @@ import process from 'node:process'
 import ts from 'typescript'
 import { collectFilePaths, scriptKindForPath } from './typescript-lint-utils.mts'
 
-const filePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'app/inpage/ts/**/*.ts', 'test/**/*.ts', 'build/**/*.mts'] as const
+const filePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'app/inpage/ts/**/*.ts', 'app/shared/ts/**/*.ts', 'test/**/*.ts', 'build/**/*.mts'] as const
 
 const collectCommentOnlyCatchDiagnostics = (path: string, sourceText: string) => {
 	const sourceFile = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(path))

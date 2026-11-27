@@ -4,6 +4,7 @@ import * as fs from 'node:fs'
 import * as ts from 'typescript'
 // Intentional app-source dependency: the dependency-free path modules stay under app/ts because the extension runtime ships them, and this bundler and scripts/inline-inpage-document-start.mts import them as the single source of injected script paths.
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
+import { INPAGE_SCRIPTS } from '../app/ts/config/injectedScripts.ts'
 import { generateInpageArtifacts, inlineMetamaskCompatibilityModeAtPageLoad } from '../scripts/inline-inpage-document-start.mts'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
@@ -377,8 +378,7 @@ const inpageDocumentStartPath = path.join(appDirectory, getManifestV2DocumentSta
 const inpageRuntimeEntrypointPaths = [
 	inpageDocumentStartPath,
 	inpageProviderPath,
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	...Object.values(INPAGE_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1))),
 ]
 
 const runtimeEntrypointPaths = [
@@ -392,6 +392,7 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'interceptorAccess.js'),
 	path.join(appDirectory, 'js', 'popup.js'),
 	path.join(appDirectory, 'js', 'settingsView.js'),
+	path.join(appDirectory, 'js', 'gnosisSafeAppsHost.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
 	...inpageRuntimeEntrypointPaths,

@@ -65,6 +65,11 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
 	},
 	{
+		name: 'gnosisSafeAppsHost',
+		title: 'Gnosis Safe App - The Interceptor',
+		htmlStyle: 'background-color: var(--bg-color); overflow-y: auto;',
+	},
+	{
 		name: 'simulationStack',
 		title: 'Simulation Stack - The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',

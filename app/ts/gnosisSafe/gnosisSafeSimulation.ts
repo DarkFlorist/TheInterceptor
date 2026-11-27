@@ -103,7 +103,7 @@ export function prepareGnosisSafeDelegateStateOverrides(safeAddress: bigint, cod
 	}
 }
 
-// A delegate-call proposal runs through the Safe's execTransaction like every proposal (safe/safeExecutionSimulation.ts), so the Safe makes the delegate call itself. It may only delegate-call a library Interceptor allows, and the call the dialog shows must match its SafeTx.
+// A delegate-call proposal runs through the Gnosis Safe's execTransaction like every proposal (gnosisSafe/gnosisSafeExecutionSimulation.ts), so the Gnosis Safe makes the delegate call itself. It may only delegate-call a library Interceptor allows, and the call the dialog shows must match its GnosisSafeTx.
 export async function validateGnosisSafeDelegateSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, blockNumber: bigint) {
 	for (const block of input) for (const transaction of block.transactions) {
 		const safeTx = transaction.safeTransaction?.safeTx

@@ -10,7 +10,7 @@ import { getSocketFromPort, sendPopupMessageToOpenWindows } from './backgroundUt
 import { promoteRpcAsPrimary, getTabState } from './storageVariables.js'
 import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from './simulationServicesOwner.js'
 import { sendCallbackToConfirmedSignerOwner, getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
 
 type PendingSignerChainChange = {
@@ -91,7 +91,7 @@ export type RpcSwitchRequest =
 	| { readonly source: 'popup', readonly signerTabId: number | undefined }
 	| { readonly source: 'dapp', readonly signerTabId: number | undefined, readonly simulationMode: boolean }
 
-// One command owns routing, Safe network restrictions, local promotion and correlated wallet dispatch.
+// One command owns routing, Gnosis Safe network restrictions, local promotion and correlated wallet dispatch.
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
 	const settings = await getSettings()
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
@@ -104,7 +104,7 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 		return { result: null }
 	}
 	if (request.signerTabId === undefined) return { error: signerUnavailableError }
-	// A selected Safe pins the active chain for both popup and dapp requests. Reject before the wallet can diverge.
+	// A selected Gnosis Safe pins the active chain for both popup and dapp requests. Reject before the wallet can diverge.
 	if (await getConfiguredSigningGnosisSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
 		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Gnosis Safe is tied to its current network. Select your wallet account before switching networks.' } }
 	}

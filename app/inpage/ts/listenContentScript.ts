@@ -1,4 +1,4 @@
-import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
+import { INTERCEPTOR_BRIDGE_READY_MESSAGE, INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_DIAGNOSTIC_REQUEST, INTERCEPTOR_BRIDGE_PORT_MESSAGE, INTERCEPTOR_BRIDGE_REQUEST_MESSAGE } from '../../shared/ts/bridgeWireProtocol.js'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
@@ -268,7 +268,13 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 	}
 
+	const announceBridgeReady = () => globalThis.postMessage({ type: INTERCEPTOR_BRIDGE_READY_MESSAGE }, '*')
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+		if (messageEvent.source !== window || messageEvent.origin !== globalThis.location.origin) return
+		if (typeof messageEvent.data === 'object' && messageEvent.data !== null && 'type' in messageEvent.data && messageEvent.data.type === INTERCEPTOR_BRIDGE_READY_REQUEST_MESSAGE) {
+			if (inpagePort === undefined) announceBridgeReady()
+			return
+		}
 		if (
 			inpagePort !== undefined
 			|| typeof messageEvent.data !== 'object'
@@ -284,6 +290,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
 	})
+
+	// Announces a late listener; the request/response above also handles a listener that started before the provider.
+	announceBridgeReady()
 
 	connect = () => {
 		if (reconnectTimer !== undefined) {

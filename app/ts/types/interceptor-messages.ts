@@ -20,6 +20,7 @@ import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecuti
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { EthSimulateV1Result } from './ethSimulate-types.js'
 import { GnosisSafeAppsRequestCommand } from './gnosisSafeApps.js'
+import { NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK } from '../../shared/ts/nativeGnosisSafeAppsSignerProtocol.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -84,6 +85,7 @@ const InpageScriptSuccessCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_watchAsset'), result: WatchAssetSignerRequest }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal(NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_accounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('disconnect'), result: funtypes.ReadonlyTuple() }),

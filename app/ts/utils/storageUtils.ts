@@ -1,15 +1,16 @@
+import { startupStorageCodecs, hostingStorageCodecs } from '../types/startupStorageCodecs.js'
+export { RichListElement } from '../types/startupStorageCodecs.js'
 import { captureStorageWritesTo, writeLocalStorage } from './localStorageWrites.js'
 import type { StorageWriteValue } from './storageWriteTracking.js'
 import * as funtypes from 'funtypes'
+import { ContentScriptHostingSettings } from '../types/contentScriptSettings.js'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
-import { Page } from '../types/exportedSettingsTypes.js'
-import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
+import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { RpcEntries } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
@@ -45,27 +46,6 @@ export const OldActiveAddressEntry = funtypes.ReadonlyObject({
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	entrySource: EntrySource,
 })
-
-export type RichListElement = funtypes.Static<typeof RichListElement>
-export const RichListElement = funtypes.ReadonlyObject({
-	address: EthereumAddress,
-	makingRich: funtypes.Boolean,
-	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
-})
-
-// Shared with startup reads so validating one setting never traverses unrelated storage unions.
-const startupStorageCodecs = {
-	independentActiveSimulationAddress: EthereumAddressOrMissing,
-	activeSigningSafeAddress: EthereumAddressOrMissing,
-	openedPageV2: Page,
-	useSignersAddressAsActiveAddress: funtypes.Boolean,
-	websiteAccess: WebsiteAccessArray,
-	simulationMode: funtypes.Boolean,
-	activeRpcNetwork: RpcNetwork,
-	makeCurrentAddressRich: funtypes.Boolean,
-	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
-	signingAddressPreferences: SigningAddressPreferences,
-}
 
 export type StartupStorageValues = { [Key in keyof typeof startupStorageCodecs]: funtypes.Static<typeof startupStorageCodecs[Key]> }
 const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
@@ -126,10 +106,10 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	rpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
-	safeAppsCompatibilityMode: funtypes.Boolean,
+	...ContentScriptHostingSettings.fields,
 	userAddressBookEntries: funtypes.ReadonlyArray(funtypes.Union(AddressBookEntry, OldActiveAddressEntry)),
 	userAddressBookEntriesV2: AddressBookEntries,
-	userAddressBookEntriesV3: AddressBookEntries,
+	userAddressBookEntriesV3: hostingStorageCodecs.userAddressBookEntriesV3,
 	idsOfOpenedTabs: IdsOfOpenedTabs,
 	interceptorDisabled: funtypes.Boolean,
 	interceptorStartSleepingTimestamp: funtypes.Number,

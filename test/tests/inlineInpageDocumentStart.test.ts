@@ -51,6 +51,7 @@ function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScri
 	Reflect.set(pageWindow, 'parent', pageWindow)
 	Reflect.set(pageWindow, 'top', pageWindow)
 	const pageDocument: { currentScript: FakeScriptElement | undefined } = { currentScript: undefined }
+	const pageErrors: unknown[] = []
 	const insertedScripts: { readonly external: boolean, readonly ranSynchronously: boolean, readonly src: string }[] = []
 	const scriptContainer = {
 		children: [{}, {}],
@@ -58,7 +59,7 @@ function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScri
 			const runsInline = script.src === '' && !pageCspBlocksInlineScripts
 			if (runsInline) {
 				pageDocument.currentScript = script
-				new Function('window', 'document', script.textContent)(pageWindow, pageDocument)
+				try { new Function('window', 'document', script.textContent)(pageWindow, pageDocument) } catch (error: unknown) { pageErrors.push(error) }
 				pageDocument.currentScript = undefined
 			}
 			insertedScripts.push({ external: script.src !== '', ranSynchronously: runsInline, src: script.src })
@@ -70,7 +71,7 @@ function runDocumentStart(documentStartSource: string, { pageCspBlocksInlineScri
 	const fakeBrowser = { runtime: { lastError: undefined, getURL: (path: string) => `moz-extension://interceptor/${ path }` } }
 	const errors: unknown[] = []
 	new Function('globalThis', 'browser', 'document', 'console', documentStartSource)(contentScriptGlobal, fakeBrowser, contentScriptDocument, { error: (...args: unknown[]) => errors.push(args) })
-	return { pageWindow, insertedScripts, contentScriptGlobal, errors }
+	return { pageWindow, insertedScripts, contentScriptGlobal, errors, pageErrors }
 }
 
 const isInterceptorProvider = (value: unknown) => typeof value === 'object' && value !== null && Reflect.get(value, 'isInterceptor') === true
@@ -141,7 +142,7 @@ test('MV2 leaves injection retryable when bootstrap prerequisites are missing', 
 	const fakeGlobalThis: { interceptorInjected?: boolean } = {}
 	const errors: unknown[] = []
 
-	new Function('globalThis', 'browser', 'document', 'console', generatedDocumentStart)(fakeGlobalThis, { runtime: { lastError: undefined, getURL: (path: string) => path } }, {}, { error: (...args: unknown[]) => errors.push(args) })
+	assert.throws(() => new Function('globalThis', 'browser', 'document', 'console', generatedDocumentStart)(fakeGlobalThis, { runtime: { lastError: undefined, getURL: (path: string) => path } }, {}, { error: (...args: unknown[]) => errors.push(args) }), /content script listener was not initialized/)
 
 	assert.equal(fakeGlobalThis.interceptorInjected, undefined)
 	assert.equal(errors.length, 1)

@@ -117,7 +117,23 @@ async function main() {
 		try {
 			await waitForPerformanceMarks(workerConnection, ['interceptor:background:loaded'], 30_000)
 			await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
-			await workerConnection.evaluate('browser.storage.local.set({ safeAppsCompatibilityMode: true })')
+			// Exercise Chrome's real IPv6 match-pattern parser through ordinary disabled-site configuration.
+			await workerConnection.evaluate(`browser.storage.local.set({websiteAccess:[{website:{websiteOrigin:'https://[::1]:8443'},interceptorDisabled:true}]})`)
+			await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+				const scripts = await browser.scripting.getRegisteredContentScripts()
+				return scripts.find(({ id }) => id === 'inpage')?.excludeMatches?.includes('https://[::1]:8443/*') === true
+					&& scripts.find(({ id }) => id === 'inpage2')?.excludeMatches?.includes('https://[::1]:8443/*') === true
+			})()`), 30_000, 'IPv6 provider exclusions')
+			await workerConnection.evaluate('browser.storage.local.set({ websiteAccess: [] })')
+			await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+				const scripts = await browser.scripting.getRegisteredContentScripts()
+				return scripts.find(({ id }) => id === 'inpage2')?.world === 'ISOLATED'
+					&& scripts.find(({ id }) => id === 'inpage')?.world === 'MAIN'
+					&& (scripts.find(({ id }) => id === 'inpage')?.excludeMatches?.length ?? 0) === 0
+					&& (scripts.find(({ id }) => id === 'inpage2')?.excludeMatches?.length ?? 0) === 0
+			})()`), 30_000, 'ordinary provider registration after restoring IPv6 access')
+			await workerConnection.evaluate(`browser.storage.local.set({ userAddressBookEntriesV3: [], safeAppsCompatibilityMode: false, simulationMode: true, activeSigningSafeAddress: 'missing' })`)
+			await workerConnection.evaluate(`browser.storage.local.remove('latestUnexpectedError')`)
 		} finally {
 			workerConnection.close()
 		}

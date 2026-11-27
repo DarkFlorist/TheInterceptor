@@ -2,7 +2,7 @@ import * as injectionStrategy from '../../app/ts/background/contentScriptInjecti
 import * as assert from 'assert'
 import { afterEach, describe, mock, spyOn, test } from 'bun:test'
 import * as errors from '../../app/ts/utils/errors.js'
-import * as contentScriptsUpdating from '../../app/ts/utils/contentScriptsUpdating.js'
+import { contentScriptRegistration } from '../../app/ts/background/contentScriptRegistration.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
@@ -82,7 +82,7 @@ function makeReloadStepReject(reloadStepError: Error) {
 	spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reloadStepError })
 }
 
-const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => {
+const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptRegistration, 'reconcile').mockImplementation(async () => {
 	if (contentScriptUpdateError !== undefined) throw contentScriptUpdateError
 })
 
@@ -144,7 +144,7 @@ describe('removeWebsiteAddressAccess', () => {
 describe('website access registration and reconciliation', () => {
 	test('registers and reloads before reconciling and notifying the popup', async () => {
 		const { handlers, sentPopupMessageMethods, sideEffectOrder } = await setUpApprovedConnectionAndOtherTab()
-		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
+		spyOn(contentScriptRegistration, 'reconcile').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
 		const reconcileApprovals = accessManagement.reconcileCommittedWebsiteAccessOrFailClosed

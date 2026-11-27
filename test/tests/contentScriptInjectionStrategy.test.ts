@@ -45,6 +45,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 	}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
+	const executedScriptFrameIds: (number | undefined)[] = []
 	const executedScriptCode: string[] = []
 	const reloadedTabs: number[] = []
 	const defaultScriptFilesById = new Map<string, readonly string[]>([
@@ -79,6 +80,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 					return undefined
 				},
 				getManifest: () => ({ manifest_version: manifestVersion }),
+				getURL: (path: string) => `moz-extension://test-extension/${ path }`,
 				onMessage: { addListener: () => undefined, removeListener: () => undefined },
 				onConnect: { addListener: () => undefined, removeListener: () => undefined },
 			},
@@ -136,8 +138,9 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
 				async update() { return undefined },
 				async reload(tabId: number) { reloadedTabs.push(tabId) },
-				async executeScript(_tabId: number, injection: { readonly code?: string, readonly file?: string }) {
+				async executeScript(_tabId: number, injection: { readonly code?: string, readonly file?: string, readonly frameId?: number }) {
 					executeScriptCalls++
+					executedScriptFrameIds.push(injection.frameId)
 					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
 					if (injection.code !== undefined) executedScriptCode.push(injection.code)
 					if (executeScriptError !== undefined) throw executeScriptError
@@ -184,6 +187,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 		getExecuteScriptCalls() { return executeScriptCalls },
 		getExecutedScriptCode() { return [...executedScriptCode] },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
+		getExecutedScriptFrameIds() { return [...executedScriptFrameIds] },
 		getReloadedTabs() { return [...reloadedTabs] },
 		getCommittedListener() {
 			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
@@ -217,14 +221,17 @@ const committedDetails: browser.webNavigation._OnCommittedDetails = {
 
 async function loadModules() {
 	const modules = {
-		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
+		...await import('../../app/ts/background/contentScriptRegistration.js'),
+		...await import('../../app/ts/background/manifestV2ContentScriptInjection.js'),
 		...await import('../../app/ts/background/contentScriptInjectionStrategy.js'),
 		...await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		getManifestV3ExcludeMatches: (await import('../../app/ts/utils/chromeMatchPatterns.js')).getChromeSiteMatchPatterns,
 	}
 	return {
 		...modules,
-		updateContentScriptInjectionStrategyManifestV3: async () => await modules.updateContentScriptInjectionStrategyManifestV3(await modules.getContentScriptInjectionConfiguration()),
+		// A fresh registration service applies the stored configuration the way a configuration workflow does.
+		updateContentScriptInjectionStrategyManifestV3: async () => await modules.createContentScriptRegistrationService().reconcile(await modules.getContentScriptInjectionConfiguration()),
 		updateContentScriptInjectionStrategyManifestV2: async () => await modules.updateContentScriptInjectionStrategyManifestV2(modules.getContentScriptInjectionConfiguration),
 	}
 }
@@ -817,12 +824,54 @@ describe('content script injection strategy', () => {
 		}
 	})
 
-	test('registers the Firefox lazy configuration reader without eagerly loading settings', async () => {
+	for (const frameId of [0, 7]) test(`Firefox injection targets the committed frame ${ frameId }`, async () => {
+		const { getCommittedListener, getExecutedScriptFrameIds } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()({ ...committedDetails, frameId, parentFrameId: frameId === 0 ? -1 : 0 })
+		assert.deepEqual(getExecutedScriptFrameIds(), [frameId, frameId, frameId])
+	})
+
+	for (const pagePath of ['html/gnosisSafeAppsHost.html', 'html3/gnosisSafeAppsHostV3.html', 'html/settingsView.html']) test(`Firefox injects ordinary providers into website children of its own extension pages: ${ pagePath }`, async () => {
+		const { getCommittedListener, getExecutedScriptFrameIds } = installBrowserMock({ manifestVersion: 2, tabUrl: `moz-extension://test-extension/${ pagePath }?unrelated=parameters` })
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()({ ...committedDetails, frameId: 7, parentFrameId: 0 })
+		assert.deepEqual(getExecutedScriptFrameIds(), [7, 7, 7])
+	})
+
+	test('Firefox rejects extension top frames, other extensions and non-website child frames', async () => {
+		const page = 'moz-extension://test-extension/html/settingsView.html'
+		const cases = [
+			{ tabUrl: page, frameId: 0, url: committedDetails.url },
+			{ tabUrl: 'moz-extension://other-extension/html/settingsView.html', frameId: 7, url: committedDetails.url },
+			{ tabUrl: 'moz-extension://test-extension-lookalike/html/settingsView.html', frameId: 7, url: committedDetails.url },
+			...['about:blank', 'javascript:alert(1)', 'moz-extension://test-extension/html/settingsView.html', 'https://chromewebstore.google.com/detail/test'].map((url) => ({ tabUrl: page, frameId: 7, url })),
+		]
+		for (const entry of cases) {
+			const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({ manifestVersion: 2, tabUrl: entry.tabUrl })
+			const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+			await updateContentScriptInjectionStrategyManifestV2()
+			await getCommittedListener()({ ...committedDetails, frameId: entry.frameId, url: entry.url, parentFrameId: 0 })
+			assert.equal(getExecuteScriptCalls(), 0, JSON.stringify(entry))
+		}
+	})
+
+	test('Firefox native app frames still respect disabled-site injection policy', async () => {
+		const parameters = new URLSearchParams({ sourceTabId: '23', appUrl: 'https://example.com/swap' })
+		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({ manifestVersion: 2, tabUrl: `moz-extension://test-extension/html/gnosisSafeAppsHost.html?${ parameters }`, websiteAccess: [{ website: { websiteOrigin: 'example.com', title: undefined, icon: undefined }, interceptorDisabled: true, access: false, addressAccess: [] }] })
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()({ ...committedDetails, frameId: 7, parentFrameId: 0 })
+		assert.equal(getExecuteScriptCalls(), 0)
+	})
+
+	test('registers the Firefox navigation reader and eagerly reconciles provider settings', async () => {
 		const { getCommittedListener, getStorageGetCalls } = installBrowserMock({ manifestVersion: 2 })
 		const { refreshContentScriptInjectionStrategy } = await loadModules()
 
 		await refreshContentScriptInjectionStrategy()
-		assert.equal(getStorageGetCalls(), 0)
+		assert.ok(getStorageGetCalls() > 0)
 
 		await getCommittedListener()(committedDetails)
 		assert.equal(getStorageGetCalls() > 0, true)

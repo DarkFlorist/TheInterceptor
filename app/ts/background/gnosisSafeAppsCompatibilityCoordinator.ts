@@ -1,10 +1,8 @@
 import { verifyAccess } from './accessManagement.js'
-import { getConfiguredSigningGnosisSafe } from './signingAddressSelection.js'
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
-import { isActiveSigningGnosisSafe } from '../utils/activeAddressSelection.js'
+import { resolveConfiguredGnosisSafeForMode, getConfiguredGnosisSafeEntryForMode } from '../utils/activeAddressSelection.js'
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
@@ -12,19 +10,9 @@ import { getGnosisSafeAppsCompatibilityMode, getSettings } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
-import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
 
-export async function isGnosisSafeAppsConnectionEligible(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
-	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
-	if (connection?.approved !== true || !isTopFramePort(connection.port)) return false
-	const [activeAddress, tabState, activeAddresses] = await Promise.all([
-		getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, socket),
-		getTabState(socket.tabId),
-		getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId),
-	])
-	return isActiveSigningGnosisSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, tabState.signerAccounts, activeAddresses)
-}
+import { isGnosisSafeAppsConnectionEligible } from './gnosisSafeAppsConnectionEligibility.js'
 
 function createGnosisSafeAppsCompatibilityCoordinator() {
 	let active = true
@@ -37,7 +25,7 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 		return { socketIdentifier, token }
 	}
 	const isCurrentPublication = (socketIdentifier: string, token: object) => active && publicationTokens.get(socketIdentifier) === token
-	const send = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, canRequestAccess = false) => {
+	const publishGnosisSafeAppsCompatibility = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, canRequestAccess = false) => {
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled, canRequestAccess } })
 	}
 	const requestSignerAccountDiscovery = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => {
@@ -55,11 +43,11 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 		const settings = await getSettings()
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
-		const safe = await getConfiguredSigningGnosisSafe(settings, tabState.signerAccounts)
+		const safe = resolveConfiguredGnosisSafeForMode(settings, await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId), tabState.signerAccounts)
 		if (!isCurrentPublication(socketIdentifier, token)) return
-		// Reconcile cached Safe consent within the publication generation so any newer refresh also retries it.
+		// Reconcile cached Gnosis Safe consent within the publication generation so any newer refresh also retries it.
 		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (!settings.simulationMode && safe !== undefined && connection !== undefined && !connection.approved && isTopFramePort(connection.port) && signer?.socket.connectionName === socket.connectionName) {
+		if (safe !== undefined && connection !== undefined && !connection.approved && isTopFramePort(connection.port) && (settings.simulationMode || signer?.socket.connectionName === socket.connectionName)) {
 			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
 		}
 		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
@@ -79,21 +67,21 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 		const latestEligible = latestEnabled && await isGnosisSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		const latestConnection = getWebsiteSocketConnection(websiteTabConnections, socket)
-		const entries = latestEnabled && !latestSettings.simulationMode ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(latestSettings.activeRpcNetwork.chainId) : []
-		const configuredSafe = entries.find((entry) => entry.type === 'safe' && entry.address === latestSettings.activeSigningSafeAddress)
+		const entries = latestEnabled ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(latestSettings.activeRpcNetwork.chainId) : []
+		const configuredSafe = getConfiguredGnosisSafeEntryForMode(latestSettings, entries)
 		const siteAccess = latestConnection === undefined ? 'noAccess' : hasAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin)
-		// The Safe selection may be restored only after MetaMask exposes its account; connection must not require that selection upfront.
+		// The Gnosis Safe selection may be restored only after MetaMask exposes its account; connection must not require that selection upfront.
 		const safeAccess = latestConnection === undefined ? 'noAccess' : configuredSafe === undefined ? 'askAccess' : hasAddressAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin, configuredSafe)
-		const canRequestAccess = latestEnabled && !latestSettings.simulationMode && latestConnection !== undefined && isTopFramePort(latestConnection.port)
+		const canRequestAccess = latestEnabled && (!latestSettings.simulationMode || configuredSafe !== undefined) && latestConnection !== undefined && isTopFramePort(latestConnection.port)
 			&& siteAccess !== 'noAccess' && siteAccess !== 'interceptorDisabled' && safeAccess !== 'noAccess' && safeAccess !== 'interceptorDisabled'
 		if (!isCurrentPublication(socketIdentifier, token)) return
-		send(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)
+		publishGnosisSafeAppsCompatibility(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)
 	}
 	return {
 		dispose(connections: WebsiteTabConnections) {
 			active = false
 			for (const tab of connections.values()) for (const connection of Object.values(tab.connections)) {
-				if (connection !== undefined && publicationTokens.has(websiteSocketToString(connection.socket))) send(connections, connection.socket, false)
+				if (connection !== undefined && publicationTokens.has(websiteSocketToString(connection.socket))) publishGnosisSafeAppsCompatibility(connections, connection.socket, false)
 			}
 			publicationTokens.clear()
 			signerAccountDiscoveryTabs.clear()
@@ -103,7 +91,7 @@ function createGnosisSafeAppsCompatibilityCoordinator() {
 		},
 		connectionDisconnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 			beginPublication(socket)
-			send(websiteTabConnections, socket, false)
+			publishGnosisSafeAppsCompatibility(websiteTabConnections, socket, false)
 			publicationTokens.delete(websiteSocketToString(socket))
 			signerAccountDiscoveryTabs.delete(socket.tabId)
 		},

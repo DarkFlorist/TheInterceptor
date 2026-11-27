@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { createEthereumWithGetBlockCounter, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { test } from 'bun:test'
-import { createSimulationServicesOwner, createSimulationServicesOwnerForServices } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, createSimulationServicesOwnerForServices } from '../../app/ts/background/simulationServicesOwner.js'
 
 test('the service owner publishes each installed pair and retains captured snapshots', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -14,6 +14,7 @@ test('the service owner publishes each installed pair and retains captured snaps
 			owner.ensureNetwork(network)
 			const replacement = owner.getCurrent()
 			assert.notEqual(replacement.ethereum, original.ethereum)
+			assert.notEqual(replacement.gnosisSafeAppsSimulationMetadata, original.gnosisSafeAppsSimulationMetadata)
 			assert.deepEqual(replacement.ethereum.getRpcEntry(), network)
 		}
 		// A captured pair remains a snapshot; it cannot mutate the owner's current selection.
@@ -70,6 +71,7 @@ test('reconciles selected networks against the installed client', () => {
 		const initialServices = owner.getCurrent()
 		assert.equal(owner.ensureNetwork({ ...initialNetwork, name: 'Renamed endpoint' }), 'unchanged')
 		assert.equal(owner.getCurrent(), initialServices)
+		assert.equal(owner.getCurrent().gnosisSafeAppsSimulationMetadata, initialServices.gnosisSafeAppsSimulationMetadata)
 		const renamed = { ...initialNetwork, name: 'Fresh metadata' }
 		assert.equal(owner.ensureNetwork(renamed, { updateMetadata: true }), 'replaced')
 		assert.equal(owner.getCurrent().ethereum.getRpcEntry().name, renamed.name)
@@ -104,7 +106,8 @@ test('the test owner tracks replacement selections without changing injected cli
 	assert.equal(replacements, 0)
 	const next = { ...initialNetwork, httpsRpc: 'https://replacement.example' }
 	assert.equal(owner.ensureNetwork(next), 'replaced')
-	assert.equal(owner.getCurrent(), services)
+	assert.equal(owner.getCurrent().ethereum, services.ethereum)
+	assert.equal(owner.getCurrent().tokenPriceService, services.tokenPriceService)
 	assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, initialNetwork.httpsRpc)
 	assert.equal(owner.ensureNetwork(next), 'unchanged')
 	assert.equal(replacements, 1)
@@ -130,6 +133,7 @@ test('injected owner selection is explicit and advances only after replacement s
 	assert.equal(owner.ensureNetwork(next), 'replaced')
 	assert.equal(owner.ensureNetwork(next), 'unchanged')
 	assert.equal(replacements, 2)
-	assert.equal(owner.getCurrent(), services)
+	assert.equal(owner.getCurrent().ethereum, services.ethereum)
+	assert.equal(owner.getCurrent().tokenPriceService, services.tokenPriceService)
 	assert.deepEqual(services.ethereum.getRpcEntry(), actual)
 })

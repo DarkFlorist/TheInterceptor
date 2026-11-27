@@ -490,7 +490,7 @@ test('prepares Gnosis Safe transaction intent without charging gas to the Gnosis
 		created,
 		1n,
 		false,
-		'external-executor',
+		{ gasPayment: 'external-executor' },
 	)
 
 	assert.equal(prepared.success, true)
@@ -529,7 +529,7 @@ test('does not fall back to ordinary gas estimation when Gnosis Safe simulation 
 		created,
 		1n,
 		false,
-		'external-executor',
+		{ gasPayment: 'external-executor' },
 	))
 
 	assert.equal(prepared.success, false)
@@ -608,7 +608,7 @@ test('reserves proposal nonces without counting overlapping direct Gnosis Safe e
 		value: 0n,
 		input: new Uint8Array(),
 	}, 1n)
-	const safeRequest = (safeTx: typeof proposalSafeTx) => ({
+	const gnosisSafeRequest = (safeTx: typeof proposalSafeTx) => ({
 		safeAddress: activeAddress,
 		safeSignerAddress: recipientAddress,
 		safeVersion: '1.4.1' as const,
@@ -622,11 +622,11 @@ test('reserves proposal nonces without counting overlapping direct Gnosis Safe e
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 401 },
-			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: safeRequest(proposalSafeTx) },
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: gnosisSafeRequest(proposalSafeTx) },
 		}, {
 			...pendingTransaction,
 			uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 402 },
-			// A direct Safe execution holds no proposal, so it reserves no Safe nonce.
+			// A direct Gnosis Safe execution holds no proposal, so it reserves no Gnosis Safe nonce.
 			safeFlow: { kind: 'directExecution', safeExecutionOriginalRequestParameters: transactionParams },
 		}],
 	})
@@ -782,7 +782,7 @@ test('atomic Gnosis Safe batch preparation and simulation preserve one nonce and
 	const block = { transactions: [simulated], signedMessages: [], stateOverrides: {}, blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 12n, deltaUnit: 'Seconds' as const }, simulateWithZeroBaseFee: false }
 	await validateGnosisSafeDelegateSimulationInput([block], simulator.ethereum, 123n)
 	await assert.rejects(validateGnosisSafeDelegateSimulationInput([{ ...block, transactions: [{ ...simulated, signedTransaction: { ...simulated.signedTransaction, to: recipientAddress } }] }], simulator.ethereum, 123n), /does not match its proposal/)
-	// The Safe makes the delegate call itself, through execTransaction, without replacing its code.
+	// The Gnosis Safe makes the delegate call itself, through execTransaction, without replacing its code.
 	const [prepared] = await prepareGnosisSafeExecutionSimulationInput([block], simulator.ethereum, 123n, 1n)
 	assert.equal(prepared?.stateOverrides[addressString(activeAddress)]?.code, undefined)
 	const executed = prepared?.transactions[0]?.executedTransaction
@@ -828,7 +828,7 @@ test('clears a pending Gnosis Safe proposal stored before its flow was recorded 
 	const storedProposal = modules.serialize(PendingTransactionOrSignableMessage, { ...pendingTransaction, simulationMode: false, safeFlow: { kind: 'proposal', state: 'created', safeTransaction } })
 	await browser.storage.local.set({ pendingTransactionsAndMessages: [storedProposal] })
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'the current format is read back')
-	// Earlier versions kept a Safe proposal's transaction in its own pending field.
+	// Earlier versions kept a Gnosis Safe proposal's transaction in its own pending field.
 	const { safeFlow, ...earlierVersionFields } = storedProposal
 	await browser.storage.local.set({ pendingTransactionsAndMessages: [{ ...earlierVersionFields, safeTransaction: safeFlow.safeTransaction }] })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.getPendingTransactionsAndMessages()), [])

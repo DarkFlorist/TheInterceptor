@@ -49,6 +49,17 @@ test('the Docker build copies the complete TypeScript configuration graph used b
 	}
 })
 
+test('inpage protocol consumers import the canonical shared source without local facades', () => {
+	const directory = 'app/inpage/ts'
+	for (const file of fs.readdirSync(directory).filter((candidate) => candidate.endsWith('.ts'))) {
+		const imports = ts.preProcessFile(fs.readFileSync(path.join(directory, file), 'utf8')).importedFiles
+		for (const dependency of imports) {
+			const sharedModule = dependency.fileName.match(/(?:^|\/)(gnosisSafeApps(?:Protocol|RequestQueue|Transport))\.js$/u)?.[1]
+			if (sharedModule !== undefined) assert.equal(dependency.fileName, `../../shared/ts/${ sharedModule }.js`, `${ file } must import the shared source directly`)
+		}
+	}
+})
+
 test('both build graphs reference the shared owner while source-only checking needs no generated artifacts', () => {
 	const shared = readProject('tsconfig-shared.json')
 	assert.equal(shared.options.composite, true)
@@ -56,8 +67,8 @@ test('both build graphs reference the shared owner while source-only checking ne
 	assert.ok(shared.options.tsBuildInfoFile?.startsWith(path.resolve('app/shared/js')))
 	const sourceFiles = new Set(shared.fileNames)
 	const consumers = [
-		{ config: 'tsconfig-inpage.json', build: 'tsconfig-inpage-build.json', sources: ['app/inpage/ts/inpage.ts'] },
-		{ config: 'tsconfig.json', build: 'tsconfig-app-build.json', sources: ['app/ts/background/accountRequestMethods.ts'] },
+		{ config: 'tsconfig-inpage.json', build: 'tsconfig-inpage-build.json', sources: ['app/inpage/ts/inpage.ts', 'app/inpage/ts/listenContentScript.ts'] },
+		{ config: 'tsconfig.json', build: 'tsconfig-app-build.json', sources: ['app/ts/background/accountRequestMethods.ts', 'app/ts/utils/nativeGnosisSafeAppsHost.ts'] },
 	]
 	for (const consumer of consumers) {
 		const project = readProject(consumer.config)

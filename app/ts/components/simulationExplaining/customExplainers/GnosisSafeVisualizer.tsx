@@ -16,7 +16,7 @@ import { useExecutionSimulation } from '../../hooks/useExecutionSimulation.js'
 // The signer provides at most one signature, and none when it is not an owner.
 export const signaturesTheSignerProvides = (requirement: GnosisSafeSignatureRequirement) => requirement.signerIsOwner ? 1n : 0n
 
-// The outcome only happens once the Safe has enough owner signatures, so say how many it needs, and when the signer's own signature is not enough, that others must sign too. Without a requirement (the Safe did not answer its owner reads) nothing is shown.
+// The outcome only happens once the Gnosis Safe has enough owner signatures, so say how many it needs, and when the signer's own signature is not enough, that others must sign too. Without a requirement (the Gnosis Safe did not answer its owner reads) nothing is shown.
 export function GnosisSafeSignatureRequirementLabel({ requirement }: { requirement: GnosisSafeSignatureRequirement | undefined }) {
 	if (requirement === undefined) return <></>
 	return <div class = 'gnosis-safe-outcome-panel__signatures'>
@@ -101,7 +101,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 
 	return <div class = 'gnosis-safe-outcome-panel__result'>
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-		<GnosisSafeSignatureRequirementLabel requirement = { simulateExecutionReply.value.data.result.gnosisSafeSignatureRequirement }/>
+		<GnosisSafeSignatureRequirementLabel requirement = { simulateExecutionReply.value.data.result.safeSignatureRequirement }/>
 		<Transaction
 			simTx = { simTx.value }
 			simulationAndVisualisationResults = { results.value }
@@ -128,7 +128,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		() => requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage }),
 		GNOSIS_SIMULATION_REPLY_MISSING_ERROR,
 	)
-	const outcomeTitleId = `gnosis-safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
+	const outcomeTitleId = `safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
 
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
