@@ -14,7 +14,7 @@ function setup() {
 	Object.assign(browser.tabs, { get: async () => ({ id: 7, url: hostUrl }) })
 	Object.assign(browser, { webNavigation: { getFrame: async () => ({ parentFrameId: 0, url: 'https://app.example:8443/swap#current' }) } })
 	const makePort = (frameId: number, url: string) => {
-		const { port } = createPort(7, undefined, frameId)
+		const { port } = createPort(7, undefined, frameId, frameId === 0 ? 1n : 0n)
 		const disconnected = new Set<() => void>()
 		Object.assign(port, { onDisconnect: { addListener: (listener: () => void) => { disconnected.add(listener) }, removeListener: (listener: () => void) => { disconnected.delete(listener) } }, disconnect: () => { for (const listener of disconnected) listener() } })
 		Object.assign(port.sender ?? {}, { id: 'extension-id', url })
@@ -29,7 +29,7 @@ test('host registration derives app permission identity without inheriting the o
 	const result = await getNativeGnosisSafeAppsConnectionRegistration(h.makePort(0, h.hostUrl), 7, new Map())
 	assert.equal(result?.isSignerOwner, false)
 	assert.deepEqual(result?.frameOrigins, { websiteOrigin: 'app.example:8443', requestOrigin: 'https://app.example:8443' })
-	assert.equal(result?.properties.nativeSafeRole?.kind, 'host')
+	assert.deepEqual(result?.properties, {})
 })
 
 test('only the real direct app child can claim native signer ownership, including same-origin SPA URLs', async () => {
@@ -68,7 +68,10 @@ test('host requests wait for the new authenticated signer instead of inheriting 
 	assert.equal(ready, false)
 	const child = h.makePort(3, 'https://app.example:8443/swap')
 	const childRegistration = await getNativeGnosisSafeAppsConnectionRegistration(child, 7, connections)
-	connections.set(7, { signerStateOwner: { confirmed: true, connectionName: 0n, generation: 1, providerGeneration: 1 }, connections: { '7-0x0': { port: child, socket: { tabId: 7, connectionName: 0n }, websiteOrigin: 'app.example:8443', approved: false, wantsToConnect: false, nativeSafeRole: { kind: 'signer' as const, session: { port: host, origin: 'https://app.example:8443' } } } } })
+	connections.set(7, { signerStateOwner: { confirmed: true, connectionName: 0n, generation: 1, providerGeneration: 1 }, connections: { '7-0x0': { port: child, socket: { tabId: 7, connectionName: 0n }, websiteOrigin: 'app.example:8443', approved: false, wantsToConnect: false } } })
+	const tab = connections.get(7)
+	if (tab === undefined) throw new Error('Missing tab')
+	tab.connections['7-0x1'] = { port: host, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example:8443', approved: true, wantsToConnect: true }
 	childRegistration?.registered?.()
 	await waiting
 	assert.equal(ready, true)
@@ -122,8 +125,9 @@ test('same-URL reload waits for its own signer session and ignores late cleanup 
 	await getNativeGnosisSafeAppsConnectionRegistration(oldRoot, 7, connections)
 	const child = h.makePort(3, 'https://app.example:8443/swap')
 	const childSocket = { tabId: 7, connectionName: 0n }
-	const childConnection = { port: child, socket: childSocket, websiteOrigin: 'app.example:8443', approved: true, wantsToConnect: true, nativeSafeRole: { kind: 'signer' as const, session: { port: oldRoot, origin: 'https://app.example:8443' } } }
+	const childConnection = { port: child, socket: childSocket, websiteOrigin: 'app.example:8443', approved: true, wantsToConnect: true }
 	connections.set(7, { signerStateOwner: { confirmed: true, connectionName: 0n, generation: 1, providerGeneration: 1 }, connections: { '7-0x0': childConnection } })
+	await getNativeGnosisSafeAppsConnectionRegistration(child, 7, connections)
 	const root = h.makePort(0, h.hostUrl)
 	const registration = await getNativeGnosisSafeAppsConnectionRegistration(root, 7, connections)
 	let ready = false
@@ -132,7 +136,10 @@ test('same-URL reload waits for its own signer session and ignores late cleanup 
 	assert.equal(ready, false, 'old confirmed signer state is not authority for a new root with the same URL')
 	for (const disconnect of oldDisconnects) disconnect()
 	assert.equal(getNativeGnosisSafeAppsSession(connections, 7)?.port, root)
-	childConnection.nativeSafeRole.session.port = root
+	const tab = connections.get(7)
+	if (tab === undefined) throw new Error('Missing tab')
+	tab.connections['7-0x1'] = { port: root, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example:8443', approved: true, wantsToConnect: true }
+	await getNativeGnosisSafeAppsConnectionRegistration(child, 7, connections)
 	notifyNativeGnosisSafeAppsSessionConnections(connections)
 	await waiting
 	assert.equal(ready, true)

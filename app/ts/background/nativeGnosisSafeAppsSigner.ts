@@ -1,14 +1,13 @@
 import { NATIVE_GNOSIS_SAFE_APPS_SIGNER_CALLBACK, parseNativeGnosisSafeAppsSignerReplyToken, parseNativeGnosisSafeAppsSignerRequest } from '../../shared/ts/nativeGnosisSafeAppsSignerProtocol.js'
 import { serializeInpageReply, type InterceptedRequestForward, type SignerReply, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getActiveAddress, getWebsiteSocketConnection, getSocketFromPort, websiteSocketToString } from './backgroundUtils.js'
-import { getNativeGnosisSafeAppsChildLaunch, getNativeGnosisSafeAppsHostLaunch } from './nativeGnosisSafeAppsHostSender.js'
+import { getActiveAddress, getWebsiteSocketConnection, websiteSocketToString } from './backgroundUtils.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, type SignerStateToken } from './signerStateOwnership.js'
 import { doesUniqueRequestIdentifiersMatch, getTabIfExists } from '../utils/requests.js'
 import { getSettings } from './settings.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getNativeGnosisSafeAppsSession } from './nativeGnosisSafeAppsSessions.js'
+import { getNativeGnosisSafeAppsSession, getNativeGnosisSafeAppsAuthority } from './nativeGnosisSafeAppsSessions.js'
 
 type SignerForward = Extract<InterceptedRequestForward, { readonly type: 'forwardToSigner' }>
 type Connection = NonNullable<ReturnType<typeof getWebsiteSocketConnection>>
@@ -17,26 +16,12 @@ type SignerResult = SignerReply['params'][0]
 const pendingByConnections = new WeakMap<WebsiteTabConnections, Map<string, PendingNativeSignerRequest>>()
 
 function matchesHost(connections: WebsiteTabConnections, host: Connection, signer: SignerStateToken) {
-	const child = getWebsiteSocketConnection(connections, signer.socket)
-	const launch = getNativeGnosisSafeAppsChildLaunch(signer.port.sender)
-	const hostLaunch = getNativeGnosisSafeAppsHostLaunch(host.port.sender)
-	const session = getNativeGnosisSafeAppsSession(connections, host.socket.tabId)
-	return child?.nativeSafeRole?.kind === 'signer' && child.port === signer.port && host.nativeSafeRole?.kind === 'host'
-		&& child.nativeSafeRole.session.port === session?.port && session?.port === host.port && session.origin === hostLaunch?.appUrl.origin
-		&& host.socket.tabId === signer.socket.tabId && launch?.appUrl.origin === session.origin
-		&& hostLaunch?.appUrl.href === launch?.appUrl.href && child.websiteOrigin === host.websiteOrigin
-		&& getWebsiteSocketConnection(connections, host.socket) === host
+	const authority = getNativeGnosisSafeAppsAuthority(connections, signer.port)
+	return authority.kind === 'signer' && authority.host === host
 }
 
-// Registration marks only browser-verified direct children. Ordinary approved iframes cannot become signer owners.
 export function isNativeGnosisSafeAppsSignerPort(connections: WebsiteTabConnections, port: browser.runtime.Port) {
-	const socket = getSocketFromPort(port)
-	if (socket === undefined) return false
-	const connection = getWebsiteSocketConnection(connections, socket)
-	if (connection?.port !== port || connection.nativeSafeRole?.kind !== 'signer') return false
-	const launch = getNativeGnosisSafeAppsChildLaunch(port.sender)
-	const session = getNativeGnosisSafeAppsSession(connections, socket.tabId)
-	return launch !== undefined && connection.websiteOrigin === launch.appUrl.host && session?.origin === launch.appUrl.origin && connection.nativeSafeRole.session.port === session.port
+	return getNativeGnosisSafeAppsAuthority(connections, port).kind === 'signer'
 }
 
 // The host owns request identity and approvals; only the selected child's real wallet provider receives the signer callback.

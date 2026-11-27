@@ -89,7 +89,8 @@ test('provider routing settles tracked signer replies and generic transport stay
 		assert.equal(admitGnosisSafeAppsPrivateCommand(port, submit), false)
 	}
 	assert.doesNotMatch(await Bun.file('app/ts/background/messageSending.ts').text(), /gnosisSafeAppsCommandBinding|settleGnosisSafeAppsExecution/)
-	assert.match(await Bun.file('app/ts/background/terminalReplyDelivery.ts').text(), /routeProviderReply/)
+	assert.doesNotMatch(await Bun.file('app/ts/background/terminalReplyDelivery.ts').text(), /routeProviderReply|gnosisSafeApps/)
+	assert.match(await Bun.file('app/ts/background/providerTerminalReplyDelivery.ts').text(), /routeProviderReply/)
 })
 
 test('lifecycle releases early exits and thrown preparation failures beyond capacity', async () => {
@@ -117,4 +118,14 @@ test('lifecycle hands queued approval settlement to the terminal reply without r
 	lifecycle.settle(port, 1, `0x${ '11'.repeat(65) }`)
 	assert.equal(lifecycle.admit(port, { method: 'submitOffChainMessage', params: command }), true)
 	assert.equal(lifecycle.admit(port, payload), false)
+})
+
+test('application replies enter the domain router and durable transport stays neutral', async () => {
+	const files = new Bun.Glob('app/ts/**/*.ts')
+	for await (const file of files.scan('.')) {
+		if (file.endsWith('/messageSending.ts') || file.endsWith('/providerReplyRouting.ts')) continue
+		assert.doesNotMatch(await Bun.file(file).text(), /\breplyToInterceptedRequest(?:AfterManifestV2Reconnect)?\b/, file)
+	}
+	assert.doesNotMatch(await Bun.file('app/ts/background/terminalReplyDelivery.ts').text(), /from ['"].*(?:gnosis|Gnosis|providerReplyRouting)/)
+	assert.doesNotMatch(await Bun.file('app/ts/types/user-interface-types.ts').text(), /nativeSafeRole/)
 })

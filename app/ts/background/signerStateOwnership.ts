@@ -118,6 +118,21 @@ export function beginSignerStateConfirmation(tabConnection: TabConnection) {
 	tabConnection.signerStateOwner.confirmation = createSignerStateConfirmation()
 }
 
+// Provider announcements arrive before queued confirmation work completes. Never publish an obsolete intermediate wallet as ready.
+const announcedProviderGenerations = new WeakMap<browser.runtime.Port, number>()
+export function announceSignerProviderGeneration(connections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, generation: number) {
+	const tab = connections.get(socket.tabId)
+	if (!isCurrentWebsiteConnection(tab, socket, port) || tab?.signerStateOwner?.connectionName !== socket.connectionName) return false
+	const previous = announcedProviderGenerations.get(port) ?? tab.signerStateOwner.providerGeneration ?? -1
+	if (generation < previous) return false
+	announcedProviderGenerations.set(port, generation)
+	if (generation > previous) {
+		beginSignerStateConfirmation(tab)
+	}
+	return true
+}
+export const isSignerProviderAnnouncementCurrent = (port: browser.runtime.Port, generation: number) => announcedProviderGenerations.get(port) === generation
+
 export function confirmSignerState(tabConnection: TabConnection, signerProviderGeneration: number) {
 	if (tabConnection.signerStateOwner === undefined) throw new Error('Signer state owner lifecycle missing')
 	tabConnection.signerStateOwner.providerGeneration = signerProviderGeneration

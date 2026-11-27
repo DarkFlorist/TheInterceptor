@@ -7,13 +7,13 @@ import { getWebsiteSocketConnection, isTopFramePort } from './backgroundUtils.js
 import { getTabIfExists } from '../utils/requests.js'
 
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
-import { getNativeGnosisSafeAppsSession, registerNativeGnosisSafeAppsSession, notifyNativeGnosisSafeAppsSessionConnections, waitForNativeGnosisSafeAppsSessionCondition, nativeGnosisSafeAppsPreparationFailure } from './nativeGnosisSafeAppsSessions.js'
+import { getNativeGnosisSafeAppsSession, registerNativeGnosisSafeAppsSession, notifyNativeGnosisSafeAppsSessionConnections, waitForNativeGnosisSafeAppsSessionCondition, nativeGnosisSafeAppsPreparationFailure, registerNativeGnosisSafeAppsRole, getNativeGnosisSafeAppsAuthority } from './nativeGnosisSafeAppsSessions.js'
 
 
 type NativeRegistration = {
 	readonly frameOrigins: { readonly websiteOrigin: string, readonly requestOrigin: string }
 	readonly isSignerOwner: boolean
-	readonly properties: Pick<NonNullable<ReturnType<typeof getWebsiteSocketConnection>>, 'nativeSafeRole'>
+	readonly properties: Record<string, never>
 	readonly beforeRequest?: () => Promise<void>
 	readonly registered?: () => void
 }
@@ -23,7 +23,8 @@ async function waitForNativeSigner(connections: WebsiteTabConnections, tabId: nu
 		if (getNativeGnosisSafeAppsSession(connections, tabId)?.port !== hostPort) throw nativeGnosisSafeAppsPreparationFailure('The app session changed. Retry the connection.')
 		const signer = getConfirmedSignerStateToken(connections, tabId)
 		const child = signer === undefined ? undefined : getWebsiteSocketConnection(connections, signer.socket)
-		return child?.nativeSafeRole?.kind === 'signer' && child.nativeSafeRole.session.port === hostPort ? signer : undefined
+		const authority = child === undefined ? undefined : getNativeGnosisSafeAppsAuthority(connections, child.port)
+		return authority?.kind === 'signer' && authority.host.port === hostPort ? signer : undefined
 	}, 'The app wallet bridge is unavailable. Enable Interceptor and your wallet for this embedded site, then retry or open the website directly.')
 }
 
@@ -32,6 +33,7 @@ export async function getNativeGnosisSafeAppsConnectionRegistration(port: browse
 	const host = isTopFramePort(port) ? getNativeGnosisSafeAppsHostLaunch(port.sender) : undefined
 	if (host !== undefined) {
 		registerNativeGnosisSafeAppsSession(connections, tabId, port, host.appUrl.origin)
+		registerNativeGnosisSafeAppsRole(connections, port, { kind: 'host' })
 		return {
 			frameOrigins: { websiteOrigin: host.appUrl.host, requestOrigin: host.appUrl.origin },
 			isSignerOwner: false,
@@ -44,7 +46,7 @@ export async function getNativeGnosisSafeAppsConnectionRegistration(port: browse
 				const settings = await getSettings()
 				if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) await waitForNativeSigner(connections, tabId, port)
 			},
-			properties: { nativeSafeRole: { kind: 'host' } },
+			properties: {},
 		}
 	}
 
@@ -60,5 +62,6 @@ export async function getNativeGnosisSafeAppsConnectionRegistration(port: browse
 		return current !== undefined && current.port.sender?.url === port.sender?.tab?.url && current.origin === child.appUrl.origin ? current : undefined
 	}, 'The Gnosis Safe App host did not finish connecting. Retry the connection.')
 	if ('documentId' in frame && 'documentId' in port.sender && typeof frame.documentId === 'string' && typeof port.sender.documentId === 'string' && frame.documentId !== port.sender.documentId) return undefined
-	return { frameOrigins: { websiteOrigin: child.appUrl.host, requestOrigin: child.appUrl.origin }, isSignerOwner: true, registered: () => notifyNativeGnosisSafeAppsSessionConnections(connections), properties: { nativeSafeRole: { kind: 'signer', session } } }
+	registerNativeGnosisSafeAppsRole(connections, port, { kind: 'signer', session })
+	return { frameOrigins: { websiteOrigin: child.appUrl.host, requestOrigin: child.appUrl.origin }, isSignerOwner: true, registered: () => notifyNativeGnosisSafeAppsSessionConnections(connections), properties: {} }
 }

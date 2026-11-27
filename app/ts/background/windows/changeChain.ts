@@ -6,7 +6,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
+import { routeProviderReply } from '../providerReplyRouting.js'
 import type { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { SimulationServicesOwner } from '../simulationServicesOwner.js'
@@ -37,9 +37,9 @@ export async function resolveChainChange(simulationServicesOwner: SimulationServ
 		if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 		const resolved = await resolve(simulationServicesOwner, websiteTabConnections, confirmation, data.simulationMode)
 		if (resolved.error !== undefined) {
-			replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_switchEthereumChain' as const, error: resolved.error, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
+			routeProviderReply(websiteTabConnections, { type: 'result', method: 'wallet_switchEthereumChain' as const, error: resolved.error, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
 		} else {
-			replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_switchEthereumChain' as const, result: resolved.result, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
+			routeProviderReply(websiteTabConnections, { type: 'result', method: 'wallet_switchEthereumChain' as const, result: resolved.result, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
 		}
 		if (openedDialog) await closePopupOrTabById(openedDialog)
 		openedDialog = undefined

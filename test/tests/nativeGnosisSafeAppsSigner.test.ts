@@ -8,7 +8,7 @@ import { createEthereumWithGetBlockCounter, createPort, installBrowserMock, load
 import { nativeGnosisSafeAppsHostUrl } from '../../app/ts/utils/nativeGnosisSafeAppsHost.js'
 import { browserStorageLocalSet, browserStorageLocalSet2 } from '../../app/ts/utils/storageUtils.js'
 import { createGnosisSafeAddressBookEntry, fakeRpcNetwork, pendingTransaction, recipientAddress } from './confirmTransactionTestHarness.js'
-import { registerNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
+import { registerNativeGnosisSafeAppsSession, registerNativeGnosisSafeAppsRole, getNativeGnosisSafeAppsSession } from '../../app/ts/background/nativeGnosisSafeAppsSessions.js'
 import { ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from '../../app/ts/background/providerMessageHandlers.js'
 
 function installDisconnectEvent(port: browser.runtime.Port) {
@@ -36,11 +36,15 @@ async function setup() {
 	Object.assign(hostPort.sender?.tab ?? {}, { url: hostUrl })
 	Object.assign(signerPort.sender ?? {}, { id: 'extension-id', url: `${ origin }/swap` })
 	Object.assign(signerPort.sender?.tab ?? {}, { url: hostUrl })
-	const host = { port: hostPort, socket: hostSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true, nativeSafeRole: { kind: 'host' as const } }
-	const signer = { port: signerPort, socket: signerSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true, nativeSafeRole: { kind: 'signer' as const, session: { port: hostPort, origin } } }
+	const host = { port: hostPort, socket: hostSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true }
+	const signer = { port: signerPort, socket: signerSocket, websiteOrigin, requestOrigin: origin, approved: true, wantsToConnect: true }
 	const signerStateOwner = { confirmed: true, connectionName: 2n, generation: 1, providerGeneration: 1 }
 	const connections: WebsiteTabConnections = new Map([[7, { signerStateOwner, connections: { [modules.websiteSocketToString(hostSocket)]: host, [modules.websiteSocketToString(signerSocket)]: signer } }]])
 	registerNativeGnosisSafeAppsSession(connections, hostSocket.tabId, hostPort, origin)
+	registerNativeGnosisSafeAppsRole(connections, hostPort, { kind: 'host' })
+	const session = getNativeGnosisSafeAppsSession(connections, 7)
+	if (session === undefined) throw new Error('Missing session')
+	registerNativeGnosisSafeAppsRole(connections, signerPort, { kind: 'signer', session })
 	const forward: Extract<InterceptedRequestForward, { readonly type: 'forwardToSigner' }> = { type: 'forwardToSigner', method: 'personal_sign', params: ['0x0102', 0x1111111111111111111111111111111111111111n], uniqueRequestIdentifier: { requestId: 55, requestSocket: hostSocket } }
 	let payload: NativeGnosisSafeAppsSignerRequest | undefined
 	const send = (port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) => {
@@ -129,7 +133,8 @@ test('native signer callback tokens cannot be consumed by a different frame or g
 
 test('ordinary child frames cannot own native-host signer callbacks even with persisted origin approval', async () => {
 	const h = await setup()
-	Object.assign(h.signer, { nativeSafeRole: undefined })
+	const ordinary = new Map(h.connections)
+	h.connections = ordinary
 	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, h.signerPort), false)
 	assert.equal(forwardNativeGnosisSafeAppsSignerRequest(h.connections, h.forward, h.send), false)
 })
@@ -146,6 +151,7 @@ test('same-URL host reload rejects the previous child and its pending signer rep
 	if (tab === undefined) throw new Error('Missing session tab')
 	tab.connections[h.modules.websiteSocketToString(replacementSocket)] = { ...h.host, socket: replacementSocket, port: replacement }
 	registerNativeGnosisSafeAppsSession(h.connections, 7, replacement, h.origin)
+	registerNativeGnosisSafeAppsRole(h.connections, replacement, { kind: 'host' })
 	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, h.signerPort), false)
 	const forward = { ...h.forward, uniqueRequestIdentifier: { ...h.forward.uniqueRequestIdentifier, requestSocket: replacementSocket } }
 	assert.equal(forwardNativeGnosisSafeAppsSignerRequest(h.connections, forward, h.send), false)
@@ -156,7 +162,10 @@ test('same-URL host reload rejects the previous child and its pending signer rep
 	const { port: newChild } = createPort(7, undefined, 2, newChildSocket.connectionName)
 	Object.assign(newChild.sender ?? {}, { id: 'extension-id', url: `${ h.origin }/swap` })
 	Object.assign(newChild.sender?.tab ?? {}, { url: h.hostUrl })
-	tab.connections[h.modules.websiteSocketToString(newChildSocket)] = { ...h.signer, socket: newChildSocket, port: newChild, nativeSafeRole: { kind: 'signer', session: { port: replacement, origin: h.origin } } }
+	tab.connections[h.modules.websiteSocketToString(newChildSocket)] = { ...h.signer, socket: newChildSocket, port: newChild }
+	const session = getNativeGnosisSafeAppsSession(h.connections, 7)
+	if (session === undefined) throw new Error('Missing session')
+	registerNativeGnosisSafeAppsRole(h.connections, newChild, { kind: 'signer', session })
 	tab.signerStateOwner = { confirmed: true, connectionName: newChildSocket.connectionName, generation: 2, providerGeneration: 1 }
 	assert.equal(isNativeGnosisSafeAppsSignerPort(h.connections, newChild), true)
 	assert.equal(forwardNativeGnosisSafeAppsSignerRequest(h.connections, forward, (port) => { assert.equal(port, newChild); return true }), true)
@@ -173,6 +182,7 @@ test('late account and chain callbacks from a previous same-URL host child canno
 	Object.assign(replacement.sender ?? {}, { id: 'extension-id', url: h.hostUrl })
 	Object.assign(replacement.sender?.tab ?? {}, { url: h.hostUrl })
 	registerNativeGnosisSafeAppsSession(h.connections, 7, replacement, h.origin)
+	registerNativeGnosisSafeAppsRole(h.connections, replacement, { kind: 'host' })
 	const rpcCalls = { count: 0 }
 	const { simulationServicesOwner } = createEthereumWithGetBlockCounter(rpcCalls)
 	const getCurrent = spyOn(simulationServicesOwner, 'getCurrent')
@@ -230,4 +240,26 @@ test('native signer replies revalidate wallet generation, live host navigation a
 		assert.equal(reply?.reply.success, false)
 		assert.deepEqual(reply?.uniqueRequestIdentifier, h.forward.uniqueRequestIdentifier)
 	}
+})
+
+test('queued startup announcements never expose an obsolete wallet generation to native host metadata', async () => {
+	const h = await setup()
+	const { connectedToSigner } = await import('../../app/ts/background/providerMessageHandlers.js')
+	const { runSignerStateOperation, getConfirmedSignerStateToken, waitForConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
+	const services = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
+	let release = () => { throw new Error('Missing queue release') }
+	const gate = new Promise<void>((resolve) => { release = resolve })
+	const held = runSignerStateOperation(h.connections, 7, async () => { await gate })
+	const announce = (generation: number, name: 'Brave' | 'MetaMask') => connectedToSigner(services.simulationServicesOwner, h.connections, h.signerPort, { method: 'connected_to_signer', params: [true, name, generation], uniqueRequestIdentifier: { requestSocket: h.signer.socket, requestId: generation }, interceptorRequest: true, usingInterceptorWithoutSigner: false }, 'hasAccess', undefined)
+	const brave = announce(2, 'Brave')
+	const intermediate = runSignerStateOperation(h.connections, 7, async () => getConfirmedSignerStateToken(h.connections, 7))
+	const metamask = announce(4, 'MetaMask')
+	const status = announce(5, 'MetaMask')
+	assert.equal(getConfirmedSignerStateToken(h.connections, 7), undefined, 'pending newer announcements immediately retire the previous token')
+	const ready = waitForConfirmedSignerStateToken(h.connections, 7)
+	release()
+	await Promise.all([held, brave, metamask, status])
+	assert.equal(await intermediate, undefined, 'the superseded Brave confirmation must not wake host requests')
+	assert.equal((await ready)?.signerProviderGeneration, 5)
+	assert.equal((await h.modules.getTabState(7)).signerName, 'MetaMask')
 })
