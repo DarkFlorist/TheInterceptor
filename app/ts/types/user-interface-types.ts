@@ -188,7 +188,7 @@ export type TabConnection = {
 }
 
 // Scope observers to their connection collection so asynchronous mutations cannot notify another collection; feature state and configuration belong to the observer.
-export type WebsiteTabConnections = Map<number, TabConnection> & { readonly lifecycle?: WebsiteLifecycleCallbacks }
+export type WebsiteTabConnections = Map<number, TabConnection> & { lifecycle?: WebsiteLifecycleCallbacks }
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({

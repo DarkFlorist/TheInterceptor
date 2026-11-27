@@ -29,16 +29,23 @@ export async function prepareBalanceApiInterception(request: Request, context: S
 		const balances: Record<string, Balance> = {}
 		for (const [token, value] of Object.entries(data)) {
 			if (!isAddress(token) || !isBalance(value)) return response
-			balances[token.toLowerCase()] = value
+			balances[token] = value
 		}
 		const simulatedTokens = await requestRpc(context.chainId, createSiteSimulationTokenRequest('addresses', nextSiteHttpApiRequestId()))
 		if (!isAddressList(simulatedTokens)) throw new Error('Invalid simulated token list.')
-		for (const token of simulatedTokens) balances[token.toLowerCase()] ??= { balance: '0', allowance: '0' }
-		balances[SIMULATION_NATIVE_TOKEN_ADDRESS] ??= { balance: '0', allowance: (2n ** 256n - 1n).toString() }
+		// Preserve vendor key spelling; normalization identifies tokens only for matching and RPC calls.
+		const knownTokens = new Set(Object.keys(balances).map((token) => token.toLowerCase()))
+		for (const token of simulatedTokens) {
+			const normalized = token.toLowerCase()
+			if (knownTokens.has(normalized)) continue
+			balances[normalized] = { balance: '0', allowance: '0' }
+			knownTokens.add(normalized)
+		}
+		if (!knownTokens.has(SIMULATION_NATIVE_TOKEN_ADDRESS)) balances[SIMULATION_NATIVE_TOKEN_ADDRESS] = { balance: '0', allowance: (2n ** 256n - 1n).toString() }
 		const rpc = async (method: string, params: readonly unknown[]) => decimalQuantity(await requestRpc(context.chainId, { jsonrpc: '2.0', id: nextSiteHttpApiRequestId(), method, params }))
-		const result = Object.fromEntries(await Promise.all(Object.entries(balances).map(async ([token, value]) => [token, token === SIMULATION_NATIVE_TOKEN_ADDRESS
+		const result = Object.fromEntries(await Promise.all(Object.entries(balances).map(async ([token, value]) => [token, token.toLowerCase() === SIMULATION_NATIVE_TOKEN_ADDRESS
 			? { ...value, balance: await rpc('eth_getBalance', [account, 'latest']) }
-			: { ...value, balance: await rpc('eth_call', [{ to: token, data: balanceOfData(account) }, 'latest']), allowance: await rpc('eth_call', [{ to: token, data: allowanceData(account, spender) }, 'latest']) }
+			: { ...value, balance: await rpc('eth_call', [{ to: token.toLowerCase(), data: balanceOfData(account) }, 'latest']), allowance: await rpc('eth_call', [{ to: token.toLowerCase(), data: allowanceData(account, spender) }, 'latest']) }
 		])))
 		return simulatedApiResponse(response, request.url, result)
 	}

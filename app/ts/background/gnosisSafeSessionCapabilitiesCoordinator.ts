@@ -9,6 +9,7 @@ export function createGnosisSafeSessionCapabilitiesFeature(connections: WebsiteT
 	const site = createSiteBehaviorFeature(connections)
 	// The fan-out must cover every event even though individual observers may implement only a subset.
 	const lifecycle: Required<WebsiteLifecycleCallbacks> = {
+		sessionChanged: async () => { await Promise.all([sdk.lifecycle.sessionChanged?.(), site.lifecycle.sessionChanged?.()]) },
 		connectionReady: async (socket) => { await Promise.all([sdk.lifecycle.connectionReady?.(socket), site.lifecycle.connectionReady?.(socket)]) },
 		approvalChanged: async (socket, approved) => { await Promise.all([sdk.lifecycle.approvalChanged?.(socket, approved), site.lifecycle.approvalChanged?.(socket, approved)]) },
 		connectionRemoved: async (socket) => { await Promise.all([sdk.lifecycle.connectionRemoved?.(socket), site.lifecycle.connectionRemoved?.(socket)]) },

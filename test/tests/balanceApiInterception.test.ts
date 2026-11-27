@@ -91,3 +91,36 @@ test('balance overlays reject aborted reads and stale replies after account chan
 for (const origin of ['https://swap.cow.fi', 'https://app.uniswap.org', 'https://unknown-app.example:8443', 'http://localhost:8123']) test(`standard RPC policy needs no website entry for ${ origin }`, () => {
 	assert.deepEqual(resolveSiteBehavior(origin), { origin, rpcReads: { methods: SIMULATED_SITE_RPC_METHODS, chainRoutedProxyPaths: [] } })
 })
+
+test('balance and allowance overlays preserve exact vendor address keys and metadata without case aliases', async () => {
+	const checksummed = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+	const mixed = '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01'
+	const native = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+	const vendor = {
+		[checksummed]: { balance: '4', allowance: '8', decimals: 6, symbol: 'USDC' },
+		[mixed]: { balance: '5', allowance: '9', metadata: { source: 'vendor' } },
+		[native]: { balance: '1', allowance: '123', symbol: 'ETH' },
+	}
+	const h = harness(async (request) => {
+		if (request.method === 'interceptor_getSimulationTokens') return [checksummed.toLowerCase(), mixed.toUpperCase().replace('0X', '0x'), native.toLowerCase()]
+		if (request.method === 'eth_getBalance') return '0x64'
+		if (request.method === 'eth_call') {
+			const call = request.params?.[0]
+			assert.ok(typeof call === 'object' && call !== null && 'to' in call && 'data' in call && typeof call.data === 'string')
+			assert.ok(call.to === checksummed.toLowerCase() || call.to === mixed.toLowerCase())
+			return call.data.startsWith('0xdd62ed3e') ? '0x40' : '0x20'
+		}
+		throw new Error(`Unexpected method ${ request.method }`)
+	}, () => Response.json(vendor))
+	const response = await h.windowObject.fetch(url)
+	const result = await response.json()
+	assert.deepEqual(Object.keys(result), Object.keys(vendor))
+	assert.deepEqual(result, {
+		[checksummed]: { ...vendor[checksummed], balance: '32', allowance: '64' },
+		[mixed]: { ...vendor[mixed], balance: '32', allowance: '64' },
+		[native]: { ...vendor[native], balance: '100' },
+	})
+	assert.equal(response.headers.get('x-interceptor-simulation'), 'true')
+	assert.equal(h.reads.filter(({ method }) => method === 'eth_call').length, 4)
+	assert.equal(h.reads.filter(({ method }) => method === 'eth_getBalance').length, 1)
+})

@@ -4,6 +4,7 @@ import type { WebsiteSocket } from '../utils/requests.js'
 export type WebsiteLifecycleCallbacks = {
 	// A valid page bridge is ready; this grants neither website approval nor signer ownership.
 	readonly connectionReady?: (socket: WebsiteSocket) => void | Promise<void>
+	readonly sessionChanged?: (() => void | Promise<void>) & { observe?: (observer: () => void) => () => void }
 	readonly approvalChanged?: (socket: WebsiteSocket, approved: boolean) => void | Promise<void>
 	readonly connectionRemoved?: (socket: WebsiteSocket) => void | Promise<void>
 	readonly signerConnected?: (socket: WebsiteSocket, accountsRequested: boolean) => void | Promise<void>
